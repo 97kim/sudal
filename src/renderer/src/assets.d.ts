@@ -9,7 +9,7 @@ declare module "*.webp" {
 }
 
 /** Electron <webview> 태그. 렌더러 타입에는 electron 이 없어 쓰는 만큼만 선언한다. */
-interface AtelierWebview extends HTMLElement {
+interface SudalWebview extends HTMLElement {
   src: string;
   getURL(): string;
   getTitle(): string;
@@ -36,7 +36,7 @@ interface AtelierWebview extends HTMLElement {
 declare namespace React {
   namespace JSX {
     interface IntrinsicElements {
-      webview: React.DetailedHTMLProps<React.HTMLAttributes<AtelierWebview>, AtelierWebview> & {
+      webview: React.DetailedHTMLProps<React.HTMLAttributes<SudalWebview>, SudalWebview> & {
         src?: string;
         partition?: string;
         allowpopups?: string;

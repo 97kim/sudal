@@ -520,8 +520,8 @@ function GeneralSection() {
     const cli = installed?.cli;
     rows.push({
       key: "cli",
-      name: "atelier CLI",
-      path: cli?.path ?? "~/.local/bin/atelier",
+      name: "sudal CLI",
+      path: cli?.path ?? "~/.local/bin/sudal",
       state: !cli ? "" : !cli.installed ? t("settings.install.notInstalled") : !cli.current ? t("settings.install.otherApp") : !cli.onPath ? t("settings.install.needsPath") : t("settings.install.installed"),
       tone: !cli || !cli.installed ? "text-muted" : cli.current && cli.onPath ? "text-ok" : "text-warn",
       dot: !cli || !cli.installed ? "bg-muted-2/50" : cli.current && cli.onPath ? "bg-ok" : "bg-warn",

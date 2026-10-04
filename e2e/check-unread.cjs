@@ -2,8 +2,8 @@
 // 예전에도 표시는 있었지만 지름 5px 점의 색만 바뀌어 사실상 안 보였다.
 const path = require("path"), fs = require("fs"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 let __fails = 0;
@@ -14,7 +14,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   const page = b.contexts().flatMap((c) => c.pages()).find((p) => p.url().includes("localhost") || p.url().startsWith("file:"));
   const ev = (fn, arg) => page.evaluate(fn, arg);
 
-  const dir = `/tmp/atelier-unread-${Date.now()}`;
+  const dir = `/tmp/sudal-unread-${Date.now()}`;
   fs.mkdirSync(dir, { recursive: true });
   const ws = cli("ws", "add", "--path", dir).workspaceId;
   const a = cli("tab", "new", "--ws", ws, "--provider", "claude", "--title", "보고있는탭", "--activate").tab.id;

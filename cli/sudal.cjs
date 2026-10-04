@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `atelier` — 실행 중인 Atelier 앱을 명령줄에서 제어한다(에이전트용). 의존성 없음: 앱에 동봉된 Electron 을 node 로 돌리거나 시스템 node 로 실행.
+// `sudal` — 실행 중인 Sudal 앱을 명령줄에서 제어한다(에이전트용). 의존성 없음: 앱에 동봉된 Electron 을 node 로 돌리거나 시스템 node 로 실행.
 // 앱과는 userData 의 유닉스 소켓(control.sock)으로 줄 단위 JSON 을 주고받는다(src/main/control-server.ts).
 // 출력은 항상 JSON 한 덩어리(stdout). 실패는 exit 1 + {"error":{...}}.
 "use strict";
@@ -9,16 +9,16 @@ const os = require("node:os");
 const path = require("node:path");
 
 function userDataDir() {
-  if (process.env.ATELIER_USERDATA) return process.env.ATELIER_USERDATA;
+  if (process.env.SUDAL_USERDATA) return process.env.SUDAL_USERDATA;
   const home = os.homedir();
-  if (process.platform === "darwin") return path.join(home, "Library", "Application Support", "Atelier");
-  if (process.platform === "win32") return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), "Atelier");
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(home, ".config"), "Atelier");
+  if (process.platform === "darwin") return path.join(home, "Library", "Application Support", "Sudal");
+  if (process.platform === "win32") return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), "Sudal");
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(home, ".config"), "Sudal");
 }
 
-/** 소켓 위치: ATELIER_SOCKET → userData/control.json 의 socket(앱이 시작할 때 쓴다) → userData/control.sock */
+/** 소켓 위치: SUDAL_SOCKET → userData/control.json 의 socket(앱이 시작할 때 쓴다) → userData/control.sock */
 function socketPath() {
-  if (process.env.ATELIER_SOCKET) return process.env.ATELIER_SOCKET;
+  if (process.env.SUDAL_SOCKET) return process.env.SUDAL_SOCKET;
   const ud = userDataDir();
   try {
     const info = JSON.parse(fs.readFileSync(path.join(ud, "control.json"), "utf8"));
@@ -30,7 +30,7 @@ function socketPath() {
 }
 
 // 사용자에게 보이는 문구 표. 의존성 0 을 지키려고 i18next 없이 이 파일 안에서 고른다.
-// 언어: ATELIER_LANG → LC_ALL → LC_MESSAGES → LANG 중 먼저 값이 있는 것이 ko 로 시작하면 한국어, 아니면 영어.
+// 언어: SUDAL_LANG → LC_ALL → LC_MESSAGES → LANG 중 먼저 값이 있는 것이 ko 로 시작하면 한국어, 아니면 영어.
 const MESSAGES = {
   // i18n-ignore: 한국어 문구 표
   ko: {
@@ -38,58 +38,58 @@ const MESSAGES = {
     timeout: "응답이 {{sec}}초 안에 오지 않았습니다.",
     badResponse: "응답을 읽지 못했습니다: {{line}}",
     disconnected: "응답 전에 연결이 끊겼습니다(앱이 종료 중일 수 있습니다).",
-    notRunning: "Atelier 가 실행 중이 아닙니다(제어 소켓 없음). 앱을 먼저 여세요.",
-    noSelfTab: "self 는 Atelier 탭 안의 에이전트만 쓸 수 있습니다(ATELIER_TAB_ID 없음). 탭 id 나 제목을 주세요.",
+    notRunning: "Sudal 이 실행 중이 아닙니다(제어 소켓 없음). 앱을 먼저 여세요.",
+    noSelfTab: "self 는 Sudal 탭 안의 에이전트만 쓸 수 있습니다(SUDAL_TAB_ID 없음). 탭 id 나 제목을 주세요.",
     unknownGuide: "모르는 가이드: {{name}}",
     noAgents: "Claude Code(~/.claude)도 Codex(~/.codex)도 이 PC 에 없습니다.",
-    installedNote: "새 세션부터 스킬이 보입니다(Claude Code: /atelier-cli, Codex: $atelier-cli).",
+    installedNote: "새 세션부터 스킬이 보입니다(Claude Code: /sudal-cli, Codex: $sudal-cli).",
     unknownSkillsCmd: "skills {{cmd}}: 모르는 명령. 'get' 또는 'install'.",
     questionRequired: "--question 이 필요합니다.",
     resumeAfterError: "{{message}} (질문 id {{id}} — --resume {{id}} 로 다시 기다리세요)",
     resumeAfterTransport: "{{message}} (질문은 남아 있습니다 — --resume {{id}} 로 다시 기다리세요)",
     unknownCommand: "모르는 명령: {{cmd}}. --help 를 보세요.",
-    help: `atelier — 실행 중인 Atelier 를 제어한다. 출력은 항상 JSON.
+    help: `sudal — 실행 중인 Sudal 을 제어한다. 출력은 항상 JSON.
 
-  atelier status
-  atelier ws list
-  atelier ws add --path /abs/dir
-  atelier tab list [--ws <id|name>] [--all]
-  atelier tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
+  sudal status
+  sudal ws list
+  sudal ws add --path /abs/dir
+  sudal tab list [--ws <id|name>] [--all]
+  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
                   [--model <id>] [--title <text>] [--prompt <text>] [--activate]
-  atelier tab status --tab <sel>
-  atelier tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
-  atelier tab wait --tab <sel> [--timeout-ms N]
-  atelier tab read --tab <sel> [--last N]
-  atelier tab activate --tab <sel>
-  atelier tab close --tab <sel>
-  atelier tab abort --tab <sel>
-  atelier tab verify --tab <sel> [--cmd <명령>]... [--wait] [--timeout-ms N]   # 저장한 검증 명령(또는 --cmd) 실행 → 카드
-  atelier tab verify-abort --tab <sel>
-  atelier tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|full] [--wait] [--timeout-ms N]
+  sudal tab status --tab <sel>
+  sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
+  sudal tab wait --tab <sel> [--timeout-ms N]
+  sudal tab read --tab <sel> [--last N]
+  sudal tab activate --tab <sel>
+  sudal tab close --tab <sel>
+  sudal tab abort --tab <sel>
+  sudal tab verify --tab <sel> [--cmd <명령>]... [--wait] [--timeout-ms N]   # 저장한 검증 명령(또는 --cmd) 실행 → 카드
+  sudal tab verify-abort --tab <sel>
+  sudal tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|full] [--wait] [--timeout-ms N]
                                        # 지시 하나를 격리 세션(worktree) N개에 동시에 → 원래 탭에 팬아웃 카드
-  atelier file open --path /abs/file [--line N] [--tab <sel>]
-  atelier browser open --url https://… [--tab <sel>]
-  atelier browser read [--tab <sel>]                     보이는 글과 누를 만한 것(선택자 포함)
-  atelier browser click (--selector <css> | --text <글>) [--tab <sel>]
-  atelier browser fill --selector <css> --value <값> [--tab <sel>]
-  atelier orch run-create --objective <text> [--coordinator self|active|<tab>]   # 오케스트레이션 Run (코디네이터 = 사람 또는 탭)
-  atelier orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
+  sudal file open --path /abs/file [--line N] [--tab <sel>]
+  sudal browser open --url https://… [--tab <sel>]
+  sudal browser read [--tab <sel>]                     보이는 글과 누를 만한 것(선택자 포함)
+  sudal browser click (--selector <css> | --text <글>) [--tab <sel>]
+  sudal browser fill --selector <css> --value <값> [--tab <sel>]
+  sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # 오케스트레이션 Run (코디네이터 = 사람 또는 탭)
+  sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
                             [--policy ask|auto_edit|full] [--cwd /abs] [--worktree] [--request-id <id>]
-  atelier orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
-  atelier orch reply --run <id> [--key <k>] --id <question> --body <text>
-  atelier orch send --run <id> ... --type followup --to dispatch:<id>|@all|@claude|@codex|@idle --body <text>   # 코디네이터 → 워커(그룹 가능)
-  atelier orch send --run <id> --dispatch <id> --capability <c> --type worker_done|escalation ...   # 워커 → 코디네이터
-  atelier orch ask --run <id> --dispatch <id> --capability <c> (--question <text> [--options a,b] | --resume <msg>) [--timeout-ms N]
-  atelier orch task-create --run <id> --key <k> --spec <text> [--deps <task>,<task>]     # DAG: 의존 Task 가 succeeded 여야 시작 가능
-  atelier orch task-list --run <id> [--ready]                                            # --ready: 지금 시작할 수 있는 것만
-  atelier orch gate-create --run <id> --key <k> --task <id> --question <text> --options a,b   # 시작 전 결정(코디네이터 소유)
-  atelier orch gate-resolve --run <id> --key <k> --id <gate> --resolution <choice> | gate-list --run <id> [--task <id>]
-  atelier orch worker-start ... [--terminal <tab>]     # 정산된 워커의 탭 재사용(같은 provider·경로)
-  atelier orch worker-cleanup --run <id> --key <k> --dispatch <id>   # 정산된 워커의 탭 닫기 + worktree 삭제(강제)
-  atelier orch run-list | run-show --run <id> | run-close --run <id>
-  atelier orch worker-list --run <id> | worker-show|worker-retain|worker-release|worker-stop|worker-abandon --run <id> --dispatch <id>
-  atelier skills get [atelier-cli]      # 이 앱 버전의 에이전트용 가이드(마크다운)
-  atelier skills install                # Claude Code(~/.claude/skills)·Codex(~/.codex/skills) 에 스킬 스텁 설치
+  sudal orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
+  sudal orch reply --run <id> [--key <k>] --id <question> --body <text>
+  sudal orch send --run <id> ... --type followup --to dispatch:<id>|@all|@claude|@codex|@idle --body <text>   # 코디네이터 → 워커(그룹 가능)
+  sudal orch send --run <id> --dispatch <id> --capability <c> --type worker_done|escalation ...   # 워커 → 코디네이터
+  sudal orch ask --run <id> --dispatch <id> --capability <c> (--question <text> [--options a,b] | --resume <msg>) [--timeout-ms N]
+  sudal orch task-create --run <id> --key <k> --spec <text> [--deps <task>,<task>]     # DAG: 의존 Task 가 succeeded 여야 시작 가능
+  sudal orch task-list --run <id> [--ready]                                            # --ready: 지금 시작할 수 있는 것만
+  sudal orch gate-create --run <id> --key <k> --task <id> --question <text> --options a,b   # 시작 전 결정(코디네이터 소유)
+  sudal orch gate-resolve --run <id> --key <k> --id <gate> --resolution <choice> | gate-list --run <id> [--task <id>]
+  sudal orch worker-start ... [--terminal <tab>]     # 정산된 워커의 탭 재사용(같은 provider·경로)
+  sudal orch worker-cleanup --run <id> --key <k> --dispatch <id>   # 정산된 워커의 탭 닫기 + worktree 삭제(강제)
+  sudal orch run-list | run-show --run <id> | run-close --run <id>
+  sudal orch worker-list --run <id> | worker-show|worker-retain|worker-release|worker-stop|worker-abandon --run <id> --dispatch <id>
+  sudal skills get [sudal-cli]      # 이 앱 버전의 에이전트용 가이드(마크다운)
+  sudal skills install                # Claude Code(~/.claude/skills)·Codex(~/.codex/skills) 에 스킬 스텁 설치
 
   <sel> = self(이 명령을 부른 에이전트의 탭) | active(화면에서 보고 있는 탭) | 탭 id | 정확한 제목 | 유일한 제목 접두
   --text / --prompt 에 "-" 를 주면 stdin 에서 읽는다.
@@ -100,58 +100,58 @@ const MESSAGES = {
     timeout: "No response within {{sec}} seconds.",
     badResponse: "Could not read the response: {{line}}",
     disconnected: "The connection closed before a response arrived (the app may be quitting).",
-    notRunning: "Atelier is not running (no control socket). Open the app first.",
-    noSelfTab: "self only works for an agent running inside an Atelier tab (ATELIER_TAB_ID is not set). Pass a tab id or title.",
+    notRunning: "Sudal is not running (no control socket). Open the app first.",
+    noSelfTab: "self only works for an agent running inside an Sudal tab (SUDAL_TAB_ID is not set). Pass a tab id or title.",
     unknownGuide: "Unknown guide: {{name}}",
     noAgents: "Neither Claude Code (~/.claude) nor Codex (~/.codex) exists on this computer.",
-    installedNote: "The skill shows up from the next new session (Claude Code: /atelier-cli, Codex: $atelier-cli).",
+    installedNote: "The skill shows up from the next new session (Claude Code: /sudal-cli, Codex: $sudal-cli).",
     unknownSkillsCmd: "skills {{cmd}}: unknown command. Use 'get' or 'install'.",
     questionRequired: "--question is required.",
     resumeAfterError: "{{message}} (question id {{id}} — wait again with --resume {{id}})",
     resumeAfterTransport: "{{message}} (the question is still open — wait again with --resume {{id}})",
     unknownCommand: "Unknown command: {{cmd}}. See --help.",
-    help: `atelier — control a running Atelier. Output is always JSON.
+    help: `sudal — control a running Sudal. Output is always JSON.
 
-  atelier status
-  atelier ws list
-  atelier ws add --path /abs/dir
-  atelier tab list [--ws <id|name>] [--all]
-  atelier tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
+  sudal status
+  sudal ws list
+  sudal ws add --path /abs/dir
+  sudal tab list [--ws <id|name>] [--all]
+  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
                   [--model <id>] [--title <text>] [--prompt <text>] [--activate]
-  atelier tab status --tab <sel>
-  atelier tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
-  atelier tab wait --tab <sel> [--timeout-ms N]
-  atelier tab read --tab <sel> [--last N]
-  atelier tab activate --tab <sel>
-  atelier tab close --tab <sel>
-  atelier tab abort --tab <sel>
-  atelier tab verify --tab <sel> [--cmd <command>]... [--wait] [--timeout-ms N]   # run the saved verify commands (or --cmd) -> card
-  atelier tab verify-abort --tab <sel>
-  atelier tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|full] [--wait] [--timeout-ms N]
+  sudal tab status --tab <sel>
+  sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
+  sudal tab wait --tab <sel> [--timeout-ms N]
+  sudal tab read --tab <sel> [--last N]
+  sudal tab activate --tab <sel>
+  sudal tab close --tab <sel>
+  sudal tab abort --tab <sel>
+  sudal tab verify --tab <sel> [--cmd <command>]... [--wait] [--timeout-ms N]   # run the saved verify commands (or --cmd) -> card
+  sudal tab verify-abort --tab <sel>
+  sudal tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|full] [--wait] [--timeout-ms N]
                                        # one prompt to N isolated sessions (worktrees) at once -> fan-out card on the original tab
-  atelier file open --path /abs/file [--line N] [--tab <sel>]
-  atelier browser open --url https://… [--tab <sel>]
-  atelier browser read [--tab <sel>]                     visible text and clickable things (with selectors)
-  atelier browser click (--selector <css> | --text <text>) [--tab <sel>]
-  atelier browser fill --selector <css> --value <value> [--tab <sel>]
-  atelier orch run-create --objective <text> [--coordinator self|active|<tab>]   # orchestration Run (the coordinator is a person or a tab)
-  atelier orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
+  sudal file open --path /abs/file [--line N] [--tab <sel>]
+  sudal browser open --url https://… [--tab <sel>]
+  sudal browser read [--tab <sel>]                     visible text and clickable things (with selectors)
+  sudal browser click (--selector <css> | --text <text>) [--tab <sel>]
+  sudal browser fill --selector <css> --value <value> [--tab <sel>]
+  sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # orchestration Run (the coordinator is a person or a tab)
+  sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
                             [--policy ask|auto_edit|full] [--cwd /abs] [--worktree] [--request-id <id>]
-  atelier orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
-  atelier orch reply --run <id> [--key <k>] --id <question> --body <text>
-  atelier orch send --run <id> ... --type followup --to dispatch:<id>|@all|@claude|@codex|@idle --body <text>   # coordinator -> worker (groups allowed)
-  atelier orch send --run <id> --dispatch <id> --capability <c> --type worker_done|escalation ...   # worker -> coordinator
-  atelier orch ask --run <id> --dispatch <id> --capability <c> (--question <text> [--options a,b] | --resume <msg>) [--timeout-ms N]
-  atelier orch task-create --run <id> --key <k> --spec <text> [--deps <task>,<task>]     # DAG: a Task can start only after the Tasks it depends on succeeded
-  atelier orch task-list --run <id> [--ready]                                            # --ready: only the ones that can start now
-  atelier orch gate-create --run <id> --key <k> --task <id> --question <text> --options a,b   # decision before start (owned by the coordinator)
-  atelier orch gate-resolve --run <id> --key <k> --id <gate> --resolution <choice> | gate-list --run <id> [--task <id>]
-  atelier orch worker-start ... [--terminal <tab>]     # reuse the tab of a settled worker (same provider and path)
-  atelier orch worker-cleanup --run <id> --key <k> --dispatch <id>   # close the settled worker's tab + delete its worktree (forced)
-  atelier orch run-list | run-show --run <id> | run-close --run <id>
-  atelier orch worker-list --run <id> | worker-show|worker-retain|worker-release|worker-stop|worker-abandon --run <id> --dispatch <id>
-  atelier skills get [atelier-cli]      # the agent guide for this app version (markdown)
-  atelier skills install                # install skill stubs into Claude Code (~/.claude/skills) and Codex (~/.codex/skills)
+  sudal orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
+  sudal orch reply --run <id> [--key <k>] --id <question> --body <text>
+  sudal orch send --run <id> ... --type followup --to dispatch:<id>|@all|@claude|@codex|@idle --body <text>   # coordinator -> worker (groups allowed)
+  sudal orch send --run <id> --dispatch <id> --capability <c> --type worker_done|escalation ...   # worker -> coordinator
+  sudal orch ask --run <id> --dispatch <id> --capability <c> (--question <text> [--options a,b] | --resume <msg>) [--timeout-ms N]
+  sudal orch task-create --run <id> --key <k> --spec <text> [--deps <task>,<task>]     # DAG: a Task can start only after the Tasks it depends on succeeded
+  sudal orch task-list --run <id> [--ready]                                            # --ready: only the ones that can start now
+  sudal orch gate-create --run <id> --key <k> --task <id> --question <text> --options a,b   # decision before start (owned by the coordinator)
+  sudal orch gate-resolve --run <id> --key <k> --id <gate> --resolution <choice> | gate-list --run <id> [--task <id>]
+  sudal orch worker-start ... [--terminal <tab>]     # reuse the tab of a settled worker (same provider and path)
+  sudal orch worker-cleanup --run <id> --key <k> --dispatch <id>   # close the settled worker's tab + delete its worktree (forced)
+  sudal orch run-list | run-show --run <id> | run-close --run <id>
+  sudal orch worker-list --run <id> | worker-show|worker-retain|worker-release|worker-stop|worker-abandon --run <id> --dispatch <id>
+  sudal skills get [sudal-cli]      # the agent guide for this app version (markdown)
+  sudal skills install                # install skill stubs into Claude Code (~/.claude/skills) and Codex (~/.codex/skills)
 
   <sel> = self (the tab of the agent running this command) | active (the tab shown in the app) | tab id | exact title | unique title prefix
   Pass "-" to --text / --prompt to read it from stdin.
@@ -160,7 +160,7 @@ const MESSAGES = {
 };
 
 function pickLang() {
-  const v = [process.env.ATELIER_LANG, process.env.LC_ALL, process.env.LC_MESSAGES, process.env.LANG].find((x) => x);
+  const v = [process.env.SUDAL_LANG, process.env.LC_ALL, process.env.LC_MESSAGES, process.env.LANG].find((x) => x);
   return v && /^ko/i.test(v) ? "ko" : "en";
 }
 const LANG = pickLang();
@@ -266,9 +266,9 @@ async function main() {
   }
   const [group, cmd] = pos;
   checkValueFlags(flags);
-  // `self` = 이 CLI 를 부른 에이전트의 탭. 앱이 탭의 에이전트를 띄울 때 ATELIER_TAB_ID 로 알려 준다.
+  // `self` = 이 CLI 를 부른 에이전트의 탭. 앱이 탭의 에이전트를 띄울 때 SUDAL_TAB_ID 로 알려 준다.
   // `active`(사람이 화면에서 고른 탭)와 다르다 — 에이전트가 화면에 떠 있지 않은 탭에서 도는 일이 흔하다.
-  const selfTab = process.env.ATELIER_TAB_ID || undefined;
+  const selfTab = process.env.SUDAL_TAB_ID || undefined;
   for (const k of ["tab", "coordinator", "terminal"]) {
     if (flags[k] !== "self") continue;
     if (!selfTab) return fail(t("noSelfTab"), "no_self_tab");
@@ -279,8 +279,8 @@ async function main() {
   // 앱이 없어도 되는 명령
   if (group === "skills") {
     if (cmd === "get") {
-      const name = pos[2] || "atelier-cli";
-      if (name !== "atelier-cli") return fail(t("unknownGuide", { name }), "not_found");
+      const name = pos[2] || "sudal-cli";
+      if (name !== "sudal-cli") return fail(t("unknownGuide", { name }), "not_found");
       process.stdout.write(fs.readFileSync(SKILL_GUIDE, "utf8"));
       return;
     }
@@ -288,8 +288,8 @@ async function main() {
       // 이 PC 에 있는 에이전트마다: Claude Code(~/.claude/skills), Codex CLI($CODEX_HOME/skills, 기본 ~/.codex/skills)
       const home = os.homedir();
       const targets = [
-        { label: "Claude Code", home: path.join(home, ".claude"), dir: path.join(home, ".claude", "skills", "atelier-cli") },
-        { label: "Codex CLI", home: process.env.CODEX_HOME || path.join(home, ".codex"), dir: path.join(process.env.CODEX_HOME || path.join(home, ".codex"), "skills", "atelier-cli") },
+        { label: "Claude Code", home: path.join(home, ".claude"), dir: path.join(home, ".claude", "skills", "sudal-cli") },
+        { label: "Codex CLI", home: process.env.CODEX_HOME || path.join(home, ".codex"), dir: path.join(process.env.CODEX_HOME || path.join(home, ".codex"), "skills", "sudal-cli") },
       ];
       const stub = fs.readFileSync(SKILL_STUB, "utf8");
       const installed = [];

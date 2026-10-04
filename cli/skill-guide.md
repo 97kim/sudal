@@ -1,6 +1,6 @@
-# Atelier CLI guide (for agents)
+# Sudal CLI guide (for agents)
 
-`atelier` controls the running Atelier app. Use it only for work where Atelier's workspaces, tabs, and sessions are the source of truth. Every command prints a single JSON object, except `--help` (plain text) and `skills get` (this Markdown). A failure exits with 1 and prints `{"error":{"code","message"}}`.
+`sudal` controls the running Sudal app. Use it only for work where Sudal's workspaces, tabs, and sessions are the source of truth. Every command prints a single JSON object, except `--help` (plain text) and `skills get` (this Markdown). A failure exits with 1 and prints `{"error":{"code","message"}}`.
 
 Write everything the user reads in the user's language: follow their language setting, and otherwise the language of their request. This guide being in English does not change that.
 
@@ -9,22 +9,22 @@ Write everything the user reads in the user's language: follow their language se
 - **Workspace**: a name plus an optional default path. It groups tabs.
 - **Tab**: one chat session. It has a provider (claude|codex), a policy (ask|auto_edit|full), a cwd, and a status (idle|running|queued|waiting_permission|error).
 - **Selector `<sel>`**: `self` (the tab you are running in) · `active` (the tab the person is looking at in the app) · a tab id · an exact title · a unique title prefix. An ambiguous selector fails with `ambiguous` and lists the candidates. Omitting `--tab` means `active`.
-- **`self` is not `active`.** You often run in a tab that is not on screen (a worker, the other side of a split, a scheduled run). `self` comes from `ATELIER_TAB_ID`, which the app sets for the agents it runs. Outside an Atelier tab, `self` fails with `no_self_tab`.
+- **`self` is not `active`.** You often run in a tab that is not on screen (a worker, the other side of a split, a scheduled run). `self` comes from `SUDAL_TAB_ID`, which the app sets for the agents it runs. Outside an Sudal tab, `self` fails with `no_self_tab`.
 
 ## Common flows
 
 Open a new tab, send a prompt, and get the reply:
 
 ```text
-atelier tab new --ws <name> --cwd /abs/repo --provider claude --policy auto_edit --title "auth bug" --prompt "Find why login returns 500" --activate
-atelier tab wait --tab "auth bug" --timeout-ms 600000
-atelier tab read --tab "auth bug" --last 6
+sudal tab new --ws <name> --cwd /abs/repo --provider claude --policy auto_edit --title "auth bug" --prompt "Find why login returns 500" --activate
+sudal tab wait --tab "auth bug" --timeout-ms 600000
+sudal tab read --tab "auth bug" --last 6
 ```
 
 Send a follow-up to an existing tab and get just that reply (send and wait in one step):
 
 ```text
-atelier tab send --tab "auth bug" --text "Add a test too" --wait --timeout-ms 900000
+sudal tab send --tab "auth bug" --text "Add a test too" --wait --timeout-ms 900000
 ```
 
 - If `send.queued` is true in the `send` result, the tab is waiting its turn under the concurrency limit. If `send.pending` is true, the tab is running another turn and your prompt went into its prompt queue (it is sent automatically when that turn ends). Neither is an error. In the tab info, `pending` is the number of prompts left in the queue, and `limitWait` means the tab is waiting to retry after a usage limit.
@@ -35,28 +35,28 @@ atelier tab send --tab "auth bug" --text "Add a test too" --wait --timeout-ms 90
 See state:
 
 ```text
-atelier status
-atelier ws list
-atelier tab list                # open tabs; --all includes closed tabs
-atelier tab list --ws <name>
-atelier tab status --tab <sel>
+sudal status
+sudal ws list
+sudal tab list                # open tabs; --all includes closed tabs
+sudal tab list --ws <name>
+sudal tab status --tab <sel>
 ```
 
 Manage tabs:
 
 ```text
-atelier tab activate --tab <sel>   # switch the app to that tab
-atelier tab abort --tab <sel>      # stop the turn in progress
-atelier tab close --tab <sel>      # close the tab (the history is kept)
-atelier ws add --path /abs/dir     # add a workspace (one tab is created with it)
+sudal tab activate --tab <sel>   # switch the app to that tab
+sudal tab abort --tab <sel>      # stop the turn in progress
+sudal tab close --tab <sel>      # close the tab (the history is kept)
+sudal ws add --path /abs/dir     # add a workspace (one tab is created with it)
 ```
 
 Verify (run tests or builds and leave a result card):
 
 ```text
-atelier tab verify --tab <sel> --wait                          # run the workspace's saved verify commands in order, in that tab's cwd
-atelier tab verify --tab <sel> --cmd "yarn typecheck" --cmd "yarn test" --wait --timeout-ms 1800000
-atelier tab verify-abort --tab <sel>
+sudal tab verify --tab <sel> --wait                          # run the workspace's saved verify commands in order, in that tab's cwd
+sudal tab verify --tab <sel> --cmd "yarn typecheck" --cmd "yarn test" --wait --timeout-ms 1800000
+sudal tab verify-abort --tab <sel>
 ```
 
 - The result stays in that tab's conversation as a verify card. With `--wait`, `result` carries `status` (passed|failed|aborted), the `head` at run time (sha, branch, dirty), and per-command `status`/`exitCode`/`output` (the tail). If one command fails, the later ones are `skipped`.
@@ -66,17 +66,17 @@ atelier tab verify-abort --tab <sel>
 Open things in the app:
 
 ```text
-atelier file open --path /abs/file.ts --line 42 [--tab <sel>]   # open the file at that line in that tab's editor panel
-atelier browser open --url http://localhost:3000 [--tab <sel>]  # open it in that tab's in-app browser
-atelier browser read [--tab <sel>]                             # visible text plus clickable items (with selectors)
-atelier browser click --selector "#save" [--tab <sel>]         # or --text "Save"
-atelier browser fill --selector "#email" --value "a@b.c"       # React state is updated too
+sudal file open --path /abs/file.ts --line 42 [--tab <sel>]   # open the file at that line in that tab's editor panel
+sudal browser open --url http://localhost:3000 [--tab <sel>]  # open it in that tab's in-app browser
+sudal browser read [--tab <sel>]                             # visible text plus clickable items (with selectors)
+sudal browser click --selector "#save" [--tab <sel>]         # or --text "Save"
+sudal browser fill --selector "#email" --value "a@b.c"       # React state is updated too
 ```
 
 Fan-out (send the same prompt to several isolated sessions at once and compare):
 
 ```text
-atelier tab fanout --tab <sel> --prompt "<prompt>" --provider claude --provider codex --policy auto_edit --wait --timeout-ms 1800000
+sudal tab fanout --tab <sel> --prompt "<prompt>" --provider claude --provider codex --policy auto_edit --wait --timeout-ms 1800000
 ```
 
 - Each session gets its own git worktree of the repository and a new tab, so they do not touch each other's files. In the `--wait` result, `result.variants[]` carries each session's `status` (done|failed|waiting), change stats (`files`/`added`/`deleted`), and a summary of its answer. `waiting` means that tab is waiting for a permission answer (a person must look at it).
@@ -90,14 +90,14 @@ Model: **Run** (the coordinator's inbox) > **Task** (a self-contained job spec) 
 ### Coordinator (when you supervise from inside a tab)
 
 ```text
-atelier orch run-create --objective "<objective>" --coordinator self       # pass the coordinatorKey from the response as --key on every command
-atelier orch worker-start --run <run> --key <k> --spec "<Task spec>" --agent codex --worktree
-atelier orch worker-start --run <run> --key <k> --spec "<another Task>" --agent claude --worktree
-atelier orch check --run <run> --key <k> --wait --types worker_done,question,escalation,note --timeout-ms 900000
-atelier orch reply --run <run> --key <k> --id <question_id> --body "<answer>"
-atelier orch send  --run <run> --key <k> --type followup --to dispatch:<id> --body "<instruction>"
-atelier orch check --run <run> --key <k> --ack <delivery_id> --wait --types worker_done,question,escalation,note --timeout-ms 900000
-atelier orch worker-release --run <run> --key <k> --dispatch <id>           # clean up a settled worker (the tab stays)
+sudal orch run-create --objective "<objective>" --coordinator self       # pass the coordinatorKey from the response as --key on every command
+sudal orch worker-start --run <run> --key <k> --spec "<Task spec>" --agent codex --worktree
+sudal orch worker-start --run <run> --key <k> --spec "<another Task>" --agent claude --worktree
+sudal orch check --run <run> --key <k> --wait --types worker_done,question,escalation,note --timeout-ms 900000
+sudal orch reply --run <run> --key <k> --id <question_id> --body "<answer>"
+sudal orch send  --run <run> --key <k> --type followup --to dispatch:<id> --body "<instruction>"
+sudal orch check --run <run> --key <k> --ack <delivery_id> --wait --types worker_done,question,escalation,note --timeout-ms 900000
+sudal orch worker-release --run <run> --key <k> --dispatch <id>           # clean up a settled worker (the tab stays)
 ```
 
 - Use `--coordinator self`, not `active`: the coordinator is the tab you are running in, which may not be the tab on screen.
@@ -113,7 +113,7 @@ atelier orch worker-release --run <run> --key <k> --dispatch <id>           # cl
 - A settled worker's tab can be reused for the next Task with `worker-start --task <next> --terminal <tabId>` (same provider and path). When you no longer need it, `worker-cleanup` closes the tab and deletes the worktree. This differs from release (ending supervision), and uncommitted changes are lost.
 - The app note `worker_tab_missing` means a worker's tab disappeared (its execution state is unknown): check, then abandon.
 
-### Worker (when your prompt starts with "[Atelier orchestration · worker contract v…]" or "[Atelier 오케스트레이션 · 워커 계약 v…]")
+### Worker (when your prompt starts with "[Sudal orchestration · worker contract v…]" or "[Sudal 오케스트레이션 · 워커 계약 v…]")
 
 Copy the commands from the preamble exactly as given (--run/--dispatch/--capability). Rules:
 
@@ -131,13 +131,13 @@ Copy the commands from the preamble exactly as given (--run/--dispatch/--capabil
 Create a new tab, send it a briefing, and stop once you have confirmed it was received (`send.ok:true`). Do not `wait` unless the request was to wait until that tab finishes.
 
 ```text
-atelier tab new --ws <name> --cwd /abs/repo --provider codex --title "<job name>" --prompt "<briefing>" --json
+sudal tab new --ws <name> --cwd /abs/repo --provider codex --title "<job name>" --prompt "<briefing>" --json
 ```
 
 ## Rules
 
 - Sending a prompt to the tab the person is looking at (`active`) cuts into their conversation. Unless the user said so, create a new tab and use that.
 - `--policy full` runs without approval. Use it only when the user allowed it.
-- Do not wait on your own tab: `tab wait --tab self` and `tab send --tab self --wait` can never finish, because the tab is done only when your current turn ends. The CLI rejects them with `self_wait`. Use `--tab self` when you need your own tab id, for example `atelier tab status --tab self`.
+- Do not wait on your own tab: `tab wait --tab self` and `tab send --tab self --wait` can never finish, because the tab is done only when your current turn ends. The CLI rejects them with `self_wait`. Use `--tab self` when you need your own tab id, for example `sudal tab status --tab self`.
 - The `blocks` in `read` are in order, oldest first. `kind` is one of user · assistant · tool · turn · error · notice · compacted · review (cross-review) · verify (verify result) · fanout (fan-out) · orchestration (orchestration card).
 - If the app is not running, commands fail with `not_running` (`skills get` and `--help` still work). Ask the user to open the app, and stop.

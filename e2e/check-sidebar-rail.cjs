@@ -2,8 +2,8 @@
 // 본문을 덮지 않게 자리를 지켜야 해서다 — 그래서 폭이 0 이 아니라 신호등보다 넓은지까지 본다.
 const path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 const state = (page) => page.evaluate(() => {
@@ -36,13 +36,13 @@ const state = (page) => page.evaluate(() => {
   console.log("접힘:", JSON.stringify(railed));
 
   // ⌘B 로 다시 펼치기
-  await ev(() => window.__atelierShortcut?.("toggle-sidebar"));
+  await ev(() => window.__sudalShortcut?.("toggle-sidebar"));
   await page.waitForTimeout(600);
   const reopened = await state(page);
   console.log("⌘B 뒤:", JSON.stringify(reopened));
 
   // 접은 채로 재시작해도 유지되는지 — 접어 두고 끝낸다
-  await ev(() => window.__atelierShortcut?.("toggle-sidebar"));
+  await ev(() => window.__sudalShortcut?.("toggle-sidebar"));
   await page.waitForTimeout(600);
   const persisted = await state(page);
 

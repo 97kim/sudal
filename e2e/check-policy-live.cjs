@@ -2,8 +2,8 @@
 // 예전에는 다음 메시지부터라, 계속 물어봐서 바꿨는데 그 턴 내내 계속 묻는 일이 생겼다.
 const path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 let __fails = 0;

@@ -4,13 +4,13 @@
 // (실제로 37분을 못 멈추고 앱을 껐다).
 const path = require("path"), { execFileSync, execSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 // 화면 문구가 아니라 실제 프로세스로 본다 — 프롬프트에 쓴 낱말은 화면에 그대로 남아 증거가 못 된다.
 // 맨 sleep 은 앱이 자식에게 주는 하네스가 막는다(Monitor 를 쓰라고 한다) — 막히지 않는 방식으로 오래 끈다.
-const MARK = "ATELIERABORTE2E";
+const MARK = "SUDALABORTE2E";
 const LONG = `python3 -c "import time; time.sleep(400)  # ${MARK}"`;
 const longAlive = () => { try { execSync(`pgrep -f ${MARK} > /dev/null`); return true; } catch { return false; } };
 

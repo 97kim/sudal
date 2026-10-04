@@ -58,7 +58,7 @@ export interface WorkerTabSnapshot {
 
 export interface OrchestratorDeps {
   dir: string;
-  /** preamble 에 적을 CLI 이름(설치돼 있으면 "atelier", 아니면 전체 경로). */
+  /** preamble 에 적을 CLI 이름(설치돼 있으면 "sudal", 아니면 전체 경로). */
   cliCommand(): string;
   now?(): number;
   log?(line: string): void;

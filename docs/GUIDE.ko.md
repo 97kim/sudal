@@ -1,6 +1,6 @@
 [English](GUIDE.md)
 
-# Atelier 기능 안내서
+# Sudal 기능 안내서
 
 기능마다 무엇을 하고 어떻게 동작하는지 정리한 문서예요. 처음이라면 [README](../README.ko.md)부터 보세요.
 
@@ -170,10 +170,10 @@ initialize 요청의 `tsserver.path` 에 끼워 준다(없으면 서버가 "vali
 그 안의 `tsserver.js` 가 실행되는 일을 피하기 위해서다(VS Code 도 기본은 동봉 버전). 서버 자식에는 PATH·HOME 등 최소 env 만 넘긴다.
 서버 루트는 렌더러가 아니라 main 이 탭 cwd 에서 정하고(저장소 최상위), 파일 읽기·쓰기·조작·목록, git, MCP 상태, 서버 시작은 실제 탭/워크스페이스 cwd(또는 그 안)에서만 받는다.
 탭 cwd 와 워크스페이스 경로 자체는 사용자가 디렉토리 선택 창으로 고른 루트(와 지난 실행에서 쓰던 경로, worktree 루트) 안만 받으므로 렌더러가 경계를 넓힐 수 없다
-(`ATELIER_APPROVED_ROOTS=경로:경로` 로 검증용 루트를 더할 수 있다).
+(`SUDAL_APPROVED_ROOTS=경로:경로` 로 검증용 루트를 더할 수 있다).
 서버가 죽으면 배지가 꺼지고 다음 파일부터 다시 띄운다. 열린 TS/JS 문서가 하나도 없는 상태(`didOpen`/`didClose` 를 main 이 센다)가 3분 이어지면
-서버를 끄고, 다음에 파일을 열 때 다시 띄운다(`ATELIER_LSP_IDLE_MS` 로 조정). 앱을 끄면 서버도 끝난다.
-`ATELIER_DEBUG_LSP=1` 로 띄우면 JSON-RPC 왕복이 main 로그에 남는다.
+서버를 끄고, 다음에 파일을 열 때 다시 띄운다(`SUDAL_LSP_IDLE_MS` 로 조정). 앱을 끄면 서버도 끝난다.
+`SUDAL_DEBUG_LSP=1` 로 띄우면 JSON-RPC 왕복이 main 로그에 남는다.
 
 **파일 트리 조작**: 우측 "파일" 탭에서 항목을 우클릭하면 열기 / 새 파일 / 새 폴더 / 이름 변경 / 휴지통으로 이동 메뉴가 나오고(빈 곳 우클릭·헤더 + 는 루트에
 새 파일·폴더), 이름은 그 자리에서 입력한다(Enter 확정, Esc 취소, 파일은 확장자 앞까지 선택). 만들기·이름 변경은 세션 저장소 안에서만, 덮어쓰기 없음
@@ -200,7 +200,7 @@ initialize 요청의 `tsserver.path` 에 끼워 준다(없으면 서버가 "vali
 브라우저, ⌥클릭은 바로 인앱 브라우저).
 주소창(스킴 없으면 localhost/IP 는 http, 나머지는 https, 공백이 있으면 검색)·뒤로/앞으로/새로고침·기본 브라우저로 열기. Electron `<webview>` 를 쓰며
 main 의 `will-attach-webview` 가 preload 없음·node 없음·샌드박스·http(s) 만으로 고정하고, 웹뷰의 새 창은 같은 웹뷰에서 연다. 쿠키·저장소는
-`persist:atelier-browser` 파티션으로 앱과 분리된다.
+`persist:sudal-browser` 파티션으로 앱과 분리된다.
 
 **앱을 껐다 켜도 로그인이 유지된다.** 만료가 있는 쿠키는 파티션이 `persist:` 라 원래 디스크에 남지만, 로그인 세션은 대개 만료가 없는 세션 쿠키라
 Chromium 이 종료할 때 버린다(메모리에만 둔다). 그래서 끌 때 세션 쿠키를 받아 적고 켤 때 되돌려 놓는다 — 크롬의 "이전 세션 계속하기" 와 같은 장치다
@@ -233,12 +233,12 @@ Chromium 이 종료할 때 버린다(메모리에만 둔다). 그래서 끌 때 
 **보기 폭 프리셋** 으로 창을 줄이지 않고 좁은 화면을 확인한다 — 전체·폰(390)·태블릿(834)·데스크톱(1280).
 패널보다 넓은 프리셋은 패널 폭을 따르므로 넓게 보기(⌘⇧E)와 같이 쓴다. **확대·축소** 는 도구막대의 −/배율/+ 로, 배율을 누르면 100% 로 돌아온다.
 
-**에이전트가 브라우저를 직접 조작한다.** 모델은 화면을 볼 수 없으므로 지금까지는 사람이 "진단 첨부" 로 넘겨 줘야 했다. 이제 `atelier` CLI 로 직접 읽고 누른다.
+**에이전트가 브라우저를 직접 조작한다.** 모델은 화면을 볼 수 없으므로 지금까지는 사람이 "진단 첨부" 로 넘겨 줘야 했다. 이제 `sudal` CLI 로 직접 읽고 누른다.
 
 ```bash
-atelier browser read                                  # 보이는 글 + 누를 만한 것(선택자 포함)
-atelier browser click --text "저장"                    # 또는 --selector "#save"
-atelier browser fill --selector "#email" --value a@b.c
+sudal browser read                                  # 보이는 글 + 누를 만한 것(선택자 포함)
+sudal browser click --text "저장"                    # 또는 --selector "#save"
+sudal browser fill --selector "#email" --value a@b.c
 ```
 
 `read` 는 본문 텍스트(2만 자까지)와 버튼·링크·입력을 선택자·라벨과 함께 60개까지 준다 — 모델이 다음에 무엇을 누를지 정할 수 있게. `click --text` 는
@@ -248,7 +248,7 @@ atelier browser fill --selector "#email" --value a@b.c
 
 조작 대상은 **그 채팅 탭에서 지금 보이는 브라우저 하나**다. 렌더러가 `dom-ready` 때 웹뷰의 webContentsId 를 main 에 등록하고(요소만 생긴 시점에는
 아직 붙지 않아 id 를 물으면 던진다), 숨은 탭은 등록하지 않는다 — 에이전트가 안 보이는 화면을 조작하면 안 되기 때문이다. 브라우저가 없으면
-"먼저 `atelier browser open --url …` 으로 여세요" 라고 알려 준다.
+"먼저 `sudal browser open --url …` 으로 여세요" 라고 알려 준다.
 
 도구막대에는 세 가지가 더 있다. **요소 선택** 은 페이지에 스크립트를 주입해 클릭한 요소의 HTML·스타일과 그 영역 스크린샷을 채팅 입력창에 붙인다.
 **개발자 도구** 는 그 웹뷰의 콘솔·네트워크·요소 검사를 연다. **진단 첨부** 는 지금 화면 캡처와 콘솔 경고·오류, 실패한 요청을 한 덩어리로 붙인다 —
@@ -275,7 +275,7 @@ merge-base 기준 패치 하나로 떠서 원래 작업 트리에 적용한다(�
 팬아웃을 만든 저장소가 아니면 거부하고, 원래 탭의 턴이 돌고 있으면 끝난 뒤에 적용한다.
 
 **정리는 자동이 아니다.** 카드의 "worktree 삭제"를 눌러야 각 세션의 worktree를 지우고 탭을 닫는다(확인 한 번 거침). 채택해도 정리되지 않으므로
-비교를 더 볼 수 있지만, 누르지 않으면 worktree 폴더(기본 `~/atelier/worktrees/`)에 계속 남는다.
+비교를 더 볼 수 있지만, 누르지 않으면 worktree 폴더(기본 `~/sudal/worktrees/`)에 계속 남는다.
 
 ## 교차 리뷰 (Claude ↔ Codex)
 
@@ -291,16 +291,16 @@ Codex 로 짠 것은 Claude 가 본다. 리뷰 탭은 같은 워크스페이스�
 후속 지시(send)를 보낸다. Task 에 선행 조건(deps)을 걸면 앞의 것이 끝나야 다음이 시작하고, 게이트(gate)로 사람의 결정을 기다리게 할 수 있다.
 기록은 Run 별 `userData/orchestration/<runId>.jsonl` 에 append 되고, 앱을 껐다 켜도 재생으로 복구한다.
 
-코디네이터는 사람일 수도 있고 **탭(Claude·Codex)** 일 수도 있다. 탭 코디네이터가 `atelier orch …` 로 Run 을 만들고 워커를 부리는 것이
+코디네이터는 사람일 수도 있고 **탭(Claude·Codex)** 일 수도 있다. 탭 코디네이터가 `sudal orch …` 로 Run 을 만들고 워커를 부리는 것이
 원래 쓰임이다. "더보기" → "오케스트레이션" 패널에서는 Run 의 Task·워커·인박스를 보고, 워커의 질문에 직접 답하고, 게이트를 결정하고,
 끝난 워커를 정리한다. 코디네이터를 사람이 가져오는 "인수" 도 여기서 한다.
 
-**Run 을 만드는 UI 는 아직 없다.** 지금은 `atelier orch run-create …` 로 시작해야 하고, 패널은 만들어진 Run 을 다루는 곳이다.
+**Run 을 만드는 UI 는 아직 없다.** 지금은 `sudal orch run-create …` 로 시작해야 하고, 패널은 만들어진 Run 을 다루는 곳이다.
 
-## 앱 밖에서 조종하기 (atelier CLI)
+## 앱 밖에서 조종하기 (sudal CLI)
 
-설정 > 일반의 "CLI와 에이전트 스킬" 에서 atelier CLI 를 설치하면 `~/.local/bin/atelier` 가 생긴다. 실행 중인 앱에 유닉스 소켓(`userData/control.sock`, 0600)으로
-붙어 워크스페이스·탭·세션을 조종한다 — `atelier tab new --prompt …`, `tab send --wait`, `tab read`, `tab verify`, `tab fanout`,
+설정 > 일반의 "CLI와 에이전트 스킬" 에서 sudal CLI 를 설치하면 `~/.local/bin/sudal` 이 생긴다. 실행 중인 앱에 유닉스 소켓(`userData/control.sock`, 0600)으로
+붙어 워크스페이스·탭·세션을 조종한다 — `sudal tab new --prompt …`, `tab send --wait`, `tab read`, `tab verify`, `tab fanout`,
 `orch …`, `file open`, `browser open`. 탭 선택자는 `self`(명령을 부른 에이전트의 탭)·`active`(화면에 보이는 탭)·id·정확한 제목·유일한 접두사를 받는다.
 같은 화면의 "스킬 설치" 는 Claude Code(`~/.claude/skills`)와 Codex(`$CODEX_HOME/skills`)에 사용법 가이드를 깔아 준다.
 그래서 **앱 안의 에이전트가 자기가 사는 앱을 조종할 수 있다** — 탭을 새로 열어 일을 넘기거나, 워커를 띄우거나, 결과를 읽어 온다.
@@ -316,8 +316,8 @@ Codex 로 짠 것은 Claude 가 본다. 리뷰 탭은 같은 워크스페이스�
 ## 격리 세션 (git worktree)
 
 같은 저장소에서 세션 여러 개를 돌리면 서로 파일을 건드린다. 사이드바에서 워크스페이스를 우클릭 → "격리 세션 (git worktree)" 을 고르면
-저장소(활성 탭의 작업 경로 또는 워크스페이스 기본 경로)에서 브랜치 `atelier/<slug>` 와 worktree 를 만들어 그 경로를 작업 경로로 하는 새 세션을
-연다(`src/main/worktree.ts`). worktree 는 저장소 밖 `<worktree 폴더>/<repo>/<slug>`(기본 `~/atelier/worktrees`, 설정 > 일반 > 저장 위치에서 변경)에 두어 원본에 untracked 로 보이지 않는다. 저장소 안의 폴더는 고를 수 없다. 세션 헤더의
+저장소(활성 탭의 작업 경로 또는 워크스페이스 기본 경로)에서 브랜치 `sudal/<slug>` 와 worktree 를 만들어 그 경로를 작업 경로로 하는 새 세션을
+연다(`src/main/worktree.ts`). worktree 는 저장소 밖 `<worktree 폴더>/<repo>/<slug>`(기본 `~/sudal/worktrees`, 설정 > 일반 > 저장 위치에서 변경)에 두어 원본에 untracked 로 보이지 않는다. 저장소 안의 폴더는 고를 수 없다. 세션 헤더의
 브랜치 칩을 누르면 base 대비 커밋 수·미커밋 수가 보이고, "변경 가져오기" 는 원본 저장소에서 `git merge --no-edit <branch>` 를 한다(원본이 base
 브랜치에 있고 양쪽에 미커밋 변경이 없을 때만; 충돌이면 `merge --abort` 로 되돌리고 알림). "worktree 정리" 는 폴더를 지우고 탭을 원본 경로로 돌린다
 (미커밋 변경이 있으면 확인 뒤 강제; 브랜치는 base 에 합쳐졌을 때만 `-d` 로 지운다). 격리 세션 탭을 삭제하면 턴·터미널을 먼저 멈춘 뒤 worktree 를 지우고,
@@ -346,8 +346,8 @@ Codex 로 짠 것은 Claude 가 본다. 리뷰 탭은 같은 워크스페이스�
 터미널에서도 된다:
 
 ```bash
-atelier schedule add --name 아침점검 --cron "30 9 * * *" --prompt "…" --ws repo [--worktree] [--policy full]
-atelier schedule list | runs --id <id> | run --id <id> | set --id <id> --enabled false | rm --id <id>
+sudal schedule add --name 아침점검 --cron "30 9 * * *" --prompt "…" --ws repo [--worktree] [--policy full]
+sudal schedule list | runs --id <id> | run --id <id> | set --id <id> --enabled false | rm --id <id>
 ```
 
 ## 터미널
@@ -388,7 +388,7 @@ ANSI 를 벗긴 최근 출력을 이어 붙여 선택지 앞의 "$ <명령> › 
 
 ## 저장 위치
 
-`~/Library/Application Support/Atelier/` (이전 `ai-workbench/` 폴더가 있으면 첫 실행 때 자동으로 옮긴다). 설정 > 일반 > 저장 위치에서 폴더를 바로 열 수 있다.
+`~/Library/Application Support/Sudal/` (이전 `ai-workbench/` 폴더가 있으면 첫 실행 때 자동으로 옮긴다). 설정 > 일반 > 저장 위치에서 폴더를 바로 열 수 있다.
 - `workspaces.json` — 워크스페이스·탭 메타(제목, provider, 정책, provider 세션 id)
 - `threads/<tabId>.jsonl` — 탭별 이벤트 로그(재시작 시 재생, 닫힌 탭 다시 열기) · `threads/<tabId>.queue.json` — 작업 중에 써 둔 대기 지시
 - `renderer-state.json` — 입력창 초안·열린 에디터 파일·분할 화면·터미널 배치(바뀌는 즉시 기록) · `schedules.json` — 예약 프롬프트
@@ -402,8 +402,8 @@ ANSI 를 벗긴 최근 출력을 이어 붙여 선택지 앞의 "$ <명령> › 
   설정 화면 하단 "폴더 열기" 로 바로 연다.
 - `slash-commands.json` — 워크스페이스(cwd)별 Claude 슬래시 커맨드 목록 캐시
 - `snippets.json` — 프롬프트 스니펫 · `rate-limits.json` — 마지막으로 관측한 구독 한도
-- `worktrees/<repo>/<slug>/` — 예전 버전이 만든 worktree(계속 쓸 수 있다). 새 worktree 는 worktree 폴더(기본 `~/atelier/worktrees/`)에 만든다.
+- `worktrees/<repo>/<slug>/` — 예전 버전이 만든 worktree(계속 쓸 수 있다). 새 worktree 는 worktree 폴더(기본 `~/sudal/worktrees/`)에 만든다.
 - `orchestration/<runId>.jsonl` — Run 의 이벤트 원본(재시작 복구)
-- `control.sock` · `control.json` — atelier CLI 가 붙는 소켓과 그 위치
+- `control.sock` · `control.json` — sudal CLI 가 붙는 소켓과 그 위치
 - `hooks/<세션 id>.jsonl` — 터미널 모드 권한 대기 힌트용 훅 로그(CLI 종료 시 삭제)
 

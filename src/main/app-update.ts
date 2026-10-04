@@ -9,11 +9,11 @@ import fs from "node:fs";
 import type { UpdatePhase } from "@shared/ipc";
 import { mt } from "./i18n";
 
-export const RELEASE_REPO = "97kim/Atelier";
+export const RELEASE_REPO = "97kim/sudal";
 /** 탭까지 붙인 전체 이름. 같은 이름의 다른 cask 가 생겨도 이 탭의 것을 올린다. */
-export const CASK = "97kim/atelier/atelier";
+export const CASK = "97kim/sudal/sudal";
 /** brew list 는 탭을 붙인 이름을 받지 않는다(exit 1). 설치 확인은 짧은 이름으로. */
-const CASK_NAME = "atelier";
+const CASK_NAME = "sudal";
 const UPGRADE_TIMEOUT_MS = 10 * 60 * 1000;
 const TAIL_MAX = 2000;
 
@@ -40,7 +40,7 @@ export function compareVersions(a: string, b: string): number {
 
 export async function fetchLatestRelease(fetchImpl: typeof fetch = fetch): Promise<{ version: string; url: string; dmgSize?: number }> {
   const res = await fetchImpl(`https://api.github.com/repos/${RELEASE_REPO}/releases/latest`, {
-    headers: { Accept: "application/vnd.github+json", "User-Agent": "atelier" },
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "sudal" },
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(mt("main.update.githubStatus", { status: res.status }));
@@ -176,7 +176,7 @@ function progressReporter(onProgress?: (p: UpdateProgress) => void): (p: UpdateP
   };
 }
 
-/** cask 가 받을 DMG 의 캐시 경로("…/downloads/<URL 해시>--atelier-<버전>-arm64.dmg"). brew 에 묻는다. 못 구하면 null. */
+/** cask 가 받을 DMG 의 캐시 경로("…/downloads/<URL 해시>--sudal-<버전>-arm64.dmg"). brew 에 묻는다. 못 구하면 null. */
 async function caskDownloadPath(env: NodeJS.ProcessEnv): Promise<string | null> {
   const r = await runBrew(["--cache", "--cask", CASK], env, 30_000);
   const line = r.code === 0 ? r.out.trim().split("\n").pop()?.trim() : "";
@@ -207,7 +207,7 @@ export function downloadProgress(file: string, dmgSize?: number): UpdateProgress
 export async function caskVersion(env: NodeJS.ProcessEnv): Promise<string | null> {
   const r = await runBrew(["list", "--cask", "--versions", CASK_NAME], env, 30_000);
   if (r.code !== 0) return null;
-  // "atelier 0.9.29"
+  // "sudal 0.9.29"
   return r.out.trim().split(/\s+/)[1] ?? null;
 }
 

@@ -1,8 +1,8 @@
 // ⌘D 좌우 · ⌘⇧D 상하 분할. 실제로 두 xterm 이 나란히 놓이는지 좌표로 본다.
 const path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 let fails = 0;
 const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}):`, ok ? "PASS" : `FAIL${note ? " " + note : ""}`); };

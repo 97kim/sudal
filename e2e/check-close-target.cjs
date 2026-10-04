@@ -2,8 +2,8 @@
 // 네이티브 메뉴 가속기는 Playwright 로 못 누르므로, 앱이 그 단축키를 받았을 때와 같은 이벤트를 직접 쏴서 분기를 본다.
 const os = require("os"), path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 (async () => {
@@ -42,7 +42,7 @@ const { chromium } = require("playwright-core");
   console.log("RESULT (webview 클릭이 에디터 포커스로 잡힘):", focused.focusIsEditor ? "PASS" : "FAIL");
 
   // 2) 그 상태에서 ⌘W → 브라우저 탭만 닫히고 채팅 세션은 남아야 한다
-  await ev(() => window.__atelierShortcut?.("close-tab"));
+  await ev(() => window.__sudalShortcut?.("close-tab"));
   await page.waitForTimeout(900);
   const afterEditor = await state();
   console.log("에디터 포커스에서 ⌘W:", JSON.stringify(afterEditor));
@@ -54,7 +54,7 @@ const { chromium } = require("playwright-core");
   await page.waitForTimeout(500);
   const chatFocus = await state();
   console.log("RESULT (채팅 클릭이 채팅 포커스로):", chatFocus.focusIsEditor === false ? "PASS" : "FAIL");
-  await ev(() => window.__atelierShortcut?.("close-tab"));
+  await ev(() => window.__sudalShortcut?.("close-tab"));
   await page.waitForTimeout(1200);
   const afterChat = await state();
   console.log("채팅 포커스에서 ⌘W:", JSON.stringify(afterChat));

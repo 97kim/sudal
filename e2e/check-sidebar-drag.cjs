@@ -2,8 +2,8 @@
 // 브라우저 드래그를 사람 없이 재현해야 하므로 HTML5 드래그 이벤트를 직접 쏜다.
 const path = require("path"), fs = require("fs"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 let __fails = 0;
@@ -11,7 +11,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
 
 // 실행마다 새 워크스페이스를 쓴다 — 지난 실행의 세션이 섞이면 순서를 볼 수 없다.
 const stamp = Date.now();
-const A = `/tmp/atelier-drag-a-${stamp}`, B = `/tmp/atelier-drag-b-${stamp}`;
+const A = `/tmp/sudal-drag-a-${stamp}`, B = `/tmp/sudal-drag-b-${stamp}`;
 
 (async () => {
   for (const d of [A, B]) fs.mkdirSync(d, { recursive: true });

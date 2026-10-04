@@ -1,9 +1,9 @@
-// 에이전트가 인앱 브라우저를 직접 조작한다: atelier browser read / click / fill.
+// 에이전트가 인앱 브라우저를 직접 조작한다: sudal browser read / click / fill.
 // CLI 로만 부른다 — 모델이 실제로 쓰게 될 통로가 그것이기 때문이다.
 const path = require("path"), http = require("http"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const run = (...a) => execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" });
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const run = (...a) => execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" });
 const cli = (...a) => JSON.parse(run(...a));
 const tryCli = (...a) => {
   try {

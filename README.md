@@ -1,12 +1,12 @@
 <h1 align="center">
   <img src="build/icon-1024.png" alt="" width="72" /><br/>
-  Atelier
+  Sudal
 </h1>
 
 <p align="center"><a href="README.ko.md">한국어</a> · <strong>English</strong></p>
 
 <p align="center">
-  <a href="https://github.com/97kim/Atelier/releases"><img src="https://img.shields.io/github/v/release/97kim/Atelier?label=release&color=4f5bd5" alt="Latest release" /></a>
+  <a href="https://github.com/97kim/sudal/releases"><img src="https://img.shields.io/github/v/release/97kim/sudal?label=release&color=4f5bd5" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/license-MIT-4f5bd5" alt="License: MIT" />
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-4f5bd5" alt="Supported: macOS Apple Silicon" />
 </p>
@@ -17,28 +17,28 @@
 </p>
 
 <p align="center">
-  <a href="#install"><strong>Install</strong></a> · <a href="#start-your-first-task">Start your first task</a> · <a href="docs/GUIDE.md">Feature guide</a> · <a href="https://github.com/97kim/Atelier/releases">Releases</a> · <a href="https://github.com/97kim/Atelier/issues">Report an issue</a>
+  <a href="#install"><strong>Install</strong></a> · <a href="#start-your-first-task">Start your first task</a> · <a href="docs/GUIDE.md">Feature guide</a> · <a href="https://github.com/97kim/sudal/releases">Releases</a> · <a href="https://github.com/97kim/sudal/issues">Report an issue</a>
 </p>
 
 <p align="center">
-  <img src="docs/images/en/demo-delegate.gif" alt="Claude fixes a bug, then uses the atelier CLI to open a Codex tab and hand off the remaining fix and a new test; when Codex finishes, Claude collects the result, tests it, and wraps up" width="960" />
+  <img src="docs/images/en/demo-delegate.gif" alt="Claude fixes a bug, then uses the sudal CLI to open a Codex tab and hand off the remaining fix and a new test; when Codex finishes, Claude collects the result, tests it, and wraps up" width="960" />
 </p>
 
 <p align="center">
   <sub>All I told Claude was: "Fix it, then hand the missing-quantity case and its test to Codex." Claude opened the Codex tab itself, handed off the work, and when Codex finished, collected the result, tested it, and wrapped up. (The waiting parts are sped up.)</sub>
 </p>
 
-You don't need an Atelier account. The app finds the `claude` and `codex` CLIs you've already logged in to and uses them, so `CLAUDE.md`, skills, MCP servers, and the rest of your setup apply exactly as they do in the terminal.
+You don't need an Sudal account. The app finds the `claude` and `codex` CLIs you've already logged in to and uses them, so `CLAUDE.md`, skills, MCP servers, and the rest of your setup apply exactly as they do in the terminal.
 
 ## Agents hand off work on their own
 
-Claude Code and Codex inside the app open new tabs with the `atelier` CLI, hand off work, and read the results when it's done. Opening the tab and carrying the result back is the agents' job, not yours.
+Claude Code and Codex inside the app open new tabs with the `sudal` CLI, hand off work, and read the results when it's done. Opening the tab and carrying the result back is the agents' job, not yours.
 Install the CLI and skills under Settings → General → **CLI and agent skills** and your agents learn how to use it. It applies to sessions you start after installing. You can run the same commands yourself in a terminal.
 
 ```
-atelier tab new --provider codex --title "Review" --prompt "Review the code I just changed"
-atelier tab send --tab Review --text "Run the tests too" --wait
-atelier tab read --tab Review --last 3
+sudal tab new --provider codex --title "Review" --prompt "Review the code I just changed"
+sudal tab send --tab Review --text "Run the tests too" --wait
+sudal tab read --tab Review --last 3
 ```
 
 ## Features
@@ -139,7 +139,7 @@ Click `···` → "Continue in terminal" to carry on the same conversation in t
 
 ### Check your fixes in the in-app browser
 
-Put the screen you're building next to the chat and switch it to phone or tablet width. Agents can read and click that page with `atelier browser`, so they verify their own fixes.
+Put the screen you're building next to the chat and switch it to phone or tablet width. Agents can read and click that page with `sudal browser`, so they verify their own fixes.
 
 </td>
 <td width="58%"><img src="docs/images/en/browser.png" alt="A shopping cart page under development, open in the in-app browser next to the chat" width="100%" /></td>
@@ -153,7 +153,7 @@ Put the screen you're building next to the chat and switch it to phone or tablet
 | Claude Code | A logged-in `claude` CLI |
 | Codex | A logged-in `codex` CLI |
 
-Either one is enough. If you switch agents mid-conversation, Atelier summarizes the conversation so far and passes it along.
+Either one is enough. If you switch agents mid-conversation, Sudal summarizes the conversation so far and passes it along.
 
 ## Install
 
@@ -163,14 +163,14 @@ If you don't have one yet, follow the [Claude Code setup](https://code.claude.co
 Install with Homebrew.
 
 ```
-brew tap 97kim/atelier
-brew trust --cask 97kim/atelier/atelier
-brew install --cask atelier
+brew tap 97kim/sudal
+brew trust --cask 97kim/sudal/sudal
+brew install --cask sudal
 ```
 
-- `brew tap` adds the repository that hosts the Atelier cask to Homebrew.
-- `brew trust` is a step Homebrew 7 and later requires. For a cask outside the official list, you have to tell Homebrew once that you trust it. The command above trusts only Atelier, not the whole tap.
-- When a new version is out, an update button appears next to the version at the bottom left of the sidebar. Click it to see the progress, then restart when it finishes. You can also update under **Settings → General → Updates**, or in a terminal with `brew update && brew upgrade --cask atelier`. Running `brew upgrade` alone doesn't refresh the tap, so it won't find the new version.
+- `brew tap` adds the repository that hosts the Sudal cask to Homebrew.
+- `brew trust` is a step Homebrew 7 and later requires. For a cask outside the official list, you have to tell Homebrew once that you trust it. The command above trusts only Sudal, not the whole tap.
+- When a new version is out, an update button appears next to the version at the bottom left of the sidebar. Click it to see the progress, then restart when it finishes. You can also update under **Settings → General → Updates**, or in a terminal with `brew update && brew upgrade --cask sudal`. Running `brew upgrade` alone doesn't refresh the tap, so it won't find the new version.
 
 **First launch**: The app isn't signed or notarized, so macOS blocks it once. Try opening the app, and when the block notice appears, go to **System Settings → Privacy & Security** and click "Open Anyway". Once you allow it, the permission carries over to later updates.
 
@@ -180,12 +180,12 @@ brew install --cask atelier
 Remove the quarantine attribute in a terminal and the app opens right away.
 
 ```
-xattr -d com.apple.quarantine /Applications/Atelier.app
+xattr -d com.apple.quarantine /Applications/Sudal.app
 ```
 
 </details>
 
-To install without Homebrew, download the DMG from [Releases](https://github.com/97kim/Atelier/releases) and move `Atelier.app` to your Applications folder.
+To install without Homebrew, download the DMG from [Releases](https://github.com/97kim/sudal/releases) and move `Sudal.app` to your Applications folder.
 
 ## Start your first task
 
@@ -217,16 +217,16 @@ Shortcuts are collected in the [feature guide](docs/GUIDE.md#keyboard-shortcuts)
 
 ### Do I need an account or API key?
 
-You don't need a separate Atelier account. It uses the `claude` and `codex` CLIs you've already logged in to, and billing is just each service's subscription or API pricing.
-Atelier runs the CLIs you installed and logged in to yourself. It doesn't collect, store, or relay your credentials, and each service's terms, pricing, and limits apply.
+You don't need a separate Sudal account. It uses the `claude` and `codex` CLIs you've already logged in to, and billing is just each service's subscription or API pricing.
+Sudal runs the CLIs you installed and logged in to yourself. It doesn't collect, store, or relay your credentials, and each service's terms, pricing, and limits apply.
 
 ### Where does my code go?
 
-Atelier itself sends nothing anywhere. Communication with the models is handled by the Claude Code and Codex CLIs, as usual.
+Sudal itself sends nothing anywhere. Communication with the models is handled by the Claude Code and Codex CLIs, as usual.
 
 ### Where is my data stored?
 
-Workspaces and chat history are in `~/Library/Application Support/Atelier/`, and worktrees for isolated sessions are in `~/atelier/worktrees/`. Open or change them under **Settings → General → Storage location**.
+Workspaces and chat history are in `~/Library/Application Support/Sudal/`, and worktrees for isolated sessions are in `~/sudal/worktrees/`. Open or change them under **Settings → General → Storage location**.
 
 ### Does it work on Intel Macs?
 

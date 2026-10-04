@@ -2,10 +2,10 @@ const signAdhoc = require("./scripts/sign-adhoc.cjs");
 
 
 module.exports = {
-  appId: "io.github.97kim.atelier",
-  productName: "Atelier",
+  appId: "io.github.97kim.sudal",
+  productName: "Sudal",
   icon: "build/icon.icns",
-  artifactName: "atelier-${version}-${arch}.${ext}",
+  artifactName: "sudal-${version}-${arch}.${ext}",
   directories: { output: "release" },
   // node-pty 의 네이티브 바이너리(pty.node, spawn-helper)는 asar 안에서 실행할 수 없다.
   asarUnpack: ["node_modules/node-pty/**"],
@@ -23,7 +23,7 @@ module.exports = {
     "!node_modules/node-pty/prebuilds/darwin-x64/**",
     "!node_modules/node-pty/prebuilds/win32-*/**",
   ],
-  // `atelier` CLI 와 에이전트용 가이드. Contents/Resources/cli/ 에 그대로 놓인다(앱의 Electron 을 node 로 써서 실행).
+  // `sudal` CLI 와 에이전트용 가이드. Contents/Resources/cli/ 에 그대로 놓인다(앱의 Electron 을 node 로 써서 실행).
   extraResources: [{ from: "cli", to: "cli", filter: ["**/*"] }],
   mac: {
     // GitHub Releases 에 올리는 것은 arm64 DMG 하나뿐이다. Intel 을 받거나 자동 업데이트를 붙이면

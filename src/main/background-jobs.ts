@@ -19,8 +19,8 @@ const DEBOUNCE_MS = 400;
 const POLL_MS = 4000;
 
 export function claudeDataRoot(): string {
-  // 검증용 우회 — 실제 플러그인 데이터를 건드리지 않고 작업 목록을 흉내 내게 한다(ATELIER_APPROVED_ROOTS 와 같은 결).
-  const override = process.env.ATELIER_JOBS_ROOT?.trim();
+  // 검증용 우회 — 실제 플러그인 데이터를 건드리지 않고 작업 목록을 흉내 내게 한다(SUDAL_APPROVED_ROOTS 와 같은 결).
+  const override = process.env.SUDAL_JOBS_ROOT?.trim();
   if (override) return override;
   const cfg = process.env.CLAUDE_CONFIG_DIR?.trim();
   return join(cfg && cfg.length > 0 ? cfg : join(homedir(), ".claude"), "plugins", "data");

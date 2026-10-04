@@ -17,9 +17,9 @@ test("detectCodexApproval: 명령·파일·권한·도구 프롬프트와 답함
   assert.deepEqual(detectCodexApproval("Allow Codex to run `ls`  … Approved action: ls"), { kind: "answered" });
   // 0.153 실기기 캡처(ANSI 제거 후): 헤더 뒤 모델이 쓴 Reason, 그 다음 "$ 명령", 선택지
   const real =
-    "• Running touch /Users/me/atelier-approval-probe .    Would you like to run the following command?   Environment: local   Reason: 샌드박스가 홈 디렉터리 쓰기를 차단했습니다. 승인하시겠습니까?   $ touch /Users/me/atelier-approval-probe . › 1. Yes, proceed (y)  2. Yes, and don't ask again for commands that start with `touch /Users/me/atelier-     approval-probe .` (p)  3. No, and tell Codex what to do differently (esc)   Press enter to confirm or esc to cancel";
+    "• Running touch /Users/me/sudal-approval-probe .    Would you like to run the following command?   Environment: local   Reason: 샌드박스가 홈 디렉터리 쓰기를 차단했습니다. 승인하시겠습니까?   $ touch /Users/me/sudal-approval-probe . › 1. Yes, proceed (y)  2. Yes, and don't ask again for commands that start with `touch /Users/me/sudal-     approval-probe .` (p)  3. No, and tell Codex what to do differently (esc)   Press enter to confirm or esc to cancel";
   const r4 = detectCodexApproval(real, 7);
-  assert.deepEqual(r4, { kind: "prompt", attention: { kind: "permission", tool: "명령 실행", summary: "touch /Users/me/atelier-approval-probe .", since: 7 } });
+  assert.deepEqual(r4, { kind: "prompt", attention: { kind: "permission", tool: "명령 실행", summary: "touch /Users/me/sudal-approval-probe .", since: 7 } });
   // 박스 문자·줄바꿈이 끼어도 같다
   const boxed = "Would you like to run the following command?\n│ $ git push origin main\n│ › 1. Yes, proceed (y)\n│   3. No (esc)\n Press enter to confirm or esc to cancel";
   assert.equal((detectCodexApproval(boxed) as { attention: { summary: string } }).attention.summary, "git push origin main");

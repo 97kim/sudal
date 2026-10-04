@@ -183,7 +183,7 @@ export interface SessionManagerDeps {
   /** 돌고 있는 Codex 턴에 지시를 끼워 넣는다. 테스트에서 바꿔 끼운다(기본: codex-adapter 의 steerCodexTurn). */
   steerCodex?: typeof steerCodexTurn;
   emit(tabId: string, event: ChatEvent): void;
-  /** tabId: 그 탭의 에이전트 프로세스에 자기 탭 id(ATELIER_TAB_ID)를 알려 준다. */
+  /** tabId: 그 탭의 에이전트 프로세스에 자기 탭 id(SUDAL_TAB_ID)를 알려 준다. */
   claudeRuntime(tabId?: string): Promise<ClaudeRuntime>;
   codexRuntime(tabId?: string): Promise<CodexRuntime>;
   store?: SessionStore;

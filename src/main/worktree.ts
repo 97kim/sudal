@@ -1,5 +1,5 @@
 // 세션별 git worktree: 같은 저장소에서 세션 여러 개가 서로 파일을 건드리지 않게 탭마다 브랜치+작업 트리를 따로 준다.
-// worktree 는 저장소 밖(<worktree 폴더>/<repo>/<slug>, 기본 ~/atelier/worktrees)에 만들어 원본에 untracked 파일로 보이지 않게 한다.
+// worktree 는 저장소 밖(<worktree 폴더>/<repo>/<slug>, 기본 ~/sudal/worktrees)에 만들어 원본에 untracked 파일로 보이지 않게 한다.
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
@@ -59,10 +59,10 @@ export async function worktreeCreate(
   fs.mkdirSync(dir, { recursive: true });
   // 이름 충돌 회피
   let slug = opts.slug;
-  for (let i = 2; fs.existsSync(join(dir, slug)) || (await run(top, ["rev-parse", "--verify", "-q", `refs/heads/atelier/${slug}`], env)).code === 0; i++)
+  for (let i = 2; fs.existsSync(join(dir, slug)) || (await run(top, ["rev-parse", "--verify", "-q", `refs/heads/sudal/${slug}`], env)).code === 0; i++)
     slug = `${opts.slug}-${i}`;
   const path = join(dir, slug);
-  const branch = `atelier/${slug}`;
+  const branch = `sudal/${slug}`;
   const r = await run(top, ["worktree", "add", "-b", branch, path, "HEAD"], env);
   if (r.code !== 0) return { ok: false, error: r.stderr.trim() || mt("repo.worktree.createFailed") };
   return { ok: true, worktree: { repo: top, path, branch, base } };
@@ -230,7 +230,7 @@ export async function worktreeBase(env: NodeJS.ProcessEnv, wt: WorktreeMeta): Pr
  * 실제 인덱스는 건드리지 않는다 — 세션이 일부만 스테이징해 둔 상태를 잃지 않게.
  */
 async function withStagedSnapshot<T>(env: NodeJS.ProcessEnv, wt: WorktreeMeta, fn: (env2: NodeJS.ProcessEnv) => Promise<T>): Promise<T | { ok: false; error: string }> {
-  const tmp = join(tmpdir(), `atelier-index-${process.pid}-${randomUUID()}`);
+  const tmp = join(tmpdir(), `sudal-index-${process.pid}-${randomUUID()}`);
   const env2 = { ...env, GIT_INDEX_FILE: tmp };
   try {
     const rt = await run(wt.path, ["read-tree", "HEAD"], env2);

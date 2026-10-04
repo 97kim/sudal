@@ -75,7 +75,7 @@ export const main: DeepPartial<typeof ko> = {
     codexCliMissing: "Couldn't find the Codex CLI.",
     cliLaunchFailed: "Couldn't start the CLI.",
     forkFailed: "Couldn't branch: {{detail}}",
-    browserNotOpen: "No browser is open in this tab. Open one first with `atelier browser open --url …`.",
+    browserNotOpen: "No browser is open in this tab. Open one first with `sudal browser open --url …`.",
     browserClosed: "The browser tab was closed. Open it again.",
     browserNoResult: "The browser returned no result.",
     emptyContent: "The content is empty.",
@@ -94,13 +94,17 @@ export const main: DeepPartial<typeof ko> = {
   export: {
     failed: "Export failed: {{detail}}",
   },
+  legacy: {
+    runningTitle: "Atelier is still running",
+    runningBody: "Sudal is the new name for Atelier. To move your data over, quit Atelier and open Sudal again.",
+  },
   cli: {
-    shimComment: "# Atelier CLI — runs the app's bundled cli/atelier.cjs with the app's Electron (node mode). Reinstall from Settings > General to update it.",
+    shimComment: "# Sudal CLI — runs the app's bundled cli/sudal.cjs with the app's Electron (node mode). Reinstall from Settings > General to update it.",
     pathHint: 'The terminal PATH does not include {{dir}}. Add export PATH="$HOME/.local/bin:$PATH" to ~/.zshrc and open a new terminal.',
     noAgents: "Neither Claude Code (~/.claude) nor Codex (~/.codex) is installed on this computer.",
   },
   update: {
-    caskOnly: "You can only update /Applications/Atelier.app when it was installed with Homebrew.",
+    caskOnly: "You can only update /Applications/Sudal.app when it was installed with Homebrew.",
     checkFirst: "Check for updates first.",
     githubStatus: "GitHub responded with {{status}}",
     versionUnreadable: "Couldn't read the release version.",

@@ -140,8 +140,8 @@ export const settings = {
     typescriptFallback: "프로젝트 node_modules 에서 찾음 (전역 없음 — npm i -g typescript 권장)",
     pathPlaceholder: "실행 파일 경로 (비우면 PATH에서 자동으로 찾습니다)",
     autoFind: "자동으로 찾기",
-    savedPath: "경로를 저장했습니다. 언어 서버가 새로 시작될 때 적용됩니다. 바로 적용하려면 Atelier를 다시 시작하세요.",
-    savedAuto: "실행 파일을 자동으로 찾도록 저장했습니다. 언어 서버가 새로 시작될 때 적용됩니다. 바로 적용하려면 Atelier를 다시 시작하세요.",
+    savedPath: "경로를 저장했습니다. 언어 서버가 새로 시작될 때 적용됩니다. 바로 적용하려면 Sudal을 다시 시작하세요.",
+    savedAuto: "실행 파일을 자동으로 찾도록 저장했습니다. 언어 서버가 새로 시작될 때 적용됩니다. 바로 적용하려면 Sudal을 다시 시작하세요.",
     running: "실행 중: {{list}}",
   },
   mcp: {
@@ -185,7 +185,7 @@ export const settings = {
   },
   install: {
     title: "CLI와 에이전트 스킬",
-    description: "<code>atelier</code> CLI를 설치하면 터미널에서 워크스페이스와 탭을 열고 관리할 수 있습니다. 스킬도 설치하면 Claude Code와 Codex에 말로 요청해 Atelier를 조작할 수 있습니다.",
+    description: "<code>sudal</code> CLI를 설치하면 터미널에서 워크스페이스와 탭을 열고 관리할 수 있습니다. 스킬도 설치하면 Claude Code와 Codex에 말로 요청해 Sudal을 조작할 수 있습니다.",
     skillName: "{{label}} 스킬",
     notInstalled: "설치되지 않음",
     otherApp: "다른 앱 위치를 가리킴",

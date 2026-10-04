@@ -100,7 +100,7 @@ function fakeDeps() {
       calls.push(`runInBrowser ${tabId} ${script.slice(0, 20)}`);
       return { ok: true };
     },
-    guide: (name) => (name === "atelier-cli" ? "# 가이드" : null),
+    guide: (name) => (name === "sudal-cli" ? "# 가이드" : null),
   };
   return { deps, calls, statuses, pending, model };
 }

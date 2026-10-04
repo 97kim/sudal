@@ -1,6 +1,6 @@
 [한국어](GUIDE.ko.md)
 
-# Atelier Feature Guide
+# Sudal Feature Guide
 
 This document covers what each feature does and how it works. If you're new, start with the [README](../README.md).
 
@@ -169,10 +169,10 @@ the initialize request's `tsserver.path` (without it, the server errors with "va
 doesn't run the `tsserver.js` inside it (VS Code also defaults to the bundled version). Server children get only a minimal env such as PATH and HOME.
 The server root is decided not by the renderer but by main, from the tab's cwd (the top level of the repository), and file read/write/operations/listing, git, MCP status, and server start are accepted only from the actual tab/workspace cwd (or inside it).
 The tab cwd and the workspace path itself are accepted only inside roots the user picked in the directory picker (plus paths used in previous runs, and worktree roots), so the renderer can't widen the boundary
-(you can add a root for verification with `ATELIER_APPROVED_ROOTS=path:path`).
+(you can add a root for verification with `SUDAL_APPROVED_ROOTS=path:path`).
 If a server dies, the badge goes off and it's started again from the next file. When no TS/JS document is open (main counts `didOpen`/`didClose`) for 3 minutes,
-the server is shut down, and started again the next time a file opens (adjust with `ATELIER_LSP_IDLE_MS`). Quitting the app ends the servers too.
-Launch with `ATELIER_DEBUG_LSP=1` and the JSON-RPC round trips are written to the main log.
+the server is shut down, and started again the next time a file opens (adjust with `SUDAL_LSP_IDLE_MS`). Quitting the app ends the servers too.
+Launch with `SUDAL_DEBUG_LSP=1` and the JSON-RPC round trips are written to the main log.
 
 **File tree operations**: Right-click an item in the right-hand "Files" tab for a menu of Open / New file / New folder / Rename / Move to Trash (right-click on empty space or the + in the header makes a
 new file or folder at the root), and the name is typed in place (Enter to confirm, Esc to cancel, and for files everything before the extension is selected). Creating and renaming are allowed only inside the session's repository, with no overwriting
@@ -199,7 +199,7 @@ choice popup, and "Don't ask again" remembers it (`localStorage` `workbench.link
 browser, and ⌥-click goes straight to the in-app browser).
 The address bar (without a scheme, localhost/IPs get http and everything else gets https; anything with a space is a search), back/forward/reload, and open in default browser. It uses an Electron `<webview>`, and
 main's `will-attach-webview` locks it to no preload, no node, sandboxed, and http(s) only, and a new window from the webview opens in the same webview. Cookies and storage are separated from the app by the
-`persist:atelier-browser` partition.
+`persist:sudal-browser` partition.
 
 **Logins survive quitting and restarting the app.** Cookies with an expiry already stay on disk because the partition is `persist:`, but login sessions are usually session cookies with no expiry, and
 Chromium throws them away on quit (it keeps them only in memory). So on quit it writes down the session cookies and puts them back on launch, the same mechanism as Chrome's "Continue where you left off"
@@ -232,12 +232,12 @@ It uses the same decision as ⌘W (`browser-active.ts`), so while you're using t
 **Viewport width presets** let you check a narrow screen without shrinking the window: Full, Phone (390), Tablet (834), and Desktop (1280).
 A preset wider than the panel follows the panel width, so use it together with widen view (⌘⇧E). **Zoom** is the −/percentage/+ in the toolbar, and clicking the percentage returns to 100%.
 
-**Agents operate the browser directly.** Models can't see the screen, so until now a person had to hand it over with "Attach diagnostics". Now they read and click through the `atelier` CLI directly.
+**Agents operate the browser directly.** Models can't see the screen, so until now a person had to hand it over with "Attach diagnostics". Now they read and click through the `sudal` CLI directly.
 
 ```bash
-atelier browser read                                  # visible text + clickable items (with selectors)
-atelier browser click --text "Save"                    # or --selector "#save"
-atelier browser fill --selector "#email" --value a@b.c
+sudal browser read                                  # visible text + clickable items (with selectors)
+sudal browser click --text "Save"                    # or --selector "#save"
+sudal browser fill --selector "#email" --value a@b.c
 ```
 
 `read` returns the body text (up to 20,000 characters) and up to 60 buttons, links, and inputs with their selectors and labels, so the model can decide what to click next. `click --text`
@@ -247,7 +247,7 @@ carried through `JSON.stringify` so quotes and backslashes can't break the code.
 
 The target is **the one browser currently visible in that chat tab**. The renderer registers the webview's webContentsId with main on `dom-ready` (when only the element exists it
 isn't attached yet, and asking for the id throws), and hidden tabs aren't registered, because an agent shouldn't operate a screen you can't see. If there's no browser, it says
-"Open one first with `atelier browser open --url …`".
+"Open one first with `sudal browser open --url …`".
 
 The toolbar has three more tools. **Pick element** injects a script into the page and pastes the clicked element's HTML and styles plus a screenshot of its area into the chat input box.
 **Developer tools** opens that webview's console, network, and element inspector. **Attach diagnostics** attaches the current screen capture, console warnings and errors, and failed requests in one bundle,
@@ -274,7 +274,7 @@ makes it into one patch against the merge-base, and applies it to the original w
 It refuses if this isn't the repository the fan-out was created from, and if the original tab has a turn running, it applies after it finishes.
 
 **Cleanup isn't automatic.** Only pressing "Delete worktrees" on the card deletes each session's worktree and closes its tab (with one confirmation). Adopting doesn't clean up,
-so you can keep looking at the comparison, but if you don't press it, the worktree folder (by default `~/atelier/worktrees/`) stays.
+so you can keep looking at the comparison, but if you don't press it, the worktree folder (by default `~/sudal/worktrees/`) stays.
 
 ## Cross-review (Claude ↔ Codex)
 
@@ -290,16 +290,16 @@ Workers run in isolated worktrees and can ask the coordinator (ask) or report (w
 a follow-up instruction (send). Put a prerequisite (deps) on a Task and the next one starts only when the earlier one finishes, and a gate lets you make it wait for a human decision.
 The record is appended to `userData/orchestration/<runId>.jsonl` per Run, and recovered by replay even if you quit and restart the app.
 
-The coordinator can be a person or a **tab (Claude, Codex)**. The original use is for a tab coordinator to create a Run with `atelier orch …` and direct workers.
+The coordinator can be a person or a **tab (Claude, Codex)**. The original use is for a tab coordinator to create a Run with `sudal orch …` and direct workers.
 In the "More" → "Orchestration" panel you see a Run's Tasks, workers, and inbox, answer a worker's question yourself, decide gates,
 and clean up finished workers. "Take over", where a person takes the coordinator role, is also done here.
 
-**There's no UI for creating a Run yet.** For now you start with `atelier orch run-create …`, and the panel is where you handle a Run that already exists.
+**There's no UI for creating a Run yet.** For now you start with `sudal orch run-create …`, and the panel is where you handle a Run that already exists.
 
-## Controlling from outside the app (atelier CLI)
+## Controlling from outside the app (sudal CLI)
 
-Install the atelier CLI under Settings > General > "CLI and agent skills" and `~/.local/bin/atelier` is created. It connects to the running app over a Unix socket (`userData/control.sock`, 0600)
-to control workspaces, tabs, and sessions: `atelier tab new --prompt …`, `tab send --wait`, `tab read`, `tab verify`, `tab fanout`,
+Install the sudal CLI under Settings > General > "CLI and agent skills" and `~/.local/bin/sudal` is created. It connects to the running app over a Unix socket (`userData/control.sock`, 0600)
+to control workspaces, tabs, and sessions: `sudal tab new --prompt …`, `tab send --wait`, `tab read`, `tab verify`, `tab fanout`,
 `orch …`, `file open`, `browser open`. A tab selector takes `self` (the tab of the agent running the command), `active` (the tab on screen), an id, an exact title, or a unique prefix.
 "Install skill" on the same screen installs a usage guide into Claude Code (`~/.claude/skills`) and Codex (`$CODEX_HOME/skills`).
 That's how **an agent inside the app can control the app it lives in**: open a new tab and hand off work, launch workers, or read back results.
@@ -314,9 +314,9 @@ Because this feature relies on someone else's file format, if the format changes
 
 ## Isolated sessions (git worktree)
 
-Running several sessions in the same repository makes them step on each other's files. In the sidebar, right-click a workspace → "Isolated session (git worktree)" and it creates a branch `atelier/<slug>` and a worktree
+Running several sessions in the same repository makes them step on each other's files. In the sidebar, right-click a workspace → "Isolated session (git worktree)" and it creates a branch `sudal/<slug>` and a worktree
 from the repository (the active tab's working directory or the workspace's default path), then opens a new session with that path as its working directory
-(`src/main/worktree.ts`). The worktree goes outside the repository at `<worktree folder>/<repo>/<slug>` (by default `~/atelier/worktrees`, changeable in Settings > General > Storage location), so it doesn't show up as untracked in the original. You can't pick a folder inside the repository. Click
+(`src/main/worktree.ts`). The worktree goes outside the repository at `<worktree folder>/<repo>/<slug>` (by default `~/sudal/worktrees`, changeable in Settings > General > Storage location), so it doesn't show up as untracked in the original. You can't pick a folder inside the repository. Click
 the branch chip in the session header to see the number of commits and uncommitted changes against base, and "Merge changes" runs `git merge --no-edit <branch>` in the original repository (only when the original is on the base
 branch and neither side has uncommitted changes; on a conflict it rolls back with `merge --abort` and notifies you). "Clean up worktree" deletes the folder and returns the tab to the original path
 (if there are uncommitted changes, it forces after confirmation; the branch is deleted with `-d` only if it has been merged into base). Deleting an isolated session tab stops its turn and terminal first and then deletes the worktree,
@@ -345,8 +345,8 @@ it isn't over yet. A run whose end couldn't be seen because the app died is left
 It works from the terminal too:
 
 ```bash
-atelier schedule add --name morning-check --cron "30 9 * * *" --prompt "…" --ws repo [--worktree] [--policy full]
-atelier schedule list | runs --id <id> | run --id <id> | set --id <id> --enabled false | rm --id <id>
+sudal schedule add --name morning-check --cron "30 9 * * *" --prompt "…" --ws repo [--worktree] [--policy full]
+sudal schedule list | runs --id <id> | run --id <id> | set --id <id> --enabled false | rm --id <id>
 ```
 
 ## Terminal
@@ -387,7 +387,7 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
 
 ## Storage location
 
-`~/Library/Application Support/Atelier/` (if the old `ai-workbench/` folder exists, it's moved automatically on first launch). You can open the folder directly from Settings > General > Storage location.
+`~/Library/Application Support/Sudal/` (if the old `ai-workbench/` folder exists, it's moved automatically on first launch). You can open the folder directly from Settings > General > Storage location.
 - `workspaces.json` — workspace and tab metadata (title, provider, policy, provider session id)
 - `threads/<tabId>.jsonl` — per-tab event log (replayed on restart, reopening closed tabs) · `threads/<tabId>.queue.json` — instructions queued while working
 - `renderer-state.json` — input box drafts, open editor files, split view, terminal layout (written the moment they change) · `schedules.json` — scheduled prompts
@@ -401,7 +401,7 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
   Open it directly with "Open folder" at the bottom of the settings screen.
 - `slash-commands.json` — cache of the Claude slash command list per workspace (cwd)
 - `snippets.json` — prompt snippets · `rate-limits.json` — the last observed subscription limits
-- `worktrees/<repo>/<slug>/` — worktrees created by older versions (still usable). New worktrees go in the worktree folder (by default `~/atelier/worktrees/`).
+- `worktrees/<repo>/<slug>/` — worktrees created by older versions (still usable). New worktrees go in the worktree folder (by default `~/sudal/worktrees/`).
 - `orchestration/<runId>.jsonl` — the raw events of a Run (restart recovery)
-- `control.sock` · `control.json` — the socket the atelier CLI connects to, and its location
+- `control.sock` · `control.json` — the socket the sudal CLI connects to, and its location
 - `hooks/<session id>.jsonl` — hook log for the terminal-mode permission-waiting hint (deleted when the CLI exits)

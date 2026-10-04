@@ -1,5 +1,5 @@
-import { isAbsolute, join, relative, resolve } from "node:path";
-import { existsSync, rmSync, mkdirSync, readdirSync, renameSync, rmdirSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, rmSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir, userInfo } from "node:os";
@@ -21,6 +21,7 @@ import type { PermissionAnswer } from "@shared/chat-events";
 import { isThemeMode } from "@shared/theme";
 import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT, LOCALES, type Locale } from "@shared/i18n/locale";
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
+import { legacyWorktreeDir, migrateUserData, removeLegacyInstall, type UserDataMigration } from "./legacy-name";
 import { msgText, type Msg, type MsgKey } from "@shared/i18n/msg";
 import { NOTIFY_ON_DONE_DEFAULT, isNotifyOnDone, shouldNotifyDone, PROVIDERS, IPC, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, MAX_CONCURRENT_MIN, SESSION_IDLE_MINUTES_DEFAULT, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_MIN, type AppSettingsDto, type AppInfoDto, type UpdateCheckDto, type UpdateRunResult, type UpdateStatusDto, type ChatEventEnvelope, type ChatSendDto, type ChatSendResult, type CompactResult, type ControlOpenDto, type InstallStatusDto, type CliCandidateDto, type CliDiagnosticsDto, type CliStatusDto, type OverrideSetResultDto, type Provider, type RendererErrorDto, type SessionConfigDto, type ShortcutName, type SwitchProviderDto, type UsageSettingsDto, type VerifyStartResult, type FanoutStartDto, type FanoutStartResult, type FanoutCompareDto, type FanoutAdoptResult, type RateLimitWindowDto, type UsageStatusDto, type WorkspaceStateDto, type ManagedWorktreeDto, SearchResultDto } from "@shared/ipc";
 import {
@@ -104,26 +105,20 @@ import { fetchUsageText } from "./claude-control";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
 import { WorkspaceService } from "./workspaces";
 
-// ===== userData 이관: 앱 이름이 ai-workbench → atelier 로 바뀌면서 폴더도 바뀐다 =====
-// Electron 이 새 폴더를 먼저 만들어 두므로 폴더 유무가 아니라 workspaces.json 유무로 판단하고, 항목 단위로 옮긴다
-// (세션 기록·설정·사용량 캐시 유지). 새 폴더에 이미 같은 이름이 있으면(Chromium 캐시 등) 건너뛴다. userData 를 읽는 어떤 코드보다 먼저.
+// ===== userData 이관: 앱 이름이 바뀌면(ai-workbench → Atelier → Sudal) 폴더도 바뀐다 =====
+// 세션 기록·설정·사용량 캐시를 옛 폴더에서 넘겨받는다(legacy-name.ts). userData 를 읽는 어떤 코드보다 먼저 한다.
 {
-  const next = app.getPath("userData");
-  const prev = join(app.getPath("appData"), "ai-workbench");
-  if (
-    !existsSync(join(next, "workspaces.json")) &&
-    existsSync(join(prev, "workspaces.json"))
-  ) {
-    try {
-      mkdirSync(next, { recursive: true });
-      for (const name of readdirSync(prev)) {
-        if (existsSync(join(next, name))) continue;
-        renameSync(join(prev, name), join(next, name));
-      }
-      if (readdirSync(prev).length === 0) rmdirSync(prev);
-    } catch (e) {
-      console.error("[app] userData 이관 실패:", e);
-    }
+  let migration: UserDataMigration = { kind: "none" };
+  try {
+    migration = migrateUserData(app.getPath("userData"), app.getPath("appData"));
+  } catch (e) {
+    console.error("[app] userData 이관 실패:", e);
+  }
+  if (migration.kind === "running") {
+    // 옛 앱이 쓰는 폴더를 빼낼 수 없다. 빈 상태로 시작하면 다음에는 이관하지 않으므로 여기서 멈춘다.
+    setMainLocale(resolveLocale(LANGUAGE_SETTING_DEFAULT, app.getPreferredSystemLanguages()));
+    dialog.showErrorBox(mt("main.legacy.runningTitle"), mt("main.legacy.runningBody"));
+    app.exit(0);
   }
 }
 
@@ -135,7 +130,7 @@ const logger: FileLogger = createFileLogger(
 );
 logger.patchConsole();
 console.log(
-  `[app] atelier ${app.getVersion()} start (electron ${process.versions.electron}, ${process.platform}/${process.arch}${app.isPackaged ? "" : ", dev"})`,
+  `[app] sudal ${app.getVersion()} start (electron ${process.versions.electron}, ${process.platform}/${process.arch}${app.isPackaged ? "" : ", dev"})`,
 );
 
 process.on("uncaughtException", (e) =>
@@ -195,12 +190,12 @@ async function sdkEnv(tabId?: string): Promise<Record<string, string>> {
   env.HOME = env.HOME || home;
   env.USERPROFILE = env.USERPROFILE || home;
   env.SHELL = env.SHELL || process.env.SHELL || "/bin/zsh";
-  // 탭 안에서 부르는 `atelier` CLI 가 이 인스턴스(이 userData)에 붙게 — 개발·테스트 인스턴스가 사용자 앱을 건드리지 않게
-  env.ATELIER_USERDATA = app.getPath("userData");
+  // 탭 안에서 부르는 `sudal` CLI 가 이 인스턴스(이 userData)에 붙게 — 개발·테스트 인스턴스가 사용자 앱을 건드리지 않게
+  env.SUDAL_USERDATA = app.getPath("userData");
   // 탭의 에이전트가 자기 탭을 알 수 있게 — `active` 는 화면에서 고른 탭이지 호출한 에이전트의 탭이 아니다.
-  // 탭 없이 띄우는 프로세스에는 남기지 않는다(앱이 다른 Atelier 탭의 셸에서 실행됐을 때 그 값이 새지 않게).
-  if (tabId) env.ATELIER_TAB_ID = tabId;
-  else delete env.ATELIER_TAB_ID;
+  // 탭 없이 띄우는 프로세스에는 남기지 않는다(앱이 다른 Sudal 탭의 셸에서 실행됐을 때 그 값이 새지 않게).
+  if (tabId) env.SUDAL_TAB_ID = tabId;
+  else delete env.SUDAL_TAB_ID;
   return env;
 }
 
@@ -209,7 +204,7 @@ async function claudeRuntime(tabId?: string): Promise<ClaudeRuntime> {
   if (!cli.installed || !cli.path)
     throw new Error(cli.error || mt("main.error.claudeCliMissing"));
   const env = await sdkEnv(tabId);
-  env.CLAUDE_AGENT_SDK_CLIENT_APP = `atelier/${app.getVersion()}`;
+  env.CLAUDE_AGENT_SDK_CLIENT_APP = `sudal/${app.getVersion()}`;
   return { pathToClaudeCodeExecutable: cli.path, env };
 }
 
@@ -410,7 +405,7 @@ const KEEP_ISOLATED_RUNS = 3;
  * 쓰는 상태(.omc 등)가 매번 남는다. "더러우면 안 치운다" 로 두면 실기기에서 아무것도 치우지 못했다.
  *
  * 커밋된 작업은 그래도 남는다. 폴더만 지우고 브랜치는 `branch -d` 로 지우므로, 회차가 제 결과를
- * 커밋해 뒀으면 병합되지 않은 브랜치라 거부되어 살아남는다 — `git switch atelier/<이름>` 으로 꺼낸다.
+ * 커밋해 뒀으면 병합되지 않은 브랜치라 거부되어 살아남는다 — `git switch sudal/<이름>` 으로 꺼낸다.
  * 잃는 것은 커밋하지 않은 찌꺼기뿐이고, 그것도 최근 세 회차는 손대지 않는다.
  *
  * 돌고 있는 탭은 건드리지 않는다.
@@ -626,10 +621,10 @@ const verifyRunner = new VerifyRunner((tabId, event) => sessions?.note(tabId, ev
 let orchestrator: Orchestrator | null = null;
 /** 완료 알림을 이미 보낸 Run. */
 const notifiedRuns = new Set<string>();
-/** `atelier` CLI 가 붙는 제어 소켓. registerIpc 뒤(세션·워크스페이스가 준비된 뒤) startControlServer 로 띄운다. */
+/** `sudal` CLI 가 붙는 제어 소켓. registerIpc 뒤(세션·워크스페이스가 준비된 뒤) startControlServer 로 띄운다. */
 let controlServer: ControlServer | null = null;
 
-/** 동봉된 CLI 디렉토리(atelier.cjs·skill-guide.md·skill-stub.md). 패키지면 Contents/Resources/cli, 개발 실행이면 저장소의 cli/. */
+/** 동봉된 CLI 디렉토리(sudal.cjs·skill-guide.md·skill-stub.md). 패키지면 Contents/Resources/cli, 개발 실행이면 저장소의 cli/. */
 function cliDir(): string {
   return app.isPackaged ? join(process.resourcesPath, "cli") : join(app.getAppPath(), "cli");
 }
@@ -680,7 +675,7 @@ async function startControlServer() {
       openBrowser: (tabId, url) => deliverControlOpen({ kind: "browser", tabId, url }),
       runInBrowser: (tabId, script) => runInBrowser(tabId, script),
       guide: (name) => {
-        if (name !== "atelier-cli") return null;
+        if (name !== "sudal-cli") return null;
         try {
           return readFileSync(join(cliDir(), "skill-guide.md"), "utf8");
         } catch {
@@ -690,7 +685,7 @@ async function startControlServer() {
       schedules: () => schedulesApi(),
     },
     join(app.getPath("userData"), "control.sock"),
-    join(tmpdir(), `atelier-${process.pid}.sock`),
+    join(tmpdir(), `sudal-${process.pid}.sock`),
   );
   try {
     await server.start();
@@ -1009,19 +1004,19 @@ function shq(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
-/** ~/.local/bin/atelier — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트. */
+/** ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트. */
 async function installCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }> {
   try {
     const dir = join(app.getPath("home"), ".local", "bin");
     mkdirSync(dir, { recursive: true });
-    const target = join(dir, "atelier");
+    const target = join(dir, "sudal");
     const script = [
       "#!/bin/sh",
       mt("main.cli.shimComment"),
       // 이 앱의 userData(개발 실행은 이름이 달라 경로도 다르다). 이미 정해 두었으면 그것을 존중한다.
-      `: "\${ATELIER_USERDATA:=${shq(app.getPath("userData")).replace(/^'|'$/g, "")}}"`,
-      "export ATELIER_USERDATA",
-      `ELECTRON_RUN_AS_NODE=1 exec ${shq(process.execPath)} ${shq(join(cliDir(), "atelier.cjs"))} "$@"`,
+      `: "\${SUDAL_USERDATA:=${shq(app.getPath("userData")).replace(/^'|'$/g, "")}}"`,
+      "export SUDAL_USERDATA",
+      `ELECTRON_RUN_AS_NODE=1 exec ${shq(process.execPath)} ${shq(join(cliDir(), "sudal.cjs"))} "$@"`,
       "",
     ].join("\n");
     writeFileSync(target, script, { mode: 0o755 });
@@ -1040,10 +1035,30 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
   }
 }
 
+/**
+ * 옛 이름(Atelier)으로 설치해 둔 CLI·스킬을 새 이름으로 바꾸고, 이미 만든 worktree 를 계속 쓰게 한다.
+ * 옛 것이 남아 있을 때만 일하므로 매번 불러도 된다. 개발 실행과 userData 를 따로 지정한 검증용 인스턴스는
+ * 설치본의 것을 건드리지 않는다.
+ */
+function adoptLegacyInstall(): void {
+  if (!app.isPackaged || dirname(app.getPath("userData")) !== app.getPath("appData")) return;
+  try {
+    const home = app.getPath("home");
+    const found = removeLegacyInstall(home, process.env.CODEX_HOME || join(home, ".codex"));
+    if (found.cli) void installCliShim();
+    for (const agent of found.skills) installSkillStub(agent);
+    const settings = store.loadSettings<Record<string, unknown>>({});
+    const worktreeDir = legacyWorktreeDir(home);
+    if (settings.worktreeDir === undefined && worktreeDir) store.saveSettings({ ...settings, worktreeDir });
+  } catch (e) {
+    console.error("[app] 옛 이름 설치 정리 실패:", e);
+  }
+}
+
 /** 설치 상태: 파일이 있는지, 셸 스크립트가 이 앱을 가리키는지, PATH 에 있는지, 스텁이 동봉본과 같은지. */
 async function installStatus(): Promise<InstallStatusDto> {
   const dir = join(app.getPath("home"), ".local", "bin");
-  const cliPath = join(dir, "atelier");
+  const cliPath = join(dir, "sudal");
 
   const read = (p: string) => {
     try {
@@ -1059,7 +1074,7 @@ async function installStatus(): Promise<InstallStatusDto> {
     cli: {
       path: cliPath,
       installed: cliText !== null,
-      current: cliText !== null && cliText.includes(shq(process.execPath)) && cliText.includes(shq(join(cliDir(), "atelier.cjs"))),
+      current: cliText !== null && cliText.includes(shq(process.execPath)) && cliText.includes(shq(join(cliDir(), "sudal.cjs"))),
       onPath: shellPath.split(":").some((p) => p.replace(/\/+$/, "") === dir),
     },
     skills: skillTargets().map((t) => {
@@ -1074,8 +1089,8 @@ function skillTargets(): { agent: "claude" | "codex"; label: string; home: strin
   const home = app.getPath("home");
   const codexHome = process.env.CODEX_HOME || join(home, ".codex");
   return [
-    { agent: "claude", label: "Claude Code", home: join(home, ".claude"), path: join(home, ".claude", "skills", "atelier-cli", "SKILL.md") },
-    { agent: "codex", label: "Codex CLI", home: codexHome, path: join(codexHome, "skills", "atelier-cli", "SKILL.md") },
+    { agent: "claude", label: "Claude Code", home: join(home, ".claude"), path: join(home, ".claude", "skills", "sudal-cli", "SKILL.md") },
+    { agent: "codex", label: "Codex CLI", home: codexHome, path: join(codexHome, "skills", "sudal-cli", "SKILL.md") },
   ];
 }
 
@@ -1186,7 +1201,7 @@ function worktreeRootDir(): string {
   return typeof v === "string" && isAbsolute(v) ? v : defaultWorktreeRootDir();
 }
 function defaultWorktreeRootDir(): string {
-  return join(homedir(), "atelier", "worktrees");
+  return join(homedir(), "sudal", "worktrees");
 }
 
 function appSettings(): AppSettingsDto {
@@ -1264,6 +1279,7 @@ function checkBudget() {
 
 function bootstrap() {
   store = new Store(app.getPath("userData"));
+  adoptLegacyInstall();
   workspaces = new WorkspaceService(store, (state: WorkspaceStateDto) =>
     sendAll(IPC.wsChanged, state),
   );
@@ -1279,7 +1295,7 @@ function bootstrap() {
   approveRoot(join(app.getPath("userData"), "worktrees"));
   approveRoot(worktreeRootDir());
   // 검증·개발용: 콜론으로 구분한 추가 루트(선택 창 없이 스크립트로 탭 cwd 를 정할 때)
-  for (const r of (process.env.ATELIER_APPROVED_ROOTS ?? "").split(":")) if (r) approveRoot(r);
+  for (const r of (process.env.SUDAL_APPROVED_ROOTS ?? "").split(":")) if (r) approveRoot(r);
   lsp = new LspManager({
     env: () => sdkEnv(),
     resolveRoot: async (cwd) => repoRoot(cwd, await cliDiscovery().buildEnv()),
@@ -1297,7 +1313,7 @@ function bootstrap() {
     onExit: (id) => sendAll(IPC.lspExit, id),
     log: (line) => console.log(line),
     // 검증용: 유휴 종료 대기 시간을 줄일 수 있다(기본 3분)
-    idleMs: Number(process.env.ATELIER_LSP_IDLE_MS) > 0 ? Number(process.env.ATELIER_LSP_IDLE_MS) : undefined,
+    idleMs: Number(process.env.SUDAL_LSP_IDLE_MS) > 0 ? Number(process.env.SUDAL_LSP_IDLE_MS) : undefined,
   });
   snippets = new SnippetStore(
     join(app.getPath("userData"), "snippets.json"),
@@ -1686,7 +1702,7 @@ function registerIpc() {
     }),
   );
   // cask 가 깔려 있어도 지금 띄운 것이 그 앱이어야 한다 — 다른 곳의 빌드에서 누르면 /Applications 의 앱이 바뀐다.
-  const fromCask = () => app.isPackaged && /^\/Applications\/Atelier\.app\//.test(realpathSync(process.execPath));
+  const fromCask = () => app.isPackaged && /^\/Applications\/Sudal\.app\//.test(realpathSync(process.execPath));
   // 업데이트 상태는 main 이 들고 있다 — 설정 카드와 사이드바가 같은 것을 보고, 화면을 옮겼다 돌아와도 이어 보이게.
   let lastCheck: UpdateCheckDto | null = null;
   let dmgSize: number | undefined;
@@ -1890,8 +1906,8 @@ function registerIpc() {
   orchestrator = new Orchestrator({
     dir: join(app.getPath("userData"), "orchestration"),
     cliCommand: () => {
-      const shim = join(app.getPath("home"), ".local", "bin", "atelier");
-      return existsSync(shim) ? "atelier" : `ELECTRON_RUN_AS_NODE=1 ${shq(process.execPath)} ${shq(join(cliDir(), "atelier.cjs"))}`;
+      const shim = join(app.getPath("home"), ".local", "bin", "sudal");
+      return existsSync(shim) ? "sudal" : `ELECTRON_RUN_AS_NODE=1 ${shq(process.execPath)} ${shq(join(cliDir(), "sudal.cjs"))}`;
     },
     log: (line) => console.log(line),
     createWorkerTab: async (o) => {
@@ -2562,7 +2578,7 @@ function registerIpc() {
     const opts: Electron.SaveDialogOptions = {
       defaultPath: join(
         app.getPath("downloads"),
-        `atelier-usage-${new Date().toISOString().slice(0, 10)}.csv`,
+        `sudal-usage-${new Date().toISOString().slice(0, 10)}.csv`,
       ),
       filters: [{ name: "CSV", extensions: ["csv"] }],
     };

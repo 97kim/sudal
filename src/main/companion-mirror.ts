@@ -62,7 +62,7 @@ export async function findCompanionRolloutByProcess(rootPid: number, cwd: string
 }
 
 /** 앱이 만든 rollout 의 originator. 이 값이면 companion 이 아니다. */
-const OWN_ORIGINATOR = "atelier";
+const OWN_ORIGINATOR = "sudal";
 
 /** cwd 가 맞고 since 이후에 생긴 rollout 중 가장 최근 것. 제외 목록·앱 자신의 것은 건너뛴다. */
 export function findCompanionRollout(root: string, opts: { cwd: string; since: number; exclude: Set<string> }): string | null {

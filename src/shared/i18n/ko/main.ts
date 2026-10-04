@@ -74,7 +74,7 @@ export const main = {
     codexCliMissing: "Codex CLI를 찾을 수 없습니다.",
     cliLaunchFailed: "CLI 를 띄우지 못했습니다.",
     forkFailed: "분기하지 못했습니다: {{detail}}",
-    browserNotOpen: "이 탭에 열린 브라우저가 없습니다. 먼저 `atelier browser open --url …` 으로 여세요.",
+    browserNotOpen: "이 탭에 열린 브라우저가 없습니다. 먼저 `sudal browser open --url …` 으로 여세요.",
     browserClosed: "브라우저 탭이 닫혔습니다. 다시 여세요.",
     browserNoResult: "브라우저가 결과를 주지 않았습니다.",
     emptyContent: "내용이 비어 있습니다.",
@@ -93,13 +93,17 @@ export const main = {
   export: {
     failed: "내보내기 실패: {{detail}}",
   },
+  legacy: {
+    runningTitle: "Atelier가 실행 중이에요",
+    runningBody: "Sudal은 Atelier의 새 이름이에요. 쓰던 데이터를 옮기려면 Atelier를 종료한 뒤 Sudal을 다시 열어 주세요.",
+  },
   cli: {
-    shimComment: "# Atelier CLI — 앱에 동봉된 cli/atelier.cjs 를 앱의 Electron(node 모드)으로 실행한다. 설정 > 일반에서 다시 설치하면 갱신된다.",
+    shimComment: "# Sudal CLI — 앱에 동봉된 cli/sudal.cjs 를 앱의 Electron(node 모드)으로 실행한다. 설정 > 일반에서 다시 설치하면 갱신된다.",
     pathHint: '터미널 PATH 에 {{dir}} 이 없습니다. ~/.zshrc 에 export PATH="$HOME/.local/bin:$PATH" 를 추가하고 새 터미널을 여세요.',
     noAgents: "Claude Code(~/.claude)도 Codex(~/.codex)도 이 PC 에 없습니다.",
   },
   update: {
-    caskOnly: "Homebrew로 설치한 /Applications/Atelier.app에서만 업데이트할 수 있습니다.",
+    caskOnly: "Homebrew로 설치한 /Applications/Sudal.app에서만 업데이트할 수 있습니다.",
     checkFirst: "먼저 업데이트를 확인하세요.",
     githubStatus: "GitHub 응답 {{status}}",
     versionUnreadable: "릴리즈 버전을 읽지 못했습니다.",

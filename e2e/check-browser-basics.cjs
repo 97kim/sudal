@@ -2,8 +2,8 @@
 // 캐시 무시는 서버가 "캐시해도 된다" 고 말한 응답을 그래도 다시 받아 오는지로 잰다 — 요청 수를 센다.
 const path = require("path"), http = require("http"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 let hits = 0;
@@ -39,11 +39,11 @@ const srv = http.createServer((req, res) => {
   await page.waitForTimeout(3500);
   const first = hits;
   // 보통 새로고침: 캐시가 살아 있으면 서버까지 안 온다
-  await ev(() => window.__atelierShortcut?.("browser-reload"));
+  await ev(() => window.__sudalShortcut?.("browser-reload"));
   await page.waitForTimeout(2500);
   const afterSoft = hits;
   // 강력 새로고침: 캐시를 무시하므로 반드시 서버까지 온다
-  await ev(() => window.__atelierShortcut?.("browser-hard-reload"));
+  await ev(() => window.__sudalShortcut?.("browser-hard-reload"));
   await page.waitForTimeout(2500);
   const afterHard = hits;
   console.log(`요청 수: 최초 ${first} → 보통 새로고침 ${afterSoft} → 강력 새로고침 ${afterHard}`);
@@ -85,11 +85,11 @@ const srv = http.createServer((req, res) => {
   // 활성 에디터 탭을 닫는다(⌘W 와 같은 경로)
   await ev(() => {
     const id = document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab");
-    window.dispatchEvent(new CustomEvent("atelier:editor-close-active", { detail: id }));
+    window.dispatchEvent(new CustomEvent("sudal:editor-close-active", { detail: id }));
   });
   await page.waitForTimeout(1200);
   const closed = await ev(() => document.querySelectorAll("[data-editor-tab]").length);
-  await ev(() => window.__atelierShortcut?.("reopen-tab"));
+  await ev(() => window.__sudalShortcut?.("reopen-tab"));
   await page.waitForTimeout(2500);
   const reopened = await ev(() => ({
     tabs: document.querySelectorAll("[data-editor-tab]").length,

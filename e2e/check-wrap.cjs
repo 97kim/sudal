@@ -2,8 +2,8 @@
 // 푸터 한 줄이 깨지지 않는지 본다. 넘침은 "요소의 오른쪽 끝 > 담는 상자의 오른쪽 끝" 으로 잰다.
 const path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 const probe = (page) => page.evaluate(() => {
@@ -41,7 +41,7 @@ const probe = (page) => page.evaluate(() => {
   await page.evaluate((id) => window.workbench.chat.configure(id, { policy: "full" }), tabId);
 
   // 채팅 칼럼을 최대한 좁힌다: 사이드바를 접고 창을 줄인다.
-  await page.evaluate(() => window.__atelierShortcut?.("toggle-sidebar"));
+  await page.evaluate(() => window.__sudalShortcut?.("toggle-sidebar"));
   await page.setViewportSize({ width: Number(process.env.W || 900), height: 760 });
   await page.waitForTimeout(800);
 

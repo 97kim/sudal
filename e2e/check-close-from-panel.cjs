@@ -2,8 +2,8 @@
 // 그 상태의 ⌘W 가 세션이 아니라 에디터 탭을 닫아야 한다 — 사용자가 겪은 경우.
 const os = require("os"), path = require("path"), fs = require("fs"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 (async () => {
@@ -43,7 +43,7 @@ const { chromium } = require("playwright-core");
   console.log("RESULT (에디터 탭이 열림):", after.editorTabs >= 1 ? "PASS" : "FAIL");
   console.log("RESULT (포커스는 에디터 밖 — 이게 원인이었다):", after.focusIsEditor === false ? "PASS (재현됨)" : "참고: 포커스가 에디터에 있음");
 
-  await ev(() => window.__atelierShortcut?.("close-tab"));
+  await ev(() => window.__sudalShortcut?.("close-tab"));
   await page.waitForTimeout(1200);
   const closed = await state();
   console.log("⌘W 뒤:", JSON.stringify(closed));
@@ -53,7 +53,7 @@ const { chromium } = require("playwright-core");
   // 채팅을 건드리면 다시 세션 쪽으로
   await page.click("textarea");
   await page.waitForTimeout(400);
-  await ev(() => window.__atelierShortcut?.("close-tab"));
+  await ev(() => window.__sudalShortcut?.("close-tab"));
   await page.waitForTimeout(1200);
   const last = await state();
   console.log("채팅 클릭 뒤 ⌘W:", JSON.stringify(last));

@@ -3,8 +3,8 @@
 // scrollHeight 가 0 이 되고, 그 상태로 높이가 굳으면 돌아와도 한 줄로 남는다(가설).
 const path = require("path"), http = require("http"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 // 콘솔 오류와 실패 요청이 있어야 진단에 담길 내용이 생긴다.
@@ -66,12 +66,12 @@ const H = (page) => page.evaluate(() => {
   await page.waitForTimeout(500);
 
   // --- 2) 넓게 보기 상태에서 첨부하고 돌아오기 ---
-  await ev(() => window.__atelierShortcut?.("toggle-editor-maximize"));
+  await ev(() => window.__sudalShortcut?.("toggle-editor-maximize"));
   await page.waitForTimeout(800);
   console.log("넓게 보기 · 첨부 전:", JSON.stringify(await H(page)));
   await clickDiag();
   console.log("넓게 보기 · 첨부 후:", JSON.stringify(await H(page)));
-  await ev(() => window.__atelierShortcut?.("toggle-editor-maximize"));
+  await ev(() => window.__sudalShortcut?.("toggle-editor-maximize"));
   await page.waitForTimeout(1000);
   const back = await H(page);
   console.log("돌아온 뒤:", JSON.stringify(back));

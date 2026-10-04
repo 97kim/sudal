@@ -17,8 +17,8 @@ const fakeFetch = (status: number, body: unknown) =>
   (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
 
 test("최신 릴리즈 태그에서 v 를 떼고 페이지 주소를 함께 준다", async () => {
-  const r = await fetchLatestRelease(fakeFetch(200, { tag_name: "v0.9.30", html_url: "https://github.com/97kim/Atelier/releases/tag/v0.9.30" }));
-  assert.deepEqual(r, { version: "0.9.30", url: "https://github.com/97kim/Atelier/releases/tag/v0.9.30" });
+  const r = await fetchLatestRelease(fakeFetch(200, { tag_name: "v0.9.30", html_url: "https://github.com/97kim/sudal/releases/tag/v0.9.30" }));
+  assert.deepEqual(r, { version: "0.9.30", url: "https://github.com/97kim/sudal/releases/tag/v0.9.30" });
 });
 
 test("응답이 실패이거나 태그가 없으면 오류", async () => {
@@ -29,7 +29,7 @@ test("응답이 실패이거나 태그가 없으면 오류", async () => {
 /** PATH 맨 앞에 가짜 brew 를 둔다. list 는 installed 버전을 답하고, 나머지 명령은 성공한다. */
 function fakeBrewEnv(installed: string | null): NodeJS.ProcessEnv {
   const dir = mkdtempSync(join(tmpdir(), "fake-brew-"));
-  const list = installed ? `echo "atelier ${installed}"` : "exit 1";
+  const list = installed ? `echo "sudal ${installed}"` : "exit 1";
   writeFileSync(join(dir, "brew"), `#!/bin/sh\nif [ "$1" = list ]; then ${list}; fi\nexit 0\n`);
   chmodSync(join(dir, "brew"), 0o755);
   // 캐시도 가짜 폴더로 — 진행률을 재려고 실제 Homebrew 캐시를 읽지 않게
@@ -95,19 +95,19 @@ test("TERM 을 무시하는 자손이 출력 파이프를 물고 있어도 KILL 
 
 test("릴리즈에 붙은 DMG 의 크기를 함께 준다(진행률의 분모)", async () => {
   const r = await fetchLatestRelease(
-    fakeFetch(200, { tag_name: "v0.9.30", html_url: "u", assets: [{ name: "atelier-0.9.30-arm64.dmg.blockmap", size: 10 }, { name: "atelier-0.9.30-arm64.dmg", size: 143_000_000 }] }),
+    fakeFetch(200, { tag_name: "v0.9.30", html_url: "u", assets: [{ name: "sudal-0.9.30-arm64.dmg.blockmap", size: 10 }, { name: "sudal-0.9.30-arm64.dmg", size: 143_000_000 }] }),
   );
   assert.equal(r.dmgSize, 143_000_000);
 });
 
 test("내려받는 중인 캐시 파일로 단계와 진행률을 정한다", () => {
   const dir = mkdtempSync(join(tmpdir(), "brew-dl-"));
-  const file = join(dir, "bbb--atelier-0.9.30-arm64.dmg");
+  const file = join(dir, "bbb--sudal-0.9.30-arm64.dmg");
   assert.equal(versionOfDownload(file), "0.9.30");
   assert.equal(versionOfDownload(join(dir, "something-else.dmg")), null);
   assert.equal(downloadProgress(file, 1000), null, "아직 받기 전");
   // 이름이 같아도 다른 해시의 남은 파일은 보지 않는다 — brew 가 알려 준 경로만 본다
-  writeFileSync(join(dir, "zzz--atelier-0.9.30-arm64.dmg.incomplete"), Buffer.alloc(900));
+  writeFileSync(join(dir, "zzz--sudal-0.9.30-arm64.dmg.incomplete"), Buffer.alloc(900));
   assert.equal(downloadProgress(file, 1000), null);
   writeFileSync(`${file}.incomplete`, Buffer.alloc(430));
   assert.deepEqual(downloadProgress(file, 1000), { phase: "downloading", percent: 43 });
@@ -126,10 +126,10 @@ function fakeDownloadingBrew(version: string): { env: NodeJS.ProcessEnv } {
   const dir = mkdtempSync(join(tmpdir(), "fake-brew-"));
   const downloads = join(dir, "cache", "downloads");
   mkdirSync(downloads, { recursive: true });
-  const f = join(downloads, `ccc--atelier-${version}-arm64.dmg`);
+  const f = join(downloads, `ccc--sudal-${version}-arm64.dmg`);
   writeFileSync(
     join(dir, "brew"),
-    `#!/bin/sh\nif [ "$1" = list ]; then echo "atelier ${version}"; fi\nif [ "$1" = --cache ]; then echo "${f}"; fi\nif [ "$1" = upgrade ]; then head -c 500 /dev/zero > "${f}.incomplete"; sleep 0.4; mv "${f}.incomplete" "${f}"; sleep 0.4; fi\nexit 0\n`,
+    `#!/bin/sh\nif [ "$1" = list ]; then echo "sudal ${version}"; fi\nif [ "$1" = --cache ]; then echo "${f}"; fi\nif [ "$1" = upgrade ]; then head -c 500 /dev/zero > "${f}.incomplete"; sleep 0.4; mv "${f}.incomplete" "${f}"; sleep 0.4; fi\nexit 0\n`,
   );
   chmodSync(join(dir, "brew"), 0o755);
   return { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } };

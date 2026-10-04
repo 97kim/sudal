@@ -2,9 +2,9 @@
 // 실제 Codex 를 돌리면 느리고 사용량을 쓰므로, 플러그인이 쓰는 것과 같은 형식의 state.json 을 직접 만들어 확인한다.
 const os = require("os"), path = require("path"), fs = require("fs"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
 const CLAUDE_DIR = path.join(E2E, "claude-home");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 const stateFile = path.join(CLAUDE_DIR, "codex-test", "state", "repo-1", "state.json");

@@ -9,7 +9,7 @@ export const schedules: DeepPartial<typeof ko> = {
   newSchedule: "New schedule",
   notice: {
     missed:
-      "Schedules run only while Atelier is open and your Mac is awake. If a run is missed because the app was closed or the Mac was asleep, Atelier tries to run it when you come back within the grace period, and skips it after that. A short extra margin is added for the run-check interval.",
+      "Schedules run only while Sudal is open and your Mac is awake. If a run is missed because the app was closed or the Mac was asleep, Sudal tries to run it when you come back within the grace period, and skips it after that. A short extra margin is added for the run-check interval.",
     cleanup:
       "Before each new run, a schedule that uses an isolated session keeps its 3 most recent worktrees and automatically deletes older worktrees and their tabs. Uncommitted changes are deleted too, so save any results you need first. Tabs that are running are never deleted.",
   },
@@ -78,12 +78,12 @@ export const schedules: DeepPartial<typeof ko> = {
   empty: {
     title: "No schedules yet.",
     hint: "Create one with “New schedule” at the top right. You can also do it from the terminal:",
-    example: 'atelier schedule add --name morning-check --cron "30 9 * * *" --prompt "…" --ws repo',
+    example: 'sudal schedule add --name morning-check --cron "30 9 * * *" --prompt "…" --ws repo',
   },
   item: {
     isolated: "Isolated session",
     next: "next {{when}}",
-    grace: "Grace period: {{minutes}} min · If Atelier comes back within this time, it tries to run a missed schedule.",
+    grace: "Grace period: {{minutes}} min · If Sudal comes back within this time, it tries to run a missed schedule.",
     graceNone: "Missed schedules aren't kept waiting (0 min). Only the short margin needed for the run check is allowed.",
     runNow: "Run once now",
     edit: "Edit",
@@ -105,10 +105,10 @@ export const schedules: DeepPartial<typeof ko> = {
     failed: "Schedule failed · {{name}}",
   },
   msg: {
-    missedGrace: "Atelier was off or woke up late, past the grace period.",
+    missedGrace: "Sudal was off or woke up late, past the grace period.",
     overlap: "The previous run hasn't finished yet.",
-    staleGap: "Atelier was off for a long time, so the runs in between are skipped.",
-    appStopped: "Atelier quit before it saw the end of this run.",
+    staleGap: "Sudal was off for a long time, so the runs in between are skipped.",
+    appStopped: "Sudal quit before it saw the end of this run.",
     noFolder: "This schedule has no folder to run in.",
     budgetExceeded: "This month's estimated cost is over budget (${{spent}} / ${{budget}}).",
     startFailed: "Couldn't start the run: {{detail}}",

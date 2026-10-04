@@ -28,11 +28,11 @@ test("worktree: 만들기 → 상태 → 커밋 가져오기(merge) → 정리(�
   if (!created.ok) return;
   const wt = created.worktree;
   assert.equal(wt.base, "main");
-  assert.equal(wt.branch, "atelier/feat");
+  assert.equal(wt.branch, "sudal/feat");
   assert.ok(existsSync(join(wt.path, "a.txt")));
   // 같은 slug 로 다시 만들면 -2
   const second = await worktreeCreate(repo, env, { rootDir: wtRoot, slug: "feat" });
-  assert.ok(second.ok && second.worktree.branch === "atelier/feat-2");
+  assert.ok(second.ok && second.worktree.branch === "sudal/feat-2");
 
   assert.deepEqual(await worktreeStatus(env, wt), { exists: true, baseMissing: false, ahead: 0, behind: 0, dirty: 0 });
   // rename 은 dirty 1 로 센다
@@ -170,7 +170,7 @@ test("listManagedWorktrees: worktree 폴더의 worktree 를 원본 저장소·�
   assert.equal(list.length, 1);
   assert.equal(list[0].path, c.worktree.path);
   assert.equal(list[0].repo, repo);
-  assert.equal(list[0].branch, "atelier/feat");
+  assert.equal(list[0].branch, "sudal/feat");
   assert.equal(list[0].dirty, 1);
   assert.ok((list[0].sizeKb ?? 0) > 0);
 });

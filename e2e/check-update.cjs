@@ -1,7 +1,7 @@
 // DMG 에서 뺀 Claude SDK 번들 바이너리 없이 Claude 가 도는지 + 설정 > 일반의 업데이트 카드([data-setting=update])
 const path=require("path"),{execFileSync}=require("child_process");
-const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli=(...a)=>JSON.parse(execFileSync(app+"/Contents/MacOS/Atelier",[app+"/Contents/Resources/cli/atelier.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",ATELIER_USERDATA:E2E+"/userdata"},encoding:"utf8"}));
+const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli=(...a)=>JSON.parse(execFileSync(app+"/Contents/MacOS/Sudal",[app+"/Contents/Resources/cli/sudal.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",SUDAL_USERDATA:E2E+"/userdata"},encoding:"utf8"}));
 const { chromium } = require("playwright-core");
 (async()=>{const b=await chromium.connectOverCDP("http://127.0.0.1:9333");const page=b.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes("localhost")||p.url().startsWith("file:"));
 const ev=(fn,arg)=>page.evaluate(fn,arg);

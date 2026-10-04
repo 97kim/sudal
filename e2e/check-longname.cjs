@@ -5,8 +5,8 @@
 // 레이아웃 맥락(부모 폭·flex 규칙)이 원본과 같으므로 CSS 동작은 그대로 재현된다.
 const path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 // 실제로 쓰이는 것 중 특히 긴 축. 공백이 없어 감길 자리가 없다.
@@ -57,7 +57,7 @@ const probe = (page, long) => page.evaluate((LONG) => {
   await page.waitForTimeout(2500);
   const tabId = await page.evaluate(() => document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab"));
   await page.evaluate((id) => window.workbench.chat.configure(id, { policy: "full" }), tabId);
-  await page.evaluate(() => window.__atelierShortcut?.("toggle-sidebar"));
+  await page.evaluate(() => window.__sudalShortcut?.("toggle-sidebar"));
   await page.setViewportSize({ width: Number(process.env.W || 720), height: 760 });
   await page.waitForTimeout(600);
 

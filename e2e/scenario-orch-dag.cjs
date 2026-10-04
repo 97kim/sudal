@@ -3,8 +3,8 @@
 //  B) A 워커 완료 → B ready → B 에 게이트 → worker-start 는 gate_pending → 패널 게이트 버튼으로 결정
 //  C) B 를 A 의 탭에 --terminal 로 재사용해 시작 → 완료 → c.txt 두 줄 → worker-cleanup 으로 탭 닫힘
 const os=require("os"),path=require("path"),fs=require("fs"),{execFileSync}=require("child_process");
-const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");const repo=path.join(E2E,"repo");
-const cli=(...a)=>{try{return JSON.parse(execFileSync(app+"/Contents/MacOS/Atelier",[app+"/Contents/Resources/cli/atelier.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",ATELIER_USERDATA:E2E+"/userdata"},encoding:"utf8"}))}catch(e){try{return JSON.parse(e.stdout)}catch{throw e}}};
+const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");const repo=path.join(E2E,"repo");
+const cli=(...a)=>{try{return JSON.parse(execFileSync(app+"/Contents/MacOS/Sudal",[app+"/Contents/Resources/cli/sudal.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",SUDAL_USERDATA:E2E+"/userdata"},encoding:"utf8"}))}catch(e){try{return JSON.parse(e.stdout)}catch{throw e}}};
 const { chromium } = require("playwright-core");
 const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toFixed(1)}s`,...a);const results=[];const res=(n,ok,x="")=>{results.push([n,ok]);log(`RESULT ${n}:`,ok?"PASS":"FAIL",x)};
 (async()=>{

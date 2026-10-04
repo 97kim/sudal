@@ -7,7 +7,7 @@ export const orchestration = {
     close: "닫기 (esc)",
     loadFailed: "작업 상태를 불러오지 못했습니다. 다시 확인해 주세요.",
     cleanupUnconfirmed: "처리 요청은 완료됐지만 결과를 확인하지 못했습니다. 작업 상태를 다시 확인해 주세요.",
-    noRuns: "Run이 없습니다. 터미널에서 만들 수 있습니다: atelier orch run-create --objective \"…\"",
+    noRuns: "Run이 없습니다. 터미널에서 만들 수 있습니다: sudal orch run-create --objective \"…\"",
     pickRun: "왼쪽에서 Run을 고르세요.",
     coordinatorTab: "코디네이터",
     coordinatorHuman: "사람 코디네이터",

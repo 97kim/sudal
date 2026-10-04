@@ -5,7 +5,7 @@ export const prompt = {
     denied: "사용자가 이 작업을 거부했습니다.",
     noTurn: "진행 중인 턴이 없습니다.",
     progress: {
-      intro: "이 대화는 Atelier 앱의 채팅 화면에 보여요. 도구 호출은 접힌 카드로만 보여서, 사용자는 당신이 쓰는 글로 작업 흐름을 따라와요.",
+      intro: "이 대화는 Sudal 앱의 채팅 화면에 보여요. 도구 호출은 접힌 카드로만 보여서, 사용자는 당신이 쓰는 글로 작업 흐름을 따라와요.",
       before: "- 도구를 부르기 전에, 무엇을 왜 하려는지 한 문장으로 말해 주세요.",
       after: "- 도구 결과를 받으면 다음 도구를 부르기 전에 한두 문장을 써 주세요. 방금 무엇을 알아냈는지(원인을 찾았다면 원인), 그래서 다음에 무엇을 할지요.",
       short: "- 이 설명은 짧게, 새로 알게 된 것만 써 주세요. 최종 답에는 결과와 결론을 쓰고, 설명에서 이미 전한 과정은 되풀이하지 마세요.",
@@ -19,7 +19,7 @@ export const prompt = {
     unsupported: "지원하지 않는 요청: {{method}}",
     forkNoRequests: "분기 중에는 요청을 받지 않습니다.",
     instructions:
-      "이 대화는 Atelier 앱의 채팅 화면에 보여요. 사용자에게 보이는 글(답, 진행 설명, 계획, 생각 요약)은 사용자가 쓰는 언어로 써 주세요. 도구 출력이나 코드의 언어 때문에 응답 언어를 바꾸지 마세요.",
+      "이 대화는 Sudal 앱의 채팅 화면에 보여요. 사용자에게 보이는 글(답, 진행 설명, 계획, 생각 요약)은 사용자가 쓰는 언어로 써 주세요. 도구 출력이나 코드의 언어 때문에 응답 언어를 바꾸지 마세요.",
   },
   git: {
     diffTruncated: "... (diff 가 길어 {{count}}자 생략)",
@@ -36,7 +36,7 @@ export const prompt = {
     coordinatorTab: "이 탭이 코디네이터입니다. --key 를 모든 코디네이터 명령에 붙이세요.",
   },
   worker: {
-    header: "[Atelier 오케스트레이션 · 워커 계약 v{{version}}]",
+    header: "[Sudal 오케스트레이션 · 워커 계약 v{{version}}]",
     intro: "당신은 이 Run 의 워커입니다. 아래 Task 하나만 수행하고, 끝나면 완료 보고를 정확히 한 번 보낸 뒤 이 턴을 끝내세요.",
     run: "- Run: {{id}}  (목표: {{objective}})",
     task: "- Task: {{taskId}}  Dispatch: {{dispatchId}}  탭: {{tabId}}",
@@ -59,7 +59,7 @@ export const prompt = {
     deps: "- 이 Task 는 앞선 Task({{deps}})가 끝난 뒤 시작됐습니다. 그 산출물이 필요하면 spec 에 적힌 위치에서 읽으세요.",
   },
   coordinator: {
-    created: "[Atelier 오케스트레이션 · 코디네이터] Run {{id}} 이 만들어졌습니다. 워커를 띄운 뒤 인박스를 기다리세요:",
+    created: "[Sudal 오케스트레이션 · 코디네이터] Run {{id}} 이 만들어졌습니다. 워커를 띄운 뒤 인박스를 기다리세요:",
     start: '{{cli}} orch worker-start --run {{id}} --key {{key}} --spec "<작업>" --agent claude|codex [--worktree]',
     reply: "질문엔 reply, 완료 보고를 받으면 결과를 검증한 뒤 --ack <delivery_id> 로 다음을 기다립니다. 빈 대기는 실패가 아닙니다.",
   },

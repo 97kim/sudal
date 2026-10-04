@@ -104,7 +104,7 @@ export const chat: DeepPartial<typeof ko> = {
     },
     orchestration: {
       label: "Orchestration",
-      hint: "Check workers' tasks and the inbox. Create a Run with the atelier orch command",
+      hint: "Check workers' tasks and the inbox. Create a Run with the sudal orch command",
     },
     attachTerminal: {
       label: "Continue in terminal",

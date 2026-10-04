@@ -102,7 +102,7 @@ export const chat = {
     },
     orchestration: {
       label: "오케스트레이션",
-      hint: "워커의 작업과 인박스를 확인합니다. Run은 atelier orch 명령으로 만듭니다",
+      hint: "워커의 작업과 인박스를 확인합니다. Run은 sudal orch 명령으로 만듭니다",
     },
     attachTerminal: {
       label: "터미널에서 이어가기",

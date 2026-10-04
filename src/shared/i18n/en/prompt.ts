@@ -4,7 +4,7 @@ export const prompt = {
     denied: "The user denied this action.",
     noTurn: "There is no turn in progress.",
     progress: {
-      intro: "This conversation is shown in the chat view of the Atelier app. Tool calls appear only as collapsed cards, so the user follows your work through the text you write.",
+      intro: "This conversation is shown in the chat view of the Sudal app. Tool calls appear only as collapsed cards, so the user follows your work through the text you write.",
       before: "- Before calling a tool, say in one sentence what you are about to do and why.",
       after: "- After receiving a tool result, write one or two sentences before calling the next tool: what you just found out (the cause, if you found it) and what you will do next.",
       short: "- Keep these notes short and write only what is new. Put the result and conclusion in the final answer, and do not repeat the steps you already described.",
@@ -18,7 +18,7 @@ export const prompt = {
     unsupported: "Unsupported request: {{method}}",
     forkNoRequests: "Requests are not accepted while forking.",
     instructions:
-      "This conversation is shown in the chat view of the Atelier app. Write everything the user sees (answers, progress notes, plans, reasoning summaries) in the language the user writes in. Do not switch the response language because of the language of tool output or code.",
+      "This conversation is shown in the chat view of the Sudal app. Write everything the user sees (answers, progress notes, plans, reasoning summaries) in the language the user writes in. Do not switch the response language because of the language of tool output or code.",
   },
   git: {
     diffTruncated: "... (diff too long, {{count}} characters omitted)",
@@ -35,7 +35,7 @@ export const prompt = {
     coordinatorTab: "This tab is the coordinator. Add --key to every coordinator command.",
   },
   worker: {
-    header: "[Atelier orchestration · worker contract v{{version}}]",
+    header: "[Sudal orchestration · worker contract v{{version}}]",
     intro: "You are a worker for this Run. Perform only the one Task below; when done, send the completion report exactly once and then end this turn.",
     run: "- Run: {{id}}  (objective: {{objective}})",
     task: "- Task: {{taskId}}  Dispatch: {{dispatchId}}  tab: {{tabId}}",
@@ -58,7 +58,7 @@ export const prompt = {
     deps: "- This Task started after the preceding Task ({{deps}}) finished. If you need its output, read it from the location given in the spec.",
   },
   coordinator: {
-    created: "[Atelier orchestration · coordinator] Run {{id}} has been created. Start workers, then wait on the inbox:",
+    created: "[Sudal orchestration · coordinator] Run {{id}} has been created. Start workers, then wait on the inbox:",
     start: '{{cli}} orch worker-start --run {{id}} --key {{key}} --spec "<task>" --agent claude|codex [--worktree]',
     reply: "Answer questions with reply; when you receive a completion report, verify the result, then wait for the next one with --ack <delivery_id>. An empty wait is not a failure.",
   },

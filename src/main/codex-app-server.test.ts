@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appServerUsage, classifyResumeFailure, atelierEnvArgs, mapAppServerNotification, normalizeFileChanges, reasoningSummaryArgs, resumeConflictMessage, type AppServerTurnContext } from "./codex-app-server";
+import { appServerUsage, classifyResumeFailure, sudalEnvArgs, mapAppServerNotification, normalizeFileChanges, reasoningSummaryArgs, resumeConflictMessage, type AppServerTurnContext } from "./codex-app-server";
 
 test("normalizeFileChanges: kind 객체/문자열 모두 문자열로, 빠진 값은 빈 문자열, 배열이 아니면 빈 목록", () => {
   assert.deepEqual(normalizeFileChanges([{ path: "a.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-a\n+b" }, { path: "b.ts", kind: "add" }]), [
@@ -88,12 +88,12 @@ test("turn/completed: 완료된 턴에만 forkPoint(thread id + turn id)", () =>
   assert.equal(cut.forkPoint, undefined);
 });
 
-test("atelierEnvArgs: 앱이 넘기는 변수를 Codex 셸의 set 표로 — 사용자가 환경변수 상속을 좁혀 둬도 닿게", () => {
-  assert.deepEqual(atelierEnvArgs({}), []);
-  assert.deepEqual(atelierEnvArgs({ ATELIER_USERDATA: "/Users/a b/Library/Application Support/Atelier", ATELIER_TAB_ID: "t-1", OTHER: "x" }), [
+test("sudalEnvArgs: 앱이 넘기는 변수를 Codex 셸의 set 표로 — 사용자가 환경변수 상속을 좁혀 둬도 닿게", () => {
+  assert.deepEqual(sudalEnvArgs({}), []);
+  assert.deepEqual(sudalEnvArgs({ SUDAL_USERDATA: "/Users/a b/Library/Application Support/Sudal", SUDAL_TAB_ID: "t-1", OTHER: "x" }), [
     "-c",
-    'shell_environment_policy.set.ATELIER_USERDATA="/Users/a b/Library/Application Support/Atelier"',
+    'shell_environment_policy.set.SUDAL_USERDATA="/Users/a b/Library/Application Support/Sudal"',
     "-c",
-    'shell_environment_policy.set.ATELIER_TAB_ID="t-1"',
+    'shell_environment_policy.set.SUDAL_TAB_ID="t-1"',
   ]);
 });

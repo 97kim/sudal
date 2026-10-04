@@ -20,12 +20,12 @@ function makeDeps(opts: { maxConcurrent?: number; failCreate?: string } = {}) {
   const configured: string[] = [];
   const deps: OrchestratorDeps = {
     dir: mkdtempSync(join(tmpdir(), "orch-")),
-    cliCommand: () => "atelier",
+    cliCommand: () => "sudal",
     createWorkerTab: async (o) => {
       if (opts.failCreate) return { ok: false, error: opts.failCreate, stage: "creating_tab" };
       const id = `tab${++n}`;
       tabs.set(id, { status: "idle", events: [], prompts: [] });
-      return { ok: true, tabId: id, cwd: o.cwd, ...(o.worktree ? { worktree: { repo: o.cwd, path: o.cwd + "/wt", branch: "atelier/w", base: "main" } } : {}) };
+      return { ok: true, tabId: id, cwd: o.cwd, ...(o.worktree ? { worktree: { repo: o.cwd, path: o.cwd + "/wt", branch: "sudal/w", base: "main" } } : {}) };
     },
     send: async (tabId, text) => {
       const t = tabs.get(tabId)!;
@@ -69,7 +69,7 @@ test("사람 코디네이터: run → worker-start(preamble) → 질문/답 → 
   const w = await o.workerStart({ runId: run.id, actor: user, spec: "auth.ts 의 500 을 고치고 테스트 추가", provider: "claude", worktree: true, cwd: "/repo" });
   assert.equal(w.dispatch.status, "live");
   assert.equal(w.dispatch.tabId, "tab1");
-  assert.equal(w.dispatch.worktree?.branch, "atelier/w");
+  assert.equal(w.dispatch.worktree?.branch, "sudal/w");
   assert.deepEqual(w.receipt.stages, ["creating_workspace", "configured", "started"]);
   const prompt = tabs.get("tab1")!.prompts[0];
   assert.match(prompt, new RegExp(`--run ${run.id} --dispatch ${w.dispatch.id} --capability ${w.dispatch.capability}`));

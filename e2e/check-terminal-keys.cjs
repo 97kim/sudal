@@ -1,9 +1,9 @@
 // 터미널 안의 ⌘W·⌘K·⌘F 가 세션·워크스페이스·대화 검색이 아니라 터미널을 향하는지, 분할 불변식과 배치 복원이 지켜지는지 본다.
-// 네이티브 메뉴 가속기는 자동화로 못 누르므로 App 이 열어 둔 window.__atelierShortcut 으로 같은 경로를 탄다.
+// 네이티브 메뉴 가속기는 자동화로 못 누르므로 App 이 열어 둔 window.__sudalShortcut 으로 같은 경로를 탄다.
 const path = require("path"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 let fails = 0;
 const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}):`, ok ? "PASS" : `FAIL${note ? " " + note : ""}`); };
@@ -12,7 +12,7 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   const b = await chromium.connectOverCDP("http://127.0.0.1:9333");
   const page = b.contexts().flatMap((c) => c.pages()).find((p) => p.url().includes("localhost") || p.url().startsWith("file:"));
   const ev = (fn, a) => page.evaluate(fn, a);
-  const shortcut = (name) => ev((n) => window.__atelierShortcut(n), name);
+  const shortcut = (name) => ev((n) => window.__sudalShortcut(n), name);
   const ws = cli("ws", "add", "--path", E2E + "/repo");
   const tab1 = cli("tab", "new", "--ws", ws.workspaceId, "--provider", "claude", "--title", "터미널 키", "--activate");
   await page.waitForTimeout(2500);

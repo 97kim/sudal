@@ -4,8 +4,8 @@
 //  C) check --wait 로 완료 보고 수신, task succeeded, 턴이 끝나면 dispatch settled → 패널에서 해제
 //  D) run-show / CLI read 에 orchestration 없음(사람 코디네이터는 카드 없음) — 패널 메시지 목록에 question/reply/worker_done
 const os=require("os"),path=require("path"),fs=require("fs"),{execFileSync}=require("child_process");
-const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");const repo=path.join(E2E,"repo");
-const cli=(...a)=>{try{return JSON.parse(execFileSync(app+"/Contents/MacOS/Atelier",[app+"/Contents/Resources/cli/atelier.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",ATELIER_USERDATA:E2E+"/userdata"},encoding:"utf8"}))}catch(e){try{return JSON.parse(e.stdout)}catch{throw e}}};
+const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");const repo=path.join(E2E,"repo");
+const cli=(...a)=>{try{return JSON.parse(execFileSync(app+"/Contents/MacOS/Sudal",[app+"/Contents/Resources/cli/sudal.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",SUDAL_USERDATA:E2E+"/userdata"},encoding:"utf8"}))}catch(e){try{return JSON.parse(e.stdout)}catch{throw e}}};
 const { chromium } = require("playwright-core");
 const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toFixed(1)}s`,...a);const results=[];const res=(n,ok,x="")=>{results.push([n,ok]);log(`RESULT ${n}:`,ok?"PASS":"FAIL",x)};
 (async()=>{

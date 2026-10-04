@@ -7,7 +7,7 @@ export const schedules = {
   newSchedule: "새 예약",
   notice: {
     missed:
-      "예약은 Atelier가 실행 중이고 Mac이 깨어 있을 때 동작합니다. 앱 종료나 절전으로 놓친 예약은 설정된 지연 허용 시간 안에 돌아오면 실행을 시도하고, 시간이 지나면 건너뜁니다. 실행 점검 간격에 따른 짧은 여유 시간이 추가됩니다.",
+      "예약은 Sudal이 실행 중이고 Mac이 깨어 있을 때 동작합니다. 앱 종료나 절전으로 놓친 예약은 설정된 지연 허용 시간 안에 돌아오면 실행을 시도하고, 시간이 지나면 건너뜁니다. 실행 점검 간격에 따른 짧은 여유 시간이 추가됩니다.",
     cleanup:
       "격리 세션을 사용하는 예약은 새 실행 전에 기존 worktree 중 최근 3회분을 남기고 오래된 worktree와 탭을 자동 삭제합니다. 커밋하지 않은 변경도 삭제되므로 필요한 결과는 미리 보관하세요. 실행 중인 탭은 삭제하지 않습니다.",
   },
@@ -76,7 +76,7 @@ export const schedules = {
   empty: {
     title: "아직 예약이 없습니다.",
     hint: "오른쪽 위 “새 예약” 으로 만듭니다. 터미널에서도 됩니다:",
-    example: 'atelier schedule add --name 아침점검 --cron "30 9 * * *" --prompt "…" --ws repo',
+    example: 'sudal schedule add --name 아침점검 --cron "30 9 * * *" --prompt "…" --ws repo',
   },
   item: {
     isolated: "격리 세션",

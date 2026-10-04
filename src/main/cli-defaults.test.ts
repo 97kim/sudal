@@ -50,8 +50,8 @@ test("claudeShowsThinkingSummaries·claudeProgressNotes: 사용자 < 프로젝�
 });
 
 test("codexHasDeveloperInstructions: 사용자·프로젝트 설정에 developer_instructions 가 있으면 true", () => {
-  const home = mkdtempSync(join(tmpdir(), "atelier-codex-di-"));
-  const cwd = mkdtempSync(join(tmpdir(), "atelier-codex-di-cwd-"));
+  const home = mkdtempSync(join(tmpdir(), "sudal-codex-di-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sudal-codex-di-cwd-"));
   try {
     assert.equal(codexHasDeveloperInstructions({}, home, cwd), false);
     mkdirSync(join(home, ".codex"));
@@ -60,7 +60,7 @@ test("codexHasDeveloperInstructions: 사용자·프로젝트 설정에 developer
     writeFileSync(join(home, ".codex", "config.toml"), 'model = "x"\ndeveloper_instructions = """\n규칙\n"""\n');
     assert.equal(codexHasDeveloperInstructions({}, home, null), true);
     // CODEX_HOME 이 있으면 그쪽을 본다
-    const other = mkdtempSync(join(tmpdir(), "atelier-codex-home-"));
+    const other = mkdtempSync(join(tmpdir(), "sudal-codex-home-"));
     assert.equal(codexHasDeveloperInstructions({ CODEX_HOME: other }, home, null), false);
     mkdirSync(join(cwd, ".codex"));
     writeFileSync(join(cwd, ".codex", "config.toml"), '[profiles.a]\n  developer_instructions = "x"\n');

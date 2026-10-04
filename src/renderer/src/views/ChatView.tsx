@@ -1127,7 +1127,7 @@ function WorktreeChip({
         data-worktree-chip
       >
         <Icon name="branch" size={10} />
-        {worktree.branch.replace(/^atelier\//, "")}
+        {worktree.branch.replace(/^sudal\//, "")}
       </button>
       {open && (
         <div

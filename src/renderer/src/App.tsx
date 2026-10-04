@@ -232,7 +232,7 @@ export function App() {
     [model.openTabIds, model.activeTabId, ws.attention, openTab],
   );
 
-  // `atelier` CLI 가 밀어 넣는 화면 동작: 그 탭으로 가서 파일·브라우저를 연다
+  // `sudal` CLI 가 밀어 넣는 화면 동작: 그 탭으로 가서 파일·브라우저를 연다
   useEffect(
     () =>
       window.workbench.app.onControlOpen((req) => {
@@ -267,7 +267,7 @@ export function App() {
       // 터미널 닫기·화면 지우기·터미널 안 찾기. 터미널에서 습관처럼 누른 ⌘W 로 세션이 통째로 사라지면 안 된다.
       if ((name === "close-tab" || name === "switch-workspace" || name === "search") && terminalFocused()) {
         const cmd = name === "close-tab" ? "close" : name === "switch-workspace" ? "clear" : "find";
-        window.dispatchEvent(new CustomEvent("atelier:terminal-command", { detail: cmd }));
+        window.dispatchEvent(new CustomEvent("sudal:terminal-command", { detail: cmd }));
         return;
       }
       if (name === "new-tab") void newTab();
@@ -284,21 +284,21 @@ export function App() {
           lastPane: getLastPane(tabId),
           hasEditorTab: !!t.active,
         });
-        if (where === "editor") window.dispatchEvent(new CustomEvent("atelier:editor-close-active", { detail: tabId }));
+        if (where === "editor") window.dispatchEvent(new CustomEvent("sudal:editor-close-active", { detail: tabId }));
         else void closeTab(tabId);
       }
       else if (name === "toggle-sidebar") toggleRail();
       else if (name === "switch-workspace") setSwitcher((s) => !s);
       else if (name === "search") {
         // ⌘F: 브라우저를 보고 있으면 그 페이지에서 찾기, 아니면 대화 검색
-        if (browserKeysActive()) window.dispatchEvent(new CustomEvent("atelier:browser-command", { detail: "find" }));
+        if (browserKeysActive()) window.dispatchEvent(new CustomEvent("sudal:browser-command", { detail: "find" }));
         else setSearch((s) => !s);
       } else if (name === "reopen-tab") {
         if (model.activeTabId) reopenClosedEditorTab(model.activeTabId);
       } else if (name === "browser-address" || name === "browser-reload" || name === "browser-hard-reload") {
         if (browserKeysActive())
           window.dispatchEvent(
-            new CustomEvent("atelier:browser-command", {
+            new CustomEvent("sudal:browser-command", {
               detail: name === "browser-address" ? "address" : name === "browser-hard-reload" ? "hard-reload" : "reload",
             }),
           );
@@ -330,7 +330,7 @@ export function App() {
     };
     // 네이티브 메뉴 가속기는 자동화로 못 누른다 — e2e 가 같은 경로를 타도록 열어 둔다.
     void 0;
-    (window as unknown as { __atelierShortcut?: (n: ShortcutName) => void }).__atelierShortcut = handle;
+    (window as unknown as { __sudalShortcut?: (n: ShortcutName) => void }).__sudalShortcut = handle;
     // ⌘⇧↓/↑(응답 필요 세션으로)는 입력창·에디터·터미널에 포커스가 있으면 편집 명령("끝까지 선택")이 먼저 처리해
     // 메뉴 가속기까지 오지 않는다. 캡처 단계에서 먼저 받아 막는다 — 막힌 키는 메뉴로도 가지 않으니 두 번 돌지 않는다.
     const onKey = (e: KeyboardEvent) => {

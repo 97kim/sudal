@@ -1,10 +1,10 @@
-// 인앱 브라우저(<webview>, partition "persist:atelier-browser")의 실패한 요청을 모은다.
+// 인앱 브라우저(<webview>, partition "persist:sudal-browser")의 실패한 요청을 모은다.
 // webRequest 는 session 에 하나뿐이고 같은 이벤트에 마지막 리스너만 살아남는다 — 그래서 여기 한 곳에서만 건다.
 // 어느 브라우저 탭의 요청인지는 details.webContentsId 로 갈라 담는다(탭마다 링 버퍼).
 import { session, type Session } from "electron";
 import { DIAG_MAX_NET, pushCapped, type NetFailure } from "@shared/browser-diagnostics";
 
-export const BROWSER_PARTITION = "persist:atelier-browser";
+export const BROWSER_PARTITION = "persist:sudal-browser";
 
 /** webContentsId → 최근 실패. 탭이 사라지면 그 자리도 지운다(webContents 소멸을 못 보므로 상한으로 막는다). */
 const byContents = new Map<number, NetFailure[]>();

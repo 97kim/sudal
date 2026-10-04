@@ -1,10 +1,10 @@
 // 오케스트레이션(탭 코디네이터) 검증. usage: node scenario-orch-ai.cjs
-//  A) Claude 탭에 "atelier orch 로 Run 을 만들고(--coordinator active) 워커 1개를 띄워 완료 보고를 받아 ack 하라" 지시
+//  A) Claude 탭에 "sudal orch 로 Run 을 만들고(--coordinator active) 워커 1개를 띄워 완료 보고를 받아 ack 하라" 지시
 //     → 코디네이터 탭에 orchestration 카드, 워커 탭 생성, 카드가 succeeded 로 갱신, 코디네이터 답에 결과
 //  B) 보고 없이 끝나는 워커: spec 에 "worker_done 을 보내지 말고 '끝' 이라고만 답하라" → 앱 통지 turn_ended_without_report → 사람이 abandon
 const os=require("os"),path=require("path"),fs=require("fs"),{execFileSync}=require("child_process");
-const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");const repo=path.join(E2E,"repo");
-const cli=(...a)=>{try{return JSON.parse(execFileSync(app+"/Contents/MacOS/Atelier",[app+"/Contents/Resources/cli/atelier.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",ATELIER_USERDATA:E2E+"/userdata"},encoding:"utf8"}))}catch(e){try{return JSON.parse(e.stdout)}catch{throw e}}};
+const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");const repo=path.join(E2E,"repo");
+const cli=(...a)=>{try{return JSON.parse(execFileSync(app+"/Contents/MacOS/Sudal",[app+"/Contents/Resources/cli/sudal.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",SUDAL_USERDATA:E2E+"/userdata"},encoding:"utf8"}))}catch(e){try{return JSON.parse(e.stdout)}catch{throw e}}};
 const { chromium } = require("playwright-core");
 const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toFixed(1)}s`,...a);const results=[];const res=(n,ok,x="")=>{results.push([n,ok]);log(`RESULT ${n}:`,ok?"PASS":"FAIL",x)};
 (async()=>{
@@ -17,7 +17,7 @@ const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toF
   for(const r of (cli("orch","run-list").runs||[])){ if(r.status!=="active")continue; const show=cli("orch","run-show","--run",r.id); for(const w of (show.workers||[])) if(w.status==="live")await ev(({id,d})=>window.workbench.orch.worker(id,d,"abandon"),{id:r.id,d:w.dispatchId}); await ev(id=>window.workbench.orch.takeover(id),r.id); const c=await ev(id=>window.workbench.orch.close(id),r.id); log("closed leftover run",r.id,JSON.stringify(c)); }
   { const s0=await ev(()=>window.workbench.workspaces.state()); for(const ww of s0.model.workspaces){for(const t of s0.model.tabs.filter(t=>t.workspaceId===ww.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),ww.id);} }
   const ws=cli("ws","add","--path",repo);
-  const prompt=`atelier CLI 의 오케스트레이션으로 이 작업을 감독해. 순서대로: (1) \`atelier orch run-create --objective "b.txt 만들기" --coordinator active\` 로 Run 을 만들고 응답의 run id 와 coordinatorKey 를 기억해. (2) \`atelier orch worker-start --run <id> --key <key> --agent claude --policy full --cwd ${repo} --spec "Target: b.txt (저장소 루트). Change: 내용이 hello 한 줄인 b.txt 를 만든다. Acceptance: cat b.txt 가 hello. 끝나면 worker_done 보고(성공)."\` 로 워커 하나를 띄워. (3) \`atelier orch check --run <id> --key <key> --wait --types worker_done,question,escalation,note --timeout-ms 600000\` 으로 완료 보고를 기다려. question 이 오면 reply 로 답하고, worker_done 이 오면 \`--ack <delivery id>\` 로 확인한 뒤 멈춰. (4) 마지막에 "결과: <outcome>" 한 줄로만 답해. 워커 탭을 직접 열거나 파일을 직접 만들지 마.`;
+  const prompt=`sudal CLI 의 오케스트레이션으로 이 작업을 감독해. 순서대로: (1) \`sudal orch run-create --objective "b.txt 만들기" --coordinator active\` 로 Run 을 만들고 응답의 run id 와 coordinatorKey 를 기억해. (2) \`sudal orch worker-start --run <id> --key <key> --agent claude --policy full --cwd ${repo} --spec "Target: b.txt (저장소 루트). Change: 내용이 hello 한 줄인 b.txt 를 만든다. Acceptance: cat b.txt 가 hello. 끝나면 worker_done 보고(성공)."\` 로 워커 하나를 띄워. (3) \`sudal orch check --run <id> --key <key> --wait --types worker_done,question,escalation,note --timeout-ms 600000\` 으로 완료 보고를 기다려. question 이 오면 reply 로 답하고, worker_done 이 오면 \`--ack <delivery id>\` 로 확인한 뒤 멈춰. (4) 마지막에 "결과: <outcome>" 한 줄로만 답해. 워커 탭을 직접 열거나 파일을 직접 만들지 마.`;
   const coord=cli("tab","new","--ws",ws.workspaceId,"--provider","claude","--policy","full","--title","코디(탭)","--activate","--prompt",prompt);
   log("coordinator tab:",coord.tab?.id,JSON.stringify(coord.send));
   let card=null;

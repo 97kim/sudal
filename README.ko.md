@@ -1,12 +1,12 @@
 <h1 align="center">
   <img src="build/icon-1024.png" alt="" width="72" /><br/>
-  Atelier
+  Sudal
 </h1>
 
 <p align="center"><strong>한국어</strong> · <a href="README.md">English</a></p>
 
 <p align="center">
-  <a href="https://github.com/97kim/Atelier/releases"><img src="https://img.shields.io/github/v/release/97kim/Atelier?label=release&color=4f5bd5" alt="최신 릴리즈" /></a>
+  <a href="https://github.com/97kim/sudal/releases"><img src="https://img.shields.io/github/v/release/97kim/sudal?label=release&color=4f5bd5" alt="최신 릴리즈" /></a>
   <img src="https://img.shields.io/badge/license-MIT-4f5bd5" alt="라이선스: MIT" />
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-4f5bd5" alt="지원 환경: macOS Apple Silicon" />
 </p>
@@ -17,28 +17,28 @@
 </p>
 
 <p align="center">
-  <a href="#설치"><strong>설치</strong></a> · <a href="#첫-작업-시작하기">첫 작업 시작하기</a> · <a href="docs/GUIDE.ko.md">기능 안내</a> · <a href="https://github.com/97kim/Atelier/releases">릴리즈</a> · <a href="https://github.com/97kim/Atelier/issues">문제 신고</a>
+  <a href="#설치"><strong>설치</strong></a> · <a href="#첫-작업-시작하기">첫 작업 시작하기</a> · <a href="docs/GUIDE.ko.md">기능 안내</a> · <a href="https://github.com/97kim/sudal/releases">릴리즈</a> · <a href="https://github.com/97kim/sudal/issues">문제 신고</a>
 </p>
 
 <p align="center">
-  <img src="docs/images/demo-delegate.gif" alt="Claude가 버그를 고친 뒤 atelier CLI로 Codex 탭을 직접 열어 남은 수정과 테스트 추가를 맡기고, Codex가 끝내면 결과를 받아 테스트하고 정리하는 장면" width="960" />
+  <img src="docs/images/demo-delegate.gif" alt="Claude가 버그를 고친 뒤 sudal CLI로 Codex 탭을 직접 열어 남은 수정과 테스트 추가를 맡기고, Codex가 끝내면 결과를 받아 테스트하고 정리하는 장면" width="960" />
 </p>
 
 <p align="center">
   <sub>Claude에게 "고친 다음, 수량이 없을 때 처리와 그 테스트는 Codex에게 맡겨 줘"라고만 했어요. Claude가 직접 Codex 탭을 열어 일을 넘기고, 끝나면 결과를 받아 테스트하고 정리해요. (기다리는 구간은 빠르게 감았어요)</sub>
 </p>
 
-Atelier 전용 계정은 필요 없어요. 로그인해 둔 `claude`·`codex` CLI를 앱이 찾아서 쓰니, `CLAUDE.md`·스킬·MCP 서버 같은 설정이 터미널에서 쓸 때와 똑같이 적용돼요.
+Sudal 전용 계정은 필요 없어요. 로그인해 둔 `claude`·`codex` CLI를 앱이 찾아서 쓰니, `CLAUDE.md`·스킬·MCP 서버 같은 설정이 터미널에서 쓸 때와 똑같이 적용돼요.
 
 ## 에이전트가 직접 일을 맡겨요
 
-앱 안의 Claude Code·Codex가 `atelier` CLI로 새 탭을 열어 일을 넘기고, 끝나면 결과를 읽어 와요. 탭을 열고 결과를 옮겨 오는 일은 에이전트가 해요.
+앱 안의 Claude Code·Codex가 `sudal` CLI로 새 탭을 열어 일을 넘기고, 끝나면 결과를 읽어 와요. 탭을 열고 결과를 옮겨 오는 일은 에이전트가 해요.
 설정 → 일반 → **CLI와 에이전트 스킬**에서 CLI와 스킬을 설치해 두면 에이전트가 이 사용법을 알게 돼요. 설치한 뒤에 새로 시작한 세션부터 적용돼요. 같은 명령을 터미널에서 직접 써도 돼요.
 
 ```
-atelier tab new --provider codex --title "리뷰" --prompt "방금 바꾼 코드를 리뷰해 줘"
-atelier tab send --tab 리뷰 --text "테스트도 돌려 줘" --wait
-atelier tab read --tab 리뷰 --last 3
+sudal tab new --provider codex --title "리뷰" --prompt "방금 바꾼 코드를 리뷰해 줘"
+sudal tab send --tab 리뷰 --text "테스트도 돌려 줘" --wait
+sudal tab read --tab 리뷰 --last 3
 ```
 
 ## 기능
@@ -139,7 +139,7 @@ atelier tab read --tab 리뷰 --last 3
 
 ### 고친 화면을 인앱 브라우저로 확인해요
 
-개발 중인 화면을 채팅 옆에 띄우고, 폰·태블릿 폭으로 바꿔 봐요. 에이전트도 `atelier browser`로 그 페이지를 읽고 눌러 보며 고친 화면을 스스로 확인해요.
+개발 중인 화면을 채팅 옆에 띄우고, 폰·태블릿 폭으로 바꿔 봐요. 에이전트도 `sudal browser`로 그 페이지를 읽고 눌러 보며 고친 화면을 스스로 확인해요.
 
 </td>
 <td width="58%"><img src="docs/images/browser.png" alt="채팅 옆 인앱 브라우저에 개발 중인 장바구니 페이지가 떠 있는 화면" width="100%" /></td>
@@ -163,14 +163,14 @@ atelier tab read --tab 리뷰 --last 3
 Homebrew로 설치해요.
 
 ```
-brew tap 97kim/atelier
-brew trust --cask 97kim/atelier/atelier
-brew install --cask atelier
+brew tap 97kim/sudal
+brew trust --cask 97kim/sudal/sudal
+brew install --cask sudal
 ```
 
-- `brew tap`은 Atelier cask가 있는 저장소를 Homebrew에 추가해요.
-- `brew trust`는 Homebrew 7부터 필요한 단계예요. 공식 목록 밖의 cask는 신뢰한다고 한 번 알려 줘야 설치할 수 있어요. 위 명령은 이 탭 전체가 아니라 Atelier 하나만 신뢰해요.
-- 새 버전이 나오면 사이드바 왼쪽 아래의 버전 옆에 업데이트 버튼이 나타나요. 누르면 진행 상황이 보이고, 끝나면 다시 시작해요. **설정 → 일반 → 업데이트**에서 받거나, 터미널에서 `brew update && brew upgrade --cask atelier`로 받아요. `brew upgrade`만 실행하면 탭이 갱신되지 않아 새 버전을 찾지 못해요.
+- `brew tap`은 Sudal cask가 있는 저장소를 Homebrew에 추가해요.
+- `brew trust`는 Homebrew 7부터 필요한 단계예요. 공식 목록 밖의 cask는 신뢰한다고 한 번 알려 줘야 설치할 수 있어요. 위 명령은 이 탭 전체가 아니라 Sudal 하나만 신뢰해요.
+- 새 버전이 나오면 사이드바 왼쪽 아래의 버전 옆에 업데이트 버튼이 나타나요. 누르면 진행 상황이 보이고, 끝나면 다시 시작해요. **설정 → 일반 → 업데이트**에서 받거나, 터미널에서 `brew update && brew upgrade --cask sudal`로 받아요. `brew upgrade`만 실행하면 탭이 갱신되지 않아 새 버전을 찾지 못해요.
 
 **처음 열 때**: 서명과 공증(notarization)을 하지 않은 앱이라 macOS가 한 번 막아요. 앱을 열어 보고 차단 안내가 뜨면 **시스템 설정 → 개인정보 보호 및 보안**에서 "그래도 열기"를 누르세요. 한 번 허용하면 이후 업데이트에도 이어져요.
 
@@ -180,12 +180,12 @@ brew install --cask atelier
 터미널에서 quarantine 속성을 지우면 바로 열려요.
 
 ```
-xattr -d com.apple.quarantine /Applications/Atelier.app
+xattr -d com.apple.quarantine /Applications/Sudal.app
 ```
 
 </details>
 
-Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/Atelier/releases)에서 DMG를 받아 `Atelier.app`을 Applications 폴더로 옮기세요.
+Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/sudal/releases)에서 DMG를 받아 `Sudal.app`을 Applications 폴더로 옮기세요.
 
 ## 첫 작업 시작하기
 
@@ -217,16 +217,16 @@ Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/Atelier/rel
 
 ### 계정이나 API 키가 필요한가요?
 
-Atelier용 별도 계정은 필요 없어요. 각자 로그인해 둔 `claude`·`codex` CLI를 그대로 쓰고, 요금도 각 서비스의 구독이나 API 요금 그대로예요.
-Atelier는 직접 설치하고 로그인한 CLI를 실행할 뿐이에요. 인증 정보를 수집하거나 저장하거나 중개하지 않고, 각 서비스의 이용 조건·요금·한도가 그대로 적용돼요.
+Sudal용 별도 계정은 필요 없어요. 각자 로그인해 둔 `claude`·`codex` CLI를 그대로 쓰고, 요금도 각 서비스의 구독이나 API 요금 그대로예요.
+Sudal은 직접 설치하고 로그인한 CLI를 실행할 뿐이에요. 인증 정보를 수집하거나 저장하거나 중개하지 않고, 각 서비스의 이용 조건·요금·한도가 그대로 적용돼요.
 
 ### 내 코드가 어디로 가나요?
 
-Atelier 자체는 아무 데도 보내지 않아요. 모델과의 통신은 Claude Code·Codex CLI가 평소처럼 해요.
+Sudal 자체는 아무 데도 보내지 않아요. 모델과의 통신은 Claude Code·Codex CLI가 평소처럼 해요.
 
 ### 데이터는 어디에 저장되나요?
 
-워크스페이스와 채팅 기록은 `~/Library/Application Support/Atelier/`에, 격리 세션의 worktree는 `~/atelier/worktrees/`에 있어요. **설정 → 일반 → 저장 위치**에서 열거나 바꿀 수 있어요.
+워크스페이스와 채팅 기록은 `~/Library/Application Support/Sudal/`에, 격리 세션의 worktree는 `~/sudal/worktrees/`에 있어요. **설정 → 일반 → 저장 위치**에서 열거나 바꿀 수 있어요.
 
 ### Intel Mac에서도 되나요?
 

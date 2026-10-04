@@ -1,4 +1,4 @@
-// `atelier` CLI(cli/atelier.cjs)가 붙는 제어 서버. userData 의 유닉스 소켓(0600, 이 사용자만)으로 줄 단위 JSON 을 주고받는다.
+// `sudal` CLI(cli/sudal.cjs)가 붙는 제어 서버. userData 의 유닉스 소켓(0600, 이 사용자만)으로 줄 단위 JSON 을 주고받는다.
 //   요청  {"id":1,"method":"tab.list","params":{...}}
 //   응답  {"id":1,"result":{...}}  또는  {"id":1,"error":{"code":"...","message":"..."}}
 // 앱 상태를 건드리는 일은 전부 deps 로 위임한다 — 이 파일은 프로토콜·선택자·대기 로직만 알고, 테스트는 가짜 deps 로 돈다.
@@ -552,7 +552,7 @@ export class ControlServer {
         return { tab: tab.id, ...r };
       }
       case "skills.get": {
-        const name = params.name !== undefined ? this.requireString(params, "name") : "atelier-cli";
+        const name = params.name !== undefined ? this.requireString(params, "name") : "sudal-cli";
         const text = this.deps.guide(name);
         if (!text) throw new ControlError(mt("cli.control.unknownGuide", { name }), "not_found");
         return { name, text };

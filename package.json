@@ -1,12 +1,12 @@
 {
-  "name": "atelier",
+  "name": "sudal",
   "version": "0.10.5",
   "description": "A macOS studio for coding agents. Run Claude Code and Codex in tabs, delegate, compare, and pick what to keep.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/97kim/Atelier.git"
+    "url": "git+https://github.com/97kim/sudal.git"
   },
-  "homepage": "https://github.com/97kim/Atelier",
+  "homepage": "https://github.com/97kim/sudal",
   "author": "97kim",
   "license": "MIT",
   "type": "module",

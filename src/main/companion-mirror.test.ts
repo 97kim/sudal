@@ -15,7 +15,7 @@ const mkRoot = () => {
   return { root, day };
 };
 
-test("findCompanionRollout: cwd 일치 + since 이후 + 앱 자신(originator atelier)·제외 id 는 건너뜀", () => {
+test("findCompanionRollout: cwd 일치 + since 이후 + 앱 자신(originator sudal)·제외 id 는 건너뜀", () => {
   const { root, day } = mkRoot();
   const cwd = "/repo/x";
   const old = join(day, "rollout-old.jsonl");
@@ -24,7 +24,7 @@ test("findCompanionRollout: cwd 일치 + since 이후 + 앱 자신(originator at
   utimesSync(old, past, past);
   const since = Date.now() - 5000;
   writeFileSync(join(day, "rollout-other-cwd.jsonl"), meta("s-other", "/repo/y"));
-  writeFileSync(join(day, "rollout-own.jsonl"), meta("s-own", cwd, "atelier"));
+  writeFileSync(join(day, "rollout-own.jsonl"), meta("s-own", cwd, "sudal"));
   writeFileSync(join(day, "rollout-excluded.jsonl"), meta("s-ex", cwd));
   assert.equal(findCompanionRollout(root, { cwd, since, exclude: new Set(["s-ex"]) }), null, "후보가 전부 걸러지면 null");
   const good = join(day, "rollout-good.jsonl");

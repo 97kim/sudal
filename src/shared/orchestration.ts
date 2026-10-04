@@ -1,4 +1,4 @@
-// 오케스트레이션(Orca 모델을 Atelier 에 맞춘 것)의 순수 부분: 타입, Run 별 도메인 이벤트, 리듀서, 워커 preamble.
+// 오케스트레이션(Orca 모델을 Sudal 에 맞춘 것)의 순수 부분: 타입, Run 별 도메인 이벤트, 리듀서, 워커 preamble.
 // 실제 실행·저장·대기는 main/orchestration.ts. 여기엔 부수효과가 없다.
 //
 // 개념: Run(코디네이터의 인박스·이름 공간) > Task(작업) > Dispatch(그 작업의 권위 있는 시도 1개 = 탭 하나).

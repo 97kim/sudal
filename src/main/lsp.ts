@@ -293,7 +293,7 @@ export class LspManager {
     }
     const message = injectTsserverPath(rawMessage, s.tsLib);
     const body = Buffer.from(message, "utf8");
-    if (process.env.ATELIER_DEBUG_LSP) this.deps.log?.(`[lsp ${id}] → ${message.slice(0, 160)}`);
+    if (process.env.SUDAL_DEBUG_LSP) this.deps.log?.(`[lsp ${id}] → ${message.slice(0, 160)}`);
     s.proc.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
     s.proc.stdin.write(body);
     return true;
@@ -356,7 +356,7 @@ export class LspManager {
       if (s.buffer.length < start + len) return;
       const body = s.buffer.subarray(start, start + len).toString("utf8");
       s.buffer = s.buffer.subarray(start + len);
-      if (process.env.ATELIER_DEBUG_LSP) this.deps.log?.(`[lsp ${s.id}] ← ${body.slice(0, 160)}`);
+      if (process.env.SUDAL_DEBUG_LSP) this.deps.log?.(`[lsp ${s.id}] ← ${body.slice(0, 160)}`);
       this.deps.onMessage(s.id, body);
     }
   }

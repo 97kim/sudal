@@ -39,7 +39,7 @@ test("시간을 넘기면 죽이고, 종료 코드로 읽지 않는다", async (
 
 test("자식이 만든 프로세스도 같이 정리한다", async () => {
   // 손자가 살아남으면 파일이 나중에 생긴다. 죽었으면 안 생긴다.
-  const marker = `/tmp/atelier-precheck-${Date.now()}`;
+  const marker = `/tmp/sudal-precheck-${Date.now()}`;
   const r = await run(`( sleep 2; touch ${marker} ) & sleep 5`, 800);
   assert.equal(r.timedOut, true);
   await new Promise((res) => setTimeout(res, 2500));

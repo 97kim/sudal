@@ -38,7 +38,7 @@ const LAYOUT_PREFIX = "terminal.layout.";
 const OPEN_PREFIX = "terminal.open.";
 const DOCK_KEY = "terminal.dock";
 const WIDTH_KEY = "terminal.width";
-export const TERMINAL_DOCK_EVENT = "atelier:terminal-dock";
+export const TERMINAL_DOCK_EVENT = "sudal:terminal-dock";
 
 /** 터미널 패널 자리 — 채팅 아래(기본) 또는 오른쪽. 탭마다가 아니라 앱 전체에서 하나. */
 export type TerminalDock = "bottom" | "right";

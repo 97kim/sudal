@@ -1,4 +1,4 @@
-// 에이전트가 인앱 브라우저를 조작하는 명령(atelier browser read/click/fill)의 주입 스크립트.
+// 에이전트가 인앱 브라우저를 조작하는 명령(sudal browser read/click/fill)의 주입 스크립트.
 // main 이 webContents.executeJavaScript 로 이걸 실행하고 결과를 JSON 으로 받는다.
 //
 // 스크립트는 문자열로 페이지에 들어가므로 값은 반드시 JSON.stringify 로 싣는다 — 따옴표·역슬래시·

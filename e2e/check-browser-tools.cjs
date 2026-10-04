@@ -1,8 +1,8 @@
 // 브라우저 편의 기능: 페이지 내 찾기(⌘F), 보기 폭 프리셋, 확대·축소.
 const os = require("os"), path = require("path"), http = require("http"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 const { chromium } = require("playwright-core");
 
 const srv = http.createServer((req, res) => {
@@ -32,7 +32,7 @@ const srv = http.createServer((req, res) => {
   await page.waitForTimeout(500);
 
   // 1) ⌘F — 브라우저를 보고 있으면 페이지 찾기가 열리고 대화 검색은 안 열린다
-  await ev(() => window.__atelierShortcut?.("search"));
+  await ev(() => window.__sudalShortcut?.("search"));
   await page.waitForTimeout(600);
   const findOpen = await ev(() => ({ find: !!document.querySelector("[data-browser-find]"), chatSearch: !!document.querySelector("[data-search-palette]") }));
   console.log("⌘F 뒤:", JSON.stringify(findOpen));

@@ -150,9 +150,9 @@ export const session: DeepPartial<typeof ko> = {
       all_other: "{{count}} plugins failed to load: {{shown}}",
       more: "{{total}} plugins failed to load: {{shown}} and {{more}} more",
     },
-    stale: "Atelier restarted and lost track of this.",
-    staleFanout: "Atelier restarted and lost track of this. Check it in that tab.",
-    staleReview: "Atelier restarted and lost track of this. Open the review tab to check.",
-    staleInterrupted: "Stopped: Atelier restarted and lost track of this.",
+    stale: "Sudal restarted and lost track of this.",
+    staleFanout: "Sudal restarted and lost track of this. Check it in that tab.",
+    staleReview: "Sudal restarted and lost track of this. Open the review tab to check.",
+    staleInterrupted: "Stopped: Sudal restarted and lost track of this.",
   },
 };

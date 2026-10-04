@@ -2,7 +2,7 @@
 // "cli" 탭으로 들어온다. 닫아도 xterm 은 숨김(hidden)으로 유지해 스크롤백이 남고, 프로세스는 main 이 "<채팅탭 id>:<이름>" 으로 들고 있다.
 // 채팅 탭을 오가며 다시 마운트되면 main 의 목록과 백로그로 화면을, kv 에 저장한 배치(높이·분할·활성 탭)로 자리를 복원한다.
 //
-// 포커스가 이 패널 안에 있을 때 ⌘W·⌘K·⌘F 는 App 이 "atelier:terminal-command" 로 넘겨 준다 — 세션 닫기·워크스페이스 전환·
+// 포커스가 이 패널 안에 있을 때 ⌘W·⌘K·⌘F 는 App 이 "sudal:terminal-command" 로 넘겨 준다 — 세션 닫기·워크스페이스 전환·
 // 대화 검색 대신 터미널 닫기·화면 지우기·터미널 안 찾기. 대상은 마지막으로 포커스가 있던 터미널(focused)이다. 나뉜 화면에서는
 // 첫 칸(active)과 포커스가 다를 수 있어서 active 를 기준으로 하면 엉뚱한 칸이 닫힌다.
 
@@ -389,8 +389,8 @@ export function TerminalPanel({
       if (!panelRef.current?.contains(document.activeElement)) return;
       commands.current[(e as CustomEvent<TerminalCommand>).detail]?.();
     };
-    window.addEventListener("atelier:terminal-command", onCmd);
-    return () => window.removeEventListener("atelier:terminal-command", onCmd);
+    window.addEventListener("sudal:terminal-command", onCmd);
+    return () => window.removeEventListener("sudal:terminal-command", onCmd);
   }, []);
 
   // 오른쪽에 있을 때: 채팅 칼럼(격자)에서 채팅 몫 340px 을 남기는 데까지.

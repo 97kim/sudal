@@ -126,7 +126,7 @@ export interface AppSettingsDto {
    */
   keepBrowserLogin: boolean;
   /**
-   * 격리 세션·팬아웃 등이 git worktree를 만드는 폴더. 기본 ~/atelier/worktrees.
+   * 격리 세션·팬아웃 등이 git worktree를 만드는 폴더. 기본 ~/sudal/worktrees.
    * 바꾸면 앞으로 만드는 것부터 — 이미 만든 worktree 는 옮기지 않는다(git 연결이 깨진다).
    * 경로는 설정 저장으로 바꾸지 않고 app:pick-worktree-dir(선택 창)로만 고른다. 저장으로는 worktreeDirCustom:false(기본값으로)만.
    */
@@ -330,7 +330,7 @@ export interface TerminalOpenResultDto {
  * 화면을 지운다 — 별도 채널로 지우면 어느 출력까지가 "지우기 전" 인지 main 과 renderer 가 다르게 본다.
  * APC 시퀀스라 혹시 그대로 xterm 에 써도 아무것도 그리지 않는다.
  */
-export const TERMINAL_CLEAR_MARK = "\u001b_atelier:clear\u001b\\";
+export const TERMINAL_CLEAR_MARK = "\u001b_sudal:clear\u001b\\";
 
 /** 터미널 id 는 "<채팅탭 id>:<이름>". kind=command 는 하이브리드 모드의 CLI. */
 export interface TerminalInfoDto {
@@ -786,9 +786,9 @@ export interface WorkbenchApi {
     setSettings(patch: Partial<AppSettingsDto>): Promise<AppSettingsDto>;
     /** 설정이 바뀌면(어느 창에서 바꿨든) 새 값을 받는다. 표시 언어를 따라가는 데 쓴다. */
     onSettingsChanged(listener: (settings: AppSettingsDto) => void): () => void;
-    /** `atelier` CLI(제어 소켓)가 "이 탭에서 파일/브라우저를 열어라" 를 밀어 넣을 때. */
+    /** `sudal` CLI(제어 소켓)가 "이 탭에서 파일/브라우저를 열어라" 를 밀어 넣을 때. */
     onControlOpen(listener: (req: ControlOpenDto) => void): () => void;
-    /** `atelier` 명령을 ~/.local/bin 에 설치한다(앱 동봉 스크립트를 앱의 node 로 실행하는 셸 스크립트). */
+    /** `sudal` 명령을 ~/.local/bin 에 설치한다(앱 동봉 스크립트를 앱의 node 로 실행하는 셸 스크립트). */
     installCli(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }>;
     /** 스킬 스텁을 이 PC 에 있는 에이전트(Claude Code · Codex CLI)마다 설치한다. */
     installSkill(agent?: "claude" | "codex"): Promise<{ ok: true; paths: string[]; skipped: string[] } | { ok: false; error: string }>;
@@ -983,7 +983,7 @@ export interface WorkbenchApi {
   };
 }
 
-/** 제어 소켓(atelier CLI)이 렌더러에 요청하는 화면 동작. */
+/** 제어 소켓(sudal CLI)이 렌더러에 요청하는 화면 동작. */
 export type ControlOpenDto =
   | { kind: "file"; tabId: string; path: string; line?: number }
   | { kind: "browser"; tabId: string; url: string };

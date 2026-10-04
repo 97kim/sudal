@@ -403,7 +403,7 @@ export function Sidebar({
     <aside className="drag flex w-[248px] shrink-0 flex-col bg-panel" data-sidebar="expanded">
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-11">
         <Logo size={22} className="text-fg" />
-        <span className="text-[14px] font-semibold tracking-wide">Atelier</span>
+        <span className="text-[14px] font-semibold tracking-wide">Sudal</span>
         <button
           onClick={onToggleRail}
           className="no-drag -mr-1 ml-auto rounded p-1 text-muted hover:bg-panel-2 hover:text-fg"

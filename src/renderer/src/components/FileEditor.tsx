@@ -78,7 +78,7 @@ export function FileEditor({
     previewUrl.current = r.url;
     onOpenBrowser?.(r.url);
     // 이미 열려 있던 탭이면 다시 불러온다(탭 키는 URL 이라 두 번 열리지 않는다)
-    window.dispatchEvent(new CustomEvent("atelier:browser-reload", { detail: r.url }));
+    window.dispatchEvent(new CustomEvent("sudal:browser-reload", { detail: r.url }));
   }, [cwd, path, onOpenBrowser]);
   // 줄 이동 요청이 오면 편집 화면으로 (미리보기에는 줄이 없다)
   useEffect(() => {
@@ -178,7 +178,7 @@ export function FileEditor({
         setDirty(stillDirty);
         setEditorDraft(path, stillDirty ? { text: latest, mtimeMs: r.mtimeMs, size } : null);
         // 브라우저 탭으로 보고 있던 HTML 이면 저장한 내용을 바로 보여 준다
-        if (previewUrl.current) window.dispatchEvent(new CustomEvent("atelier:browser-reload", { detail: previewUrl.current }));
+        if (previewUrl.current) window.dispatchEvent(new CustomEvent("sudal:browser-reload", { detail: previewUrl.current }));
         return true;
       }
       if (r.conflict) setConflict(true);

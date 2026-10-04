@@ -9,7 +9,7 @@ export const orchestration: DeepPartial<typeof ko> = {
     close: "Close (esc)",
     loadFailed: "Couldn't load the task state. Please check again.",
     cleanupUnconfirmed: "The request went through, but the result couldn't be confirmed. Please check the task state again.",
-    noRuns: "No runs yet. Create one from the terminal: atelier orch run-create --objective \"…\"",
+    noRuns: "No runs yet. Create one from the terminal: sudal orch run-create --objective \"…\"",
     pickRun: "Pick a run on the left.",
     coordinatorTab: "Coordinator",
     coordinatorHuman: "Human coordinator",

@@ -1,4 +1,4 @@
-// atelier CLI 와 오케스트레이션 명령의 응답 문구. msg 아래는 오케스트레이션 기록(JSONL)에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
+// sudal CLI 와 오케스트레이션 명령의 응답 문구. msg 아래는 오케스트레이션 기록(JSONL)에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
 export const cli = {
   orch: {
     error: {

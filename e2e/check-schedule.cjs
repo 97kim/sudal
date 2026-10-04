@@ -2,8 +2,8 @@
 // 손으로 확인한 흐름(45초 running → 55초 completed)을 그대로 고정한다.
 const path = require("path"), fs = require("fs"), { execFileSync } = require("child_process");
 const E2E = __dirname;
-const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Atelier", [app + "/Contents/Resources/cli/atelier.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ATELIER_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
+const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli = (...a) => JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: E2E + "/userdata" }, encoding: "utf8" }));
 
 let __fails = 0;
 const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT (${name}):`, ok ? "PASS" : `FAIL${note ? " " + note : ""}`); };
@@ -97,10 +97,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   result("첫 회차의 폴더는 사라진다", Boolean(isoPaths[0]) && !fs.existsSync(isoPaths[0]), `(${isoPaths[0]})`);
   // 커밋하지 않은 회차는 브랜치도 남기지 않는다(worktree 를 지우면 빈 브랜치는 branch -d 로 지워진다).
   // 남으면 폴더 대신 브랜치가 쌓이는 셈이라 정리가 아니다.
-  const branches = execFileSync("git", ["branch", "--list", "atelier/*"], { cwd: path.join(E2E, "repo"), encoding: "utf8" })
+  const branches = execFileSync("git", ["branch", "--list", "sudal/*"], { cwd: path.join(E2E, "repo"), encoding: "utf8" })
     .split("\n").map((s) => s.replace(/^[+*]?\s*/, "").trim()).filter(Boolean);
   const firstBranch = isoPaths[0] ? path.basename(isoPaths[0]) : "";
-  result("치운 회차는 브랜치도 남기지 않는다", !branches.includes(`atelier/${firstBranch}`), `(${branches.length}개: ${branches.join(", ")})`);
+  result("치운 회차는 브랜치도 남기지 않는다", !branches.includes(`sudal/${firstBranch}`), `(${branches.length}개: ${branches.join(", ")})`);
 
   // 치운다 — 탭을 닫아도 worktree 는 남는다.
   if (iso?.tabId) try { cli("tab", "close", "--tab", iso.tabId); } catch { /* 이미 닫힘 */ }

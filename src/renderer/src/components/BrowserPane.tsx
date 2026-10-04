@@ -40,7 +40,7 @@ export function BrowserPane({
 }: {
   initialUrl: string | null;
   visible: boolean;
-  /** 이 브라우저가 속한 채팅 탭. 에이전트 조작(atelier browser …)이 탭으로 찾아오므로 main 에 알려야 한다. */
+  /** 이 브라우저가 속한 채팅 탭. 에이전트 조작(sudal browser …)이 탭으로 찾아오므로 main 에 알려야 한다. */
   chatTabId?: string;
   /** 탭 스트립에 보일 라벨(호스트 또는 페이지 제목)이 바뀔 때. */
   onLabel?: (label: string) => void;
@@ -55,7 +55,7 @@ export function BrowserPane({
   // 웹뷰 이벤트 리스너는 한 번 붙이고 오래 남으므로, 언어가 바뀐 뒤에도 최신 t 를 쓰도록 ref 로 건넨다.
   const tRef = useRef(t);
   tRef.current = t;
-  const view = useRef<AtelierWebview | null>(null);
+  const view = useRef<SudalWebview | null>(null);
   // <webview> 는 주소가 생긴 뒤에야 렌더되므로, 마운트 시점을 state 로 잡아 그때 리스너를 붙인다.
   const [mounted, setMounted] = useState(false);
   // 웹뷰 요소가 DOM 에 생긴 것과 게스트가 실제로 붙은 것은 다르다 — 붙기 전에는 getWebContentsId() 가 던진다.
@@ -288,8 +288,8 @@ export function BrowserPane({
         view.current?.reloadIgnoringCache();
       }
     };
-    window.addEventListener("atelier:browser-command", onCmd);
-    return () => window.removeEventListener("atelier:browser-command", onCmd);
+    window.addEventListener("sudal:browser-command", onCmd);
+    return () => window.removeEventListener("sudal:browser-command", onCmd);
   }, [visible]);
 
   // 찾기 결과 개수는 webview 가 이벤트로 준다
@@ -317,8 +317,8 @@ export function BrowserPane({
         /* 아직 붙기 전 */
       }
     };
-    window.addEventListener("atelier:browser-reload", onReload);
-    return () => window.removeEventListener("atelier:browser-reload", onReload);
+    window.addEventListener("sudal:browser-reload", onReload);
+    return () => window.removeEventListener("sudal:browser-reload", onReload);
   }, [mounted]);
 
   /** 지금 보이는 화면 + 콘솔 경고·오류 + 실패한 요청을 한 덩어리로 입력창에 붙인다. */
@@ -667,11 +667,11 @@ export function BrowserPane({
           // partition 을 앱 세션과 분리해 쿠키·저장소가 섞이지 않게 한다.
           <webview
             ref={(el) => {
-              view.current = el as unknown as AtelierWebview | null; // React 의 HTMLWebViewElement 타입엔 Electron 메서드가 없다
+              view.current = el as unknown as SudalWebview | null; // React 의 HTMLWebViewElement 타입엔 Electron 메서드가 없다
               setMounted(!!el);
             }}
             src={url}
-            partition="persist:atelier-browser"
+            partition="persist:sudal-browser"
             // 프리셋 폭보다 패널이 좁으면 패널을 따른다 — 가로 스크롤이 생기면 좁은 화면 확인이 안 된다
             style={{ width: viewportById(viewport).width ? `min(100%, ${viewportById(viewport).width}px)` : "100%", height: "100%" }}
           />

@@ -60,8 +60,8 @@ export function EditorPane({
       if ((e as CustomEvent<string>).detail !== tabId || !activeFile) return;
       requestClose(activeFile);
     };
-    window.addEventListener("atelier:editor-close-active", onClose);
-    return () => window.removeEventListener("atelier:editor-close-active", onClose);
+    window.addEventListener("sudal:editor-close-active", onClose);
+    return () => window.removeEventListener("sudal:editor-close-active", onClose);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, activeFile, tabs.dirty.join("\u0000")]);
 

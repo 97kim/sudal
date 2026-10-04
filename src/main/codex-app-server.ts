@@ -59,7 +59,7 @@ export class CodexAppServer {
 
   /** 프로세스를 띄우고 initialize 핸드셰이크까지 끝낸다. */
   async start(codexPath: string, env: Record<string, string>, cwd: string): Promise<void> {
-    const proc = spawn(codexPath, [...reasoningSummaryArgs(env), ...atelierEnvArgs(env), "app-server"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    const proc = spawn(codexPath, [...reasoningSummaryArgs(env), ...sudalEnvArgs(env), "app-server"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     this.proc = proc;
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (chunk: string) => this.onData(chunk));
@@ -78,7 +78,7 @@ export class CodexAppServer {
     proc.on("exit", (code) => end(code));
     proc.on("error", (e) => end(null, e.message));
     await this.request("initialize", {
-      clientInfo: { name: "atelier", title: "Atelier", version: "0.1.0" },
+      clientInfo: { name: "sudal", title: "Sudal", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
     this.notify("initialized", {});
@@ -334,14 +334,14 @@ function itemCompleted(item: Item, ts: number): ChatEvent[] {
 }
 
 /**
- * 앱이 넘기는 변수(어느 Atelier 에 붙을지, 자기 탭이 무엇인지)를 Codex 가 실행하는 셸 명령까지 전한다.
+ * 앱이 넘기는 변수(어느 Sudal 에 붙을지, 자기 탭이 무엇인지)를 Codex 가 실행하는 셸 명령까지 전한다.
  * Codex 는 셸에 넘기는 환경변수를 shell_environment_policy 로 거른다 — 사용자가 inherit 를 "core" 로 좁혀 두면
  * 프로세스에 준 환경변수는 닿지 않는다. set 표는 그 설정과 무관하게 적용되고 사용자의 다른 set 값과 합쳐진다.
- * 이게 없으면 탭 안의 `atelier` 명령이 다른 Atelier(설치된 앱)에 붙고, `--tab self` 도 쓸 수 없다.
+ * 이게 없으면 탭 안의 `sudal` 명령이 다른 Sudal(설치된 앱)에 붙고, `--tab self` 도 쓸 수 없다.
  */
-export function atelierEnvArgs(env: Record<string, string | undefined>): string[] {
+export function sudalEnvArgs(env: Record<string, string | undefined>): string[] {
   const out: string[] = [];
-  for (const k of ["ATELIER_USERDATA", "ATELIER_TAB_ID"]) {
+  for (const k of ["SUDAL_USERDATA", "SUDAL_TAB_ID"]) {
     const v = env[k];
     // 값은 TOML 문자열로 — JSON 문자열 표기가 TOML 기본 문자열과 맞는다
     if (v) out.push("-c", `shell_environment_policy.set.${k}=${JSON.stringify(v)}`);

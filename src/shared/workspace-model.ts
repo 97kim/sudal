@@ -44,7 +44,7 @@ export interface WorktreeMeta {
   repo: string;
   /** worktree 경로 (= 탭 cwd). */
   path: string;
-  /** 이 세션의 브랜치 (atelier/<slug>). */
+  /** 이 세션의 브랜치 (sudal/<slug>). */
   branch: string;
   /** 갈라져 나온 브랜치. 가져오기(merge) 대상. */
   base: string;

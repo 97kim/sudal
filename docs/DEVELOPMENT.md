@@ -1,4 +1,4 @@
-# Atelier 개발 문서
+# Sudal 개발 문서
 
 빌드·릴리스·검증 방법과 코드 구조예요. 기능 설명은 [기능 안내서](GUIDE.ko.md)에 있어요.
 
@@ -9,14 +9,14 @@ yarn            # 의존성 설치 (postinstall 이 electron 바이너리를 받
 yarn dev        # electron-vite dev
 yarn test       # node:test (순수 리듀서·매퍼·main 모듈)
 yarn typecheck  # main/preload/shared + renderer
-yarn package    # ad-hoc 서명 arm64 DMG (release/atelier-<version>-arm64.dmg)
+yarn package    # ad-hoc 서명 arm64 DMG (release/sudal-<version>-arm64.dmg)
 ```
 
 - `WORKBENCH_DEV_CWD=/path/to/repo yarn dev` — 워크스페이스를 미리 추가하고 탭을 하나 연다.
 - `WORKBENCH_MAX_CONCURRENT=4` — 동시에 실행하는 턴 수 상한(기본 4). 넘으면 탭 상태가 "대기열"이 된다.
 - `yarn dev -- --remote-debugging-port=9333` — CDP 로 UI 자동화/디버깅.
 - `WORKBENCH_DEBUG_SDK=1` — Claude CLI stderr 를 콘솔에 출력.
-- `ATELIER_APPROVED_ROOTS=경로:경로` — 검증용으로 작업 경로를 미리 승인한다.
+- `SUDAL_APPROVED_ROOTS=경로:경로` — 검증용으로 작업 경로를 미리 승인한다.
 
 ## 릴리스
 
@@ -48,8 +48,8 @@ DRY_RUN=1 yarn release  # 올리지 않고 할 일만 본다
 같은 버전의 태그나 릴리스가 이미 있으면 멈춘다.
 
 새 버전은 설정 → 일반 → 업데이트에서 "업데이트 확인"을 눌러 확인한다. Homebrew로 설치한 앱은 "업데이트"를 누르면 새 버전을 설치하고, 완료 후 "다시 시작"을 누르면 새 버전으로 열린다. `electron-updater`는 사용하지 않는다.
-터미널에서는 `brew update && brew upgrade --cask atelier`로 업데이트한다. 앱에서도 Homebrew 탭을 갱신한 뒤 업그레이드하고 설치된 버전을 확인한다. GitHub 릴리스가 Homebrew 탭에 아직 반영되지 않았다면 잠시 뒤 다시 시도한다.
-DMG로 직접 설치한 앱도 새 버전을 확인할 수 있지만 앱 안에서 설치할 수는 없다. 릴리스 페이지에서 새 DMG를 받아 Applications 폴더의 Atelier.app을 교체한다.
+터미널에서는 `brew update && brew upgrade --cask sudal`로 업데이트한다. 앱에서도 Homebrew 탭을 갱신한 뒤 업그레이드하고 설치된 버전을 확인한다. GitHub 릴리스가 Homebrew 탭에 아직 반영되지 않았다면 잠시 뒤 다시 시도한다.
+DMG로 직접 설치한 앱도 새 버전을 확인할 수 있지만 앱 안에서 설치할 수는 없다. 릴리스 페이지에서 새 DMG를 받아 Applications 폴더의 Sudal.app을 교체한다.
 
 ## 국제화 (i18n)
 
@@ -72,7 +72,7 @@ DMG로 직접 설치한 앱도 새 버전을 확인할 수 있지만 앱 안에�
 - 자동으로 붙이는 이름(탭 제목, 새 워크스페이스·예약의 기본 이름)은 만드는 시점의 언어로 저장하고 다시 번역하지 않는다.
   앱이 만든 자리는 이름이 아니라 값으로 찾는다(예약 워크스페이스는 `builtin: "schedules"`). 예약 워크스페이스의 이름만은 예외로, 기본 이름 그대로면 언어를 바꿀 때 따라 바뀐다. 이름 없는 탭("새 세션")은 저장하지 않고 그릴 때 번역한다.
 - `src/shared` 의 함수가 표시 문구를 만들면 `t: TFunction` 을 첫 인자로 받는다(`verifySummary`, `runSummary`, `fanoutSummary` 가 예다). main 은 `mt`, 테스트는 `createI18n("ko").t` 를 넘긴다.
-- `cli/atelier.cjs` 는 의존성 없이 돌아야 해서 파일 안의 작은 표로 번역한다. 언어는 `ATELIER_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG` 순으로 본다.
+- `cli/sudal.cjs` 는 의존성 없이 돌아야 해서 파일 안의 작은 표로 번역한다. 언어는 `SUDAL_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG` 순으로 본다.
 - 번역 대상이 아닌 것: 모델에게 보내는 글, 로그, 외부 오류 문구를 읽는 파서(`usage-limit.ts`), 계산용 로케일(`cron.ts` 의 `en-US`).
 - `yarn i18n:check` 는 코드에 남은 한국어 문구를 센다. `--list <경로>` 로 위치를 본다. `console.*`·`log(...)` 호출은 세지 않고,
   바로 윗줄에 `// i18n-ignore: <이유>` 가 붙은 노드도 건너뛴다 — 프롬프트처럼 화면 문구가 아닌 것에만, 가장 좁은 범위에 붙인다.
@@ -87,13 +87,13 @@ DMG로 직접 설치한 앱도 새 버전을 확인할 수 있지만 앱 안에�
 ```bash
 yarn package
 cd e2e
-ATELIER_APPROVED_ROOTS="$PWD" ../release/mac-arm64/Atelier.app/Contents/MacOS/Atelier \
+SUDAL_APPROVED_ROOTS="$PWD" ../release/mac-arm64/Sudal.app/Contents/MacOS/Sudal \
   --user-data-dir="$PWD/userdata" --remote-debugging-port=9333 > app.log 2>&1 &
 node check-header2.cjs      # 원하는 스크립트
 ```
 
-`--user-data-dir` 이 핵심이다. `ATELIER_USERDATA` 는 앱이 자식 프로세스에 내보내는 값일 뿐 자기 userData 를 바꾸지 않는다.
-CLI 를 붙일 때는 그 값을 준다(`ATELIER_USERDATA=$PWD/userdata`). 스크립트는 `playwright-core` 로 `connectOverCDP` 만 하므로
+`--user-data-dir` 이 핵심이다. `SUDAL_USERDATA` 는 앱이 자식 프로세스에 내보내는 값일 뿐 자기 userData 를 바꾸지 않는다.
+CLI 를 붙일 때는 그 값을 준다(`SUDAL_USERDATA=$PWD/userdata`). 스크립트는 `playwright-core` 로 `connectOverCDP` 만 하므로
 브라우저를 내려받지 않는다. `userdata/`·`repo/`·스크린샷·로그는 만들어지는 것이라 추적하지 않는다.
 
 스크립트는 한국어 화면의 글자로 요소를 찾는다. 새 userData 는 macOS 언어를 따라가므로, 한국어가 아닌 환경에서는 먼저
@@ -108,6 +108,8 @@ CLI 를 붙일 때는 그 값을 준다(`ATELIER_USERDATA=$PWD/userdata`). 스�
 
 - **저장소는 ESM 이고 preload 만 CJS 다.** 두 SDK 가 ESM 전용이라 `package.json` 에 `"type": "module"` 을 두고 main 을 ESM 으로 번들한다.
   샌드박스의 preload 는 ESM 으로 읽히지 않아서 `out/preload/index.cjs` 로 따로 낸다 — preload 의 출력 형식을 바꾸지 말 것.
+- **옛 이름(Atelier)은 `src/main/legacy-name.ts` 에만 남아 있다.** 옛 설치의 데이터 폴더·CLI·스킬을 처음 한 번 넘겨받는 코드다.
+  옛 이름을 계속 받아 주는 호환이 아니니 다른 곳에 옛 이름을 되살리지 말 것. 검증용 인스턴스(`--user-data-dir`)에서는 동작하지 않는다 — 쓰던 데이터를 옮겨 버리지 않게.
 - **테스트는 Electron 이 아니라 Node 로 돈다.** npm 의 `electron` 패키지는 실행 파일 경로만 내보내서 `import { session } from "electron"` 이 링크 단계에서 실패한다.
   `scripts/test-electron-stub.mjs` 가 테스트에서만 빈 값으로 바꿔 준다. main 이 `electron` 에서 새 이름을 가져오면 그 목록에 더한다.
 - **비대화형 셸에는 PATH 가 거의 없다.** `claude`·`codex` 를 그냥 실행하면 못 찾는다.
@@ -129,7 +131,7 @@ src/shared/     renderer ↔ main 계약 (ipc.ts), 공통 이벤트 스키마 (c
                 오케스트레이션 모델·리듀서 (orchestration.ts), 브라우저 진단 형식 (browser-diagnostics.ts)
 src/main/       Electron main. cli-discovery / claude-adapter + claude-events / codex-adapter + codex-app-server + codex-events
                 session-manager(큐·권한·핸드오프) / workspaces(모델 소유) / persistence(jsonl) / git / worktree / logger(파일 로그)
-                orchestration(Run·Task·Dispatch) / verify(테스트·빌드 실행) / control-server(atelier CLI 소켓)
+                orchestration(Run·Task·Dispatch) / verify(테스트·빌드 실행) / control-server(sudal CLI 소켓)
                 browser-net(웹뷰 요청 실패 수집) / background-jobs(턴 밖 작업) / preview-server(로컬 HTML)
                 transcripts(트랜스크립트 파서 + 스캐너) / transcript-mirror(터미널 모드)
 src/preload/    contextBridge → window.workbench

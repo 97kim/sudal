@@ -1,6 +1,6 @@
 const os=require("os"),path=require("path"),{execFileSync}=require("child_process");
-const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Atelier.app");
-const cli=(...a)=>JSON.parse(execFileSync(app+"/Contents/MacOS/Atelier",[app+"/Contents/Resources/cli/atelier.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",ATELIER_USERDATA:E2E+"/userdata"},encoding:"utf8"}));
+const E2E = __dirname;const app = path.join(__dirname, "..", "release/mac-arm64/Sudal.app");
+const cli=(...a)=>JSON.parse(execFileSync(app+"/Contents/MacOS/Sudal",[app+"/Contents/Resources/cli/sudal.cjs",...a],{env:{...process.env,ELECTRON_RUN_AS_NODE:"1",SUDAL_USERDATA:E2E+"/userdata"},encoding:"utf8"}));
 const { chromium } = require("playwright-core");
 (async()=>{const b=await chromium.connectOverCDP("http://127.0.0.1:9333");const page=b.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes("localhost")||p.url().startsWith("file:"));
 const ws=cli("ws","add","--path",E2E+"/repo");const tab=cli("tab","new","--ws",ws.workspaceId,"--provider","claude","--policy","full","--title","생각중","--activate","--prompt","1부터 30까지 각 숫자의 제곱을 계산해서 마크다운 표로 만들어줘. 계산 전에 접근을 잠깐 생각해.");

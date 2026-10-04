@@ -3,8 +3,8 @@
 import type { TFunction } from "i18next";
 import type { ChatImageDto } from "./ipc";
 
-export const PICK_MARK = "__ATELIER_PICK__";
-export const PICK_CANCEL_MARK = "__ATELIER_PICK_CANCEL__";
+export const PICK_MARK = "__SUDAL_PICK__";
+export const PICK_CANCEL_MARK = "__SUDAL_PICK_CANCEL__";
 
 /** 프롬프트에 실을 계산된 스타일 — 레이아웃·글자·색 위주. 기본값(none/auto/normal/0px/투명)은 뺀다. */
 export const ELEMENT_STYLE_PROPS = [
@@ -29,7 +29,7 @@ export interface PickedElement {
 export const PICK_LIMITS = { html: 4000, text: 200, selector: 300, coord: 20000 };
 
 /**
- * 페이지에 주입하는 스크립트. 한 번 주입되면 window.__atelierPick 로 켜고 끈다.
+ * 페이지에 주입하는 스크립트. 한 번 주입되면 window.__sudalPick 로 켜고 끈다.
  * nonce: 이번 선택 세션의 표식. 보고 메시지에 함께 실려 와야 받아들인다 — 페이지 스크립트가 표식만 보고 위조하기 어렵게(클로저 안에만 있다).
  */
 export function pickerScript(nonce: string): string {
@@ -41,9 +41,9 @@ const PICKER_SCRIPT = `(() => {
   const CANCEL = ${JSON.stringify(PICK_CANCEL_MARK)};
   const PROPS = ${JSON.stringify(ELEMENT_STYLE_PROPS)};
   const w = window;
-  if (w.__atelierPick) { w.__atelierPick.stop(); }
+  if (w.__sudalPick) { w.__sudalPick.stop(); }
   const box = document.createElement("div");
-  box.setAttribute("data-atelier-pick-box", "");
+  box.setAttribute("data-sudal-pick-box", "");
   Object.assign(box.style, { position: "fixed", pointerEvents: "none", zIndex: "2147483647", border: "2px solid #6366f1", background: "rgba(99,102,241,0.12)", borderRadius: "3px", display: "none", boxSizing: "border-box" });
   const tip = document.createElement("div");
   Object.assign(tip.style, { position: "fixed", pointerEvents: "none", zIndex: "2147483647", font: "11px/1.4 -apple-system, system-ui, sans-serif", background: "#18202a", color: "#fff", padding: "2px 6px", borderRadius: "4px", display: "none", maxWidth: "60vw", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
@@ -111,13 +111,13 @@ const PICKER_SCRIPT = `(() => {
     document.addEventListener("click", onClick, true);
     document.addEventListener("keydown", onKey, true);
   };
-  w.__atelierPick = { start, stop };
+  w.__sudalPick = { start, stop };
   start();
   return "started";
 })()`;
 
 /** 페이지 취소 스크립트(요소 선택 끄기). */
-export const PICKER_STOP_SCRIPT = `(() => { if (window.__atelierPick) window.__atelierPick.stop(); return "stopped"; })()`;
+export const PICKER_STOP_SCRIPT = `(() => { if (window.__sudalPick) window.__sudalPick.stop(); return "stopped"; })()`;
 
 /** console-message 한 줄 → 선택 결과 / 취소 / 무관. nonce 가 다르면 무관으로 본다(페이지의 위조·옛 세션). 값은 상한으로 자른다. */
 export function parsePickMessage(message: string, nonce: string): { kind: "picked"; element: PickedElement } | { kind: "cancel" } | null {
