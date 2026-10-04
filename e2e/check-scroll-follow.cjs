@@ -54,7 +54,10 @@ const LONG = "1부터 150까지를 마크다운 목록으로 출력해라. 각 �
   cli("tab", "send", "--tab", tabId, "--text", LONG);
   await page.waitForTimeout(2500);
   const mid = await m();
-  await ev(() => { const el = document.querySelector("[data-message-list]"); el.scrollTop = Math.max(0, el.scrollTop - 1200); });
+  // 코드로 scrollTop 을 바꾸면 사람의 스크롤과 구분할 수 없다 — 진짜 휠로 올린다.
+  const box = await ev(() => { const r = document.querySelector("[data-message-list]").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.wheel(0, -1200);
   await page.waitForTimeout(700);
   const justUp = await m();
   console.log("흐르는 중에 올린 직후:", JSON.stringify(justUp));
@@ -63,6 +66,69 @@ const LONG = "1부터 150까지를 마크다운 목록으로 출력해라. 각 �
   const pulled = stayed.filter((x) => x.gap < 200).length;
   console.log("올린 뒤 표본:", stayed.map((x) => x.gap).join(","));
   result("올려 읽는 중에는 끌어내리지 않는다", justUp.gap > 300 && pulled === 0, `(끌려 내려간 표본 ${pulled}개)`);
+
+  // (2b) 트랙패드처럼 몇 px 씩 올려도 떨리지 않는다 — 바닥 근처에서 다시 따라가기가 켜져 끌어내리면
+  // 사람은 올리고 앱은 내리는 줄다리기가 된다. 진짜 휠 이벤트로 조금씩 올리며 scrollTop 이 도로 내려가는지 본다.
+  await settle();
+  // 글이 실제로 흐르기 시작할 때까지 기다린다 — 멈춘 화면에서는 끌어내리는 경쟁이 일어나지 않아 검사가 안 된다.
+  const flowing = async () => {
+    const h0 = (await m()).sh;
+    for (let i = 0; i < 60; i++) { await page.waitForTimeout(250); if ((await m()).sh - h0 > 100) return true; }
+    return false;
+  };
+  await page.mouse.move(box.x, box.y);
+  cli("tab", "send", "--tab", tabId, "--text", LONG);
+  const started = await flowing();
+  const before = await m();
+  const tops = [];
+  for (let i = 0; i < 30; i++) {
+    await page.mouse.wheel(0, -3);
+    await page.waitForTimeout(30);
+    tops.push((await m()).st);
+  }
+  const grewWhileWheeling = (await m()).sh - before.sh;
+  for (let i = 0; i < 6; i++) { await page.waitForTimeout(300); tops.push((await m()).st); }
+  const jumps = tops.filter((t, i) => i > 0 && t > tops[i - 1]).length;
+  console.log("조금씩 올린 scrollTop:", tops.join(","), "· 그동안 자란 높이:", grewWhileWheeling);
+  result("휠을 굴리기 전에 흐르는 글을 따라가고 있었다", started && before.gap < 2 && grewWhileWheeling > 100, `(시작 간격 ${before.gap}px, 자란 높이 ${grewWhileWheeling})`);
+  result("조금씩 올려도 끌려 내려가지 않는다", jumps === 0 && tops[tops.length - 1] < tops[0], `(도로 내려간 횟수 ${jumps})`);
+  await settle();
+
+  // (2d) 스크롤바를 끌어 올려도 끌려 내려가지 않는다 — 휠 이벤트가 없어 scroll 이벤트보다 끌어내리기가 먼저 올 수 있다.
+  cli("tab", "send", "--tab", tabId, "--text", LONG);
+  await flowing();
+  const thumb = await ev(() => {
+    const el = document.querySelector("[data-message-list]");
+    const r = el.getBoundingClientRect();
+    const bar = el.offsetWidth - el.clientWidth;
+    return { bar, x: r.left + el.clientWidth + bar / 2, y: r.top + ((el.scrollTop + el.clientHeight / 2) / el.scrollHeight) * el.clientHeight };
+  });
+  const dragTops = [];
+  if (thumb.bar > 0) {
+    await page.mouse.move(thumb.x, thumb.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 15; i++) { await page.mouse.move(thumb.x, thumb.y - i * 6); await page.waitForTimeout(40); dragTops.push((await m()).st); }
+    await page.waitForTimeout(800);
+    dragTops.push((await m()).st);
+    await page.mouse.up();
+    for (let i = 0; i < 4; i++) { await page.waitForTimeout(400); dragTops.push((await m()).st); }
+  }
+  const dragJumps = dragTops.filter((t, i) => i > 0 && t > dragTops[i - 1]).length;
+  console.log("스크롤바로 올린 scrollTop:", dragTops.join(","));
+  result("스크롤바로 올려도 끌려 내려가지 않는다", thumb.bar > 0 && dragTops.length > 1 && dragJumps === 0 && dragTops[dragTops.length - 1] < dragTops[0], `(스크롤바 폭 ${thumb.bar}, 도로 내려간 횟수 ${dragJumps})`);
+  await settle();
+
+  // (2c) 조금 올렸다가 곧바로 바닥으로 돌아오면 다시 따라간다 — 유예 시간 안에 돌아와 멈춰도 풀린 채 남으면 안 된다.
+  cli("tab", "send", "--tab", tabId, "--text", LONG);
+  await flowing();
+  await page.mouse.wheel(0, -40);
+  await page.waitForTimeout(40);
+  await ev(() => { const el = document.querySelector("[data-message-list]"); el.scrollTop = el.scrollHeight; });
+  await page.waitForTimeout(1500);
+  const back = [];
+  for (let i = 0; i < 6; i++) { await page.waitForTimeout(400); back.push(await m()); }
+  console.log("곧바로 돌아온 뒤 간격:", back.map((x) => x.gap).join(","));
+  result("곧바로 바닥으로 돌아오면 다시 따라간다", back.length > 1 && back[back.length - 1].sh > back[0].sh && back.every((x) => x.gap < 2), `(간격 ${back.map((x) => x.gap).join(",")})`);
 
   // (3) 보내면 맨 아래로
   await settle();

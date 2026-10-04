@@ -17,6 +17,8 @@ import { OrchestrationCard } from "./OrchestrationCard";
 
 /** 이만큼 위로 올라오면 "사람이 올렸다" 로 본다. 손떨림·서브픽셀 잔동은 넘기고, 한 번의 휠은 넘는다. */
 const UP_SLOP = 4;
+/** 위로 올린 직후 이만큼은 바닥에 있어도 다시 따라가지 않는다(막 떠나는 중). */
+const UP_GRACE_MS = 300;
 
 export function MessageList({
   tabId,
@@ -78,17 +80,59 @@ export function MessageList({
   // 내용 높이가 바뀔 때(스트리밍·이미지·코드 하이라이트)도 같은 규칙으로 따라간다. "맨 아래로" pill 로 언제든 복귀.
   const stickToBottom = useRef(true);
   const contentRef = useRef<HTMLDivElement>(null);
+  /** 따라가는 중인지. false 면 "맨 아래로" pill 을 띄운다. */
   const [atBottom, setAtBottom] = useState(true);
   /**
    * 지금까지 본 가장 아래 위치. "사용자가 위로 올렸나" 는 이 기준에서 얼마나 올라왔는지로 본다.
    * 직전 위치와만 비교하면 1px 씩 여러 번 올리는 스크롤을 영영 못 잡는다(매번 기준이 따라 올라가므로).
    */
   const anchorTop = useRef(0);
+  /** 사람이 마지막으로 위로 올리려 한 시각. 그 직후에 바닥에 붙어 있는 건 다시 따라갈 근거가 아니다(막 떠나는 중). */
+  const userUpAt = useRef(0);
   const scrollToBottom = () => {
     const el = containerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     anchorTop.current = el.scrollTop;
+  };
+  const follow = () => {
+    stickToBottom.current = true;
+    setAtBottom(true);
+  };
+  /**
+   * 올리자마자 바닥으로 돌아와 멈추면 scroll 이벤트가 더 오지 않는다 — 유예가 끝날 때 한 번 더 본다.
+   * 지금 위치가 아니라 마지막 스크롤이 바닥에서 끝났는지로 본다. 글이 흐르면 그 사이에 바닥이 또 내려가 있다.
+   */
+  const recheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastScrollAtEnd = useRef(true);
+  /** 스크롤바를 잡고 있는 중. 그동안은 바닥에 닿아도 다시 따라가지 않는다 — 손을 뗄 때 정한다. */
+  const draggingBar = useRef(false);
+  const followIfAtEnd = () => {
+    if (stickToBottom.current || draggingBar.current || !lastScrollAtEnd.current) return;
+    follow();
+    scrollToBottom();
+  };
+  useEffect(() => {
+    const onUp = () => {
+      if (!draggingBar.current) return;
+      draggingBar.current = false;
+      followIfAtEnd();
+    };
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointerup", onUp);
+      if (recheckTimer.current) clearTimeout(recheckTimer.current);
+    };
+  }, []);
+  const release = () => {
+    stickToBottom.current = false;
+    userUpAt.current = performance.now();
+    setAtBottom(false);
+    if (recheckTimer.current) clearTimeout(recheckTimer.current);
+    recheckTimer.current = setTimeout(() => {
+      recheckTimer.current = null;
+      followIfAtEnd();
+    }, UP_GRACE_MS + 20);
   };
 
   // 턴이 돌고 있지만 모델이 아직 말을 시작하지 않은 구간에만 "생각 중 …" 표시:
@@ -102,15 +146,35 @@ export function MessageList({
       (last.kind === "tool" && last.result !== undefined));
   // 턴 시작 시각 = 마지막 사용자 메시지. "생각 중" 옆의 경과 시간에 쓴다.
   let lastUserTs: number | null = null;
+  let lastUserId: string | null = null;
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i];
     if (b.kind === "user") {
       lastUserTs = b.ts;
+      lastUserId = b.id;
       break;
     }
   }
 
-  // 사용자가 위로 스크롤해 읽는 중이면 자동 스크롤을 멈춘다.
+  // 사람이 휠을 위로 굴리면 스크롤이 일어나기 전에 바로 따라가기를 끈다. scroll 이벤트까지 기다리면 그 사이에
+  // 글이 자라 ResizeObserver 가 먼저 끌어내리고, 사람은 올리고 앱은 내려서 화면이 떨린다.
+  // 안쪽의 스크롤 상자(명령 출력 등)가 휠을 먹는 경우는 목록을 올린 게 아니니 넘긴다.
+  const onWheel = (e: React.WheelEvent) => {
+    // 더 올라갈 데가 없으면(맨 위이거나 넘치지 않는 짧은 대화) 목록은 그대로다.
+    if (e.deltaY >= 0 || !containerRef.current || containerRef.current.scrollTop <= 0) return;
+    for (let n = e.target as HTMLElement | null; n && n !== containerRef.current; n = n.parentElement) {
+      if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight && /auto|scroll/.test(getComputedStyle(n).overflowY)) return;
+    }
+    release();
+  };
+  // 스크롤바를 누르는 순간도 휠과 같다. 스크롤바를 누르면 이벤트 대상이 목록 상자 자신이고, 위치는 내용 폭 밖이다.
+  const onPointerDown = (e: React.PointerEvent) => {
+    const el = containerRef.current;
+    if (!el || e.target !== el || e.clientX < el.getBoundingClientRect().left + el.clientWidth) return;
+    draggingBar.current = true;
+    release();
+  };
+  // 그 밖의 스크롤(키보드 등)은 scroll 이벤트로 본다.
   //
   // "바닥에서 멀다" 로 판단하면 안 된다. 글이 흐르는 중에는 우리가 맨 아래로 맞춘 직후에 높이가 또 자라서,
   // 그 사이에 벌어진 간격이 "사용자가 올렸다" 로 읽힌다 — 사람은 손도 안 댔는데 따라가기가 꺼졌다.
@@ -118,40 +182,41 @@ export function MessageList({
   const onScroll = () => {
     const el = containerRef.current;
     if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    const movedUp = el.scrollTop < anchorTop.current - UP_SLOP;
-    setAtBottom(near);
-    if (near) {
-      // 바닥에 닿으면 다시 따라간다. 내용이 줄어 브라우저가 스크롤을 끌어내린 경우도 여기로 들어온다.
-      stickToBottom.current = true;
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
+    lastScrollAtEnd.current = atEnd;
+    if (atEnd && !draggingBar.current && performance.now() - userUpAt.current > UP_GRACE_MS) {
+      // 바닥까지 내려오면 다시 따라간다. 내용이 줄어 브라우저가 스크롤을 끌어내린 경우도 여기로 들어온다.
+      // 바닥 "근처" 로 넓히지 않는다 — 조금 올려 읽는 중에 다시 붙어 버리면 끌어내리기가 이어져 떨린다.
+      if (!stickToBottom.current) follow();
       anchorTop.current = el.scrollTop;
-    } else if (movedUp) {
-      stickToBottom.current = false;
+    } else if (el.scrollTop < anchorTop.current - UP_SLOP) {
+      release();
       anchorTop.current = el.scrollTop;
     } else {
-      // 내용이 자란 것뿐이다 — scrollTop 은 그대로다.
+      // 내용이 자랐거나 아래로 내리는 중이다.
       anchorTop.current = Math.max(anchorTop.current, el.scrollTop);
     }
   };
-  // 블록 수가 늘었을 때: 마지막이 사용자 메시지면(방금 보냄) 맨 아래로 붙이고, 그 밖의 새 블록은 붙어 있을 때만 따라간다.
-  const blockCount = blocks.length;
-  const prevCount = useRef(blockCount);
+  // 사용자가 새 메시지를 보냈으면 맨 아래로 붙인다. 마지막 블록만 보면 응답 첫 블록이 같은 렌더에 함께 들어온 경우를 놓친다.
+  // 그 밖의 새 블록은 붙어 있을 때만 따라간다.
+  const prevUserId = useRef(lastUserId);
   useEffect(() => {
-    if (blockCount > prevCount.current && blocks[blocks.length - 1]?.kind === "user") {
-      stickToBottom.current = true;
-      setAtBottom(true);
+    if (lastUserId !== prevUserId.current) {
+      prevUserId.current = lastUserId;
+      if (lastUserId) follow();
     }
-    prevCount.current = blockCount;
     if (stickToBottom.current) scrollToBottom();
-  }, [blocks, thinking, blockCount]);
-  // 내용 높이가 바뀌면(스트리밍·이미지·하이라이트) 따라 내려간다.
+  }, [blocks, thinking, lastUserId]);
+  // 내용 높이(스트리밍·이미지·하이라이트)나 목록 영역 높이(입력창이 커지거나 권한 요청이 뜸)가 바뀌어도 따라 내려간다.
   useEffect(() => {
     const content = contentRef.current;
-    if (!content) return;
+    const container = containerRef.current;
+    if (!content || !container) return;
     const ro = new ResizeObserver(() => {
       if (stickToBottom.current) scrollToBottom();
     });
     ro.observe(content);
+    ro.observe(container);
     return () => ro.disconnect();
   }, []);
 
@@ -176,6 +241,8 @@ export function MessageList({
     <div
       ref={containerRef}
       onScroll={onScroll}
+      onWheel={onWheel}
+      onPointerDown={onPointerDown}
       className="h-full overflow-y-auto px-6 py-5"
       data-message-list
     >
@@ -210,8 +277,7 @@ export function MessageList({
       {!atBottom && blocks.length > 0 && (
         <button
           onClick={() => {
-            stickToBottom.current = true;
-            setAtBottom(true);
+            follow();
             scrollToBottom();
           }}
           className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-1 text-[11px] text-muted shadow-md hover:text-fg"
