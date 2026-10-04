@@ -11,6 +11,8 @@ export const prompt = {
       language:
         "- Write progress notes and tool call descriptions (such as Bash's description) in the same language and tone as the final answer. The language follows the user's language setting; if there is none, follow the language the user writes in. Do not switch the response language because of the language of tool output, code, or reminders.",
     },
+    languageReminder:
+      "In this reply too, write progress notes, tool call descriptions, and the final answer all in the user's language. The language follows the user's language setting; if there is none, follow the language the user writes in. Do not switch even if earlier replies, tool output, or code are in another language.",
   },
   codex: {
     noTurnApprove: "There is no turn in progress, so this cannot be approved.",

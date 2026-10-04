@@ -335,6 +335,19 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
         mt("prompt.claude.progress.language"),
       ].join("\n"),
     },
+    // 위 언어 규칙은 세션을 시작할 때 한 번만 들어가 대화가 길어지면 약해진다. 한 번 다른 언어로 새면 앞선 답을 따라 다음 턴도 그 언어로 시작했다.
+    // 사용자 메시지마다 가장 가까운 맥락에 다시 넣는다. 사용자가 쓴 글과 화면의 말풍선은 그대로다.
+    hooks: {
+      UserPromptSubmit: [
+        {
+          hooks: [
+            async () => ({
+              hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: mt("prompt.claude.languageReminder") },
+            }),
+          ],
+        },
+      ],
+    },
     permissionMode: s.mode,
     allowDangerouslySkipPermissions: req.policy === "full" ? true : undefined,
     stderr: (line) => (s.turn?.req.log ?? s.log)?.(line),
