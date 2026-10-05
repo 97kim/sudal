@@ -12,65 +12,7 @@
     <div id="stage">
       <div id="bubble" hidden></div>
       <div id="otter" data-mood="idle">
-        <!-- 서 있는 수달. 부위마다 id 를 두어 기분별 몸짓을 CSS 로 준다(otter.css). -->
-        <svg viewBox="0 0 120 140" aria-hidden="true">
-          <ellipse class="shadow" cx="60" cy="134" rx="27" ry="4" />
-          <g class="whole">
-            <path class="fur dark" d="M80 116 C100 121 111 106 106 92 C101 100 92 107 81 106 Z" />
-            <ellipse class="fur" cx="48" cy="129" rx="9" ry="5" />
-            <ellipse class="fur" cx="72" cy="129" rx="9" ry="5" />
-            <ellipse class="fur" cx="60" cy="98" rx="30" ry="33" />
-            <ellipse class="cream" cx="60" cy="102" rx="19" ry="23" />
-            <g class="shell belly-shell">
-              <path d="M51 98 Q60 86 69 98 Q60 104 51 98 Z" />
-              <path class="line" d="M60 89 V100 M55 92 L57 99.5 M65 92 L63 99.5" />
-            </g>
-            <g class="arm arm-l">
-              <ellipse class="fur" cx="43" cy="95" rx="6.5" ry="13" transform="rotate(-22 43 95)" />
-            </g>
-            <g class="head">
-              <g class="ears">
-                <circle class="fur" cx="38" cy="33" r="7" />
-                <circle class="fur" cx="82" cy="33" r="7" />
-                <circle class="inner" cx="38" cy="33" r="3.5" />
-                <circle class="inner" cx="82" cy="33" r="3.5" />
-              </g>
-              <circle class="fur" cx="60" cy="52" r="27" />
-              <ellipse class="cream" cx="60" cy="61" rx="16" ry="11.5" />
-              <g class="eyes open">
-                <circle class="ink" cx="48.5" cy="47" r="3.4" />
-                <circle class="ink" cx="71.5" cy="47" r="3.4" />
-                <circle class="glint" cx="49.6" cy="45.8" r="1.1" />
-                <circle class="glint" cx="72.6" cy="45.8" r="1.1" />
-              </g>
-              <g class="eyes closed">
-                <path class="stroke" d="M44.5 47.5 Q48.5 50.5 52.5 47.5 M67.5 47.5 Q71.5 50.5 75.5 47.5" />
-              </g>
-              <g class="eyes sad">
-                <path class="stroke" d="M44.5 45.5 L52 42.5 M75.5 45.5 L68 42.5" />
-                <circle class="ink" cx="48.5" cy="50" r="2.4" />
-                <circle class="ink" cx="71.5" cy="50" r="2.4" />
-              </g>
-              <ellipse class="ink" cx="60" cy="56" rx="4.6" ry="3.3" />
-              <path class="stroke mouth" d="M55.5 61 Q60 65 64.5 61" />
-              <path class="stroke whisker" d="M44 59 H33 M44 63 L34 66 M76 59 H87 M76 63 L86 66" />
-              <ellipse class="blush" cx="42" cy="56" rx="3.5" ry="2" />
-              <ellipse class="blush" cx="78" cy="56" rx="3.5" ry="2" />
-            </g>
-            <g class="arm arm-r">
-              <ellipse class="fur" cx="77" cy="95" rx="6.5" ry="13" transform="rotate(22 77 95)" />
-              <ellipse class="stone" cx="81" cy="106" rx="5" ry="4" />
-              <g class="shell paw-shell">
-                <path d="M72 108 Q81 96 90 108 Q81 114 72 108 Z" />
-                <path class="line" d="M81 99 V110 M76 102 L78 109.5 M86 102 L84 109.5" />
-              </g>
-            </g>
-            <g class="zzz">
-              <text x="88" y="24">z</text>
-              <text x="97" y="14">z</text>
-            </g>
-          </g>
-        </svg>
+        <img id="sprite" alt="" draggable="false" />
         <span id="badge" hidden></span>
       </div>
     </div>

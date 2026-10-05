@@ -1,14 +1,42 @@
-// 화면에 떠 있는 수달(otter.html). 그림은 otter.html 의 SVG, 기분별 몸짓은 otter.css 가 맡는다.
+// 화면에 떠 있는 수달(otter.html). 기분마다 손그림 프레임 4장을 정해진 간격으로 번갈아 보여 준다.
 import "./otter.css";
 import type { OtterViewDto } from "@shared/ipc";
+import type { OtterMood } from "@shared/otter";
+import { OTTER_FRAMES } from "./otter-frames";
 
 const otter = document.getElementById("otter")!;
 const bubble = document.getElementById("bubble")!;
 const badge = document.getElementById("badge")!;
 const stage = document.getElementById("stage")!;
+const sprite = document.getElementById("sprite") as HTMLImageElement;
+
+// 처음 바뀔 때 비어 보이지 않게 모든 프레임을 미리 받아 둔다.
+for (const frames of Object.values(OTTER_FRAMES)) for (const f of frames) new Image().src = f.src;
+
+let mood: OtterMood = "idle";
+let frame = 0;
+let timer: ReturnType<typeof setTimeout> | null = null;
+/** 지금 기분의 프레임을 간격대로 돌린다. 끄는 동안은 멈춘다(창이 움직이는 중에 그림까지 바뀌면 산만하다). */
+const tick = () => {
+  const frames = OTTER_FRAMES[mood];
+  const f = frames[frame % frames.length];
+  sprite.src = f.src;
+  timer = setTimeout(() => {
+    if (!dragging) frame = (frame + 1) % frames.length;
+    tick();
+  }, f.ms);
+};
+const play = (next: OtterMood) => {
+  if (next === mood && timer) return;
+  mood = next;
+  frame = 0;
+  if (timer) clearTimeout(timer);
+  tick();
+};
 
 window.otter.onState((v: OtterViewDto) => {
   otter.dataset.mood = v.mood;
+  play(v.mood);
   stage.classList.toggle("dim", v.dim);
   // 일하는 탭이 둘 이상이면 몇 개인지 붙인다. 다른 기분의 개수는 말풍선이 말한다.
   badge.hidden = !(v.mood === "working" && v.count > 1);
@@ -16,6 +44,7 @@ window.otter.onState((v: OtterViewDto) => {
   bubble.hidden = !v.bubble;
   bubble.textContent = v.bubble ?? "";
 });
+play("idle");
 window.otter.ready();
 
 // 마우스가 수달·말풍선 위에 있을 때만 클릭을 받는다. 나머지 투명한 부분은 아래 창으로 지나간다.
