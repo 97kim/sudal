@@ -2,6 +2,7 @@
 // 비용은 가격표(USD / MTok) 기반 "API 환산 추정" 이다. 구독(OAuth) 사용자는 실제 청구와 다르다.
 
 import type { Provider } from "./ipc";
+import { baseName } from "./path-display";
 
 export interface UsageRecord {
   ts: number;
@@ -210,10 +211,6 @@ export function tokensTotal(t: Tokens): number {
   return t.input + t.output + t.cacheRead + t.cacheWrite;
 }
 
-export function baseName(p: string): string {
-  const parts = p.replace(/\/+$/, "").split("/");
-  return parts[parts.length - 1] || p;
-}
 
 function matches(r: UsageRecord, f: UsageFilter): boolean {
   if (r.ts < f.from || r.ts > f.to) return false;

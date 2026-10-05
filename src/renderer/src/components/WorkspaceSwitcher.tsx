@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceStateDto } from "@shared/ipc";
-import { shorten } from "./ContextPanel";
+import { shortenHome } from "@shared/path-display";
 import { Icon } from "./Icon";
 
 /** ⌘K 팔레트: 워크스페이스를 고르면 그 워크스페이스에 새 세션을 연다. 검색어가 없는 이름이면 그 이름으로 새 워크스페이스. */
@@ -92,7 +92,7 @@ export function WorkspaceSwitcher({
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{w.name}</span>
                     <span className="mono block truncate text-[10.5px] text-muted">
-                      {w.path ? shorten(w.path) : t("nav.switcher.noDefaultPath")}
+                      {w.path ? shortenHome(w.path) : t("nav.switcher.noDefaultPath")}
                     </span>
                   </span>
                   {openCount > 0 && (

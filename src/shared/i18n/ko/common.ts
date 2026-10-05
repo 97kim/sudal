@@ -13,4 +13,6 @@ export const common = {
   none: "없음",
   on: "켜기",
   off: "끄기",
+  elapsedMinSec: "{{min}}분 {{sec}}초",
+  elapsedSec: "{{sec}}초",
 };

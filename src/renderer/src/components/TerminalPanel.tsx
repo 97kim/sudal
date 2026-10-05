@@ -26,6 +26,7 @@ import { linkTargetFor, setLinkOpenMode } from "../link-open";
 import { useLocateFile, useOpenFile } from "./FileViewer";
 import { LinkChooser } from "./LinkChooser";
 import { PaneSplitContext } from "../pane-focus";
+import { shortenHome } from "@shared/path-display";
 
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 260;
@@ -504,7 +505,7 @@ export function TerminalPanel({
           className="mono hidden min-w-0 max-w-[38%] shrink truncate text-[10.5px] text-muted-2 sm:block"
           title={cwd}
         >
-          {cwd.replace(/^\/Users\/[^/]+/, "~")}
+          {shortenHome(cwd)}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           {onAttach && (

@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ChatEvent, TokenUsage } from "@shared/chat-events";
+import { toolResultText } from "./claude-events";
 
 export interface MirrorState {
   /** turn_result 를 이미 낸 Claude message.id (블록마다 한 줄이라 중복 방지). */
@@ -136,21 +137,6 @@ export function mapClaudeTranscriptLine(
   return [];
 }
 
-function toolResultText(content: unknown): string {
-  if (content == null) return "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((c) => {
-        const b = c as { type?: string; text?: string };
-        if (b.type === "text") return b.text ?? "";
-        if (b.type === "image") return "[image]";
-        return JSON.stringify(c);
-      })
-      .join("\n");
-  }
-  return JSON.stringify(content);
-}
 
 /** Claude 기록 파일: projects/<키>/<sessionId>.jsonl — 키 계산 대신 파일명으로 찾는다. */
 export function findClaudeTranscript(

@@ -14,8 +14,6 @@ export const toolCard = {
   openInEditor: "에디터로 열기",
   openInEditorLines: "에디터로 열기 ({{range}}줄)",
   runInTerminalHint: "터미널에 넣습니다. Enter 는 직접 치세요 (⌥클릭: 바로 실행)",
-  elapsedMinSec: "{{min}}분 {{sec}}초",
-  elapsedSec: "{{sec}}초",
   subagent: "하위 에이전트",
   subagentViaCodexHint: "codex-companion 이 띄운 Codex 의 진행(rollout 미러)",
   subagentTools: "도구 {{count}}회",

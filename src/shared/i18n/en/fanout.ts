@@ -35,8 +35,6 @@ export const fanout: DeepPartial<typeof ko> = {
       cleaned: "Comparison ended",
       done: "Done",
     },
-    elapsedMinSec: "{{min}}m {{sec}}s",
-    elapsedSec: "{{sec}}s",
     adopted: "{{label}} adopted",
     compare: "Compare",
     compareTitle: "View each session's diff side by side and choose the result to apply to the original",

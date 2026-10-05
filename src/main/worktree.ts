@@ -1,6 +1,7 @@
 // 세션별 git worktree: 같은 저장소에서 세션 여러 개가 서로 파일을 건드리지 않게 탭마다 브랜치+작업 트리를 따로 준다.
 // worktree 는 저장소 밖(<worktree 폴더>/<repo>/<slug>, 기본 ~/sudal/worktrees)에 만들어 원본에 untracked 파일로 보이지 않게 한다.
 import { execFile } from "node:child_process";
+import { runGit, type GitRun } from "./git-run";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -10,19 +11,10 @@ import type { WorktreeMeta } from "@shared/workspace-model";
 import type { GitChangeDto } from "@shared/ipc";
 import { mt } from "./i18n";
 
-interface Run {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
+type Run = GitRun;
 
 function run(cwd: string, args: string[], env: NodeJS.ProcessEnv): Promise<Run> {
-  return new Promise((resolve) => {
-    execFile("git", ["-c", "core.quotePath=false", ...args], { cwd, env, timeout: 30000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const raw = err ? (err as { code?: unknown }).code : 0;
-      resolve({ code: typeof raw === "number" ? raw : err ? 1 : 0, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() || (err ? err.message : "") });
-    });
-  });
+  return runGit(cwd, args, env, { timeout: 30000 });
 }
 
 const ok = (r: Run) => (r.code === 0 ? r.stdout.trim() : null);
@@ -211,13 +203,7 @@ function diskUsageKb(path: string): Promise<number | null> {
 }
 
 function runInput(cwd: string, args: string[], env: NodeJS.ProcessEnv, input: string): Promise<Run> {
-  return new Promise((resolve) => {
-    const p = execFile("git", ["-c", "core.quotePath=false", ...args], { cwd, env, timeout: 30000, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const raw = err ? (err as { code?: unknown }).code : 0;
-      resolve({ code: typeof raw === "number" ? raw : err ? 1 : 0, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() || (err ? err.message : "") });
-    });
-    p.stdin?.end(input);
-  });
+  return runGit(cwd, args, env, { timeout: 30000, maxBuffer: 32 * 1024 * 1024, input });
 }
 
 /** base 브랜치와 갈라진 지점(merge-base). base 가 없으면 null. */

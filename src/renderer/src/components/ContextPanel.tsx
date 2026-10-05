@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PermissionPolicy } from "@shared/chat-events";
 import type { SessionSnapshotDto } from "@shared/ipc";
@@ -8,6 +8,8 @@ import { CheckMark, KindBadge } from "./CheckMark";
 import { contextUsage, type SessionState } from "@shared/session-state";
 import { useOpenFile } from "./FileViewer";
 import { Icon } from "./Icon";
+import { shortenHome } from "@shared/path-display";
+import { useNow } from "../hooks/useNow";
 
 const POLICY_IDS: PermissionPolicy[] = ["ask", "auto_edit", "full"];
 
@@ -56,7 +58,7 @@ export function ContextPanel({
                 {git?.name ?? cwd.split("/").pop()}
               </div>
               <div className="mono mt-1 truncate text-muted" title={cwd}>
-                {shorten(cwd)}
+                {shortenHome(cwd)}
               </div>
               {git?.branch && (
                 <div className="mt-2 flex gap-1.5">
@@ -394,12 +396,7 @@ function Dot({ color, label }: { color: string; label: string }) {
 }
 
 function Timer({ since }: { since: number | null }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!since) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [since]);
+  const now = useNow(!!since);
   if (!since) return <span className="mono text-muted">00:00:00</span>;
   const s = Math.max(0, Math.floor((now - since) / 1000));
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -417,6 +414,3 @@ export function fmt(n: number): string {
   return String(n);
 }
 
-export function shorten(p: string): string {
-  return p.replace(/^\/Users\/[^/]+/, "~");
-}

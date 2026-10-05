@@ -226,8 +226,6 @@ export const chat = {
       toolRunning: "도구 실행 중",
       tools: "· 도구 {{count}}회",
     },
-    elapsedMinSec: "{{min}}분 {{sec}}초",
-    elapsedSec: "{{sec}}초",
     compacted: "압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
     compactedAuto: "자동 압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
     loading: "대화를 불러오는 중…",

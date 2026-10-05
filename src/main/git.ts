@@ -1,36 +1,17 @@
 // 작업 디렉토리의 git 정보 — 컨텍스트 패널(저장소·브랜치·변경 파일)용. git 이 없거나 레포가 아니면 null.
-import { execFile } from "node:child_process";
+import { runGit, type GitRun } from "./git-run";
 import fs from "node:fs";
 import { basename, resolve } from "node:path";
 import type { GitChangeDto, GitCommitResult, GitInfoDto } from "@shared/ipc";
 import { mt } from "./i18n";
 
-interface GitRun {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-/** 종료 코드와 stderr 까지 돌려준다. 커밋처럼 실패 이유를 보여 줘야 하는 곳에서 쓴다. */
 /** 사용자가 고른 경로는 그대로 파일 이름이다 — `:(glob)`·`:(exclude)` 같은 pathspec 매직으로 해석되지 않게 한다. */
 function literal(paths: string[]): string[] {
   return paths.map((p) => `:(literal)${p}`);
 }
 
 function gitRun(cwd: string, args: string[], env: NodeJS.ProcessEnv, timeout = 15000): Promise<GitRun> {
-  // quotePath=false: 한글 등 비 ASCII 경로가 "\355\225\234" 로 이스케이프되지 않게 (status 출력을 파일 이름으로 그대로 쓴다).
-  const full = ["-c", "core.quotePath=false", ...args];
-  return new Promise((resolve) => {
-    execFile("git", full, { cwd, env, timeout, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
-      // execFile 의 err.code 는 종료 코드(number) 또는 ENOENT 같은 문자열이다.
-      const raw = err ? (err as { code?: unknown }).code : 0;
-      resolve({
-        code: typeof raw === "number" ? raw : err ? 1 : 0,
-        stdout: stdout?.toString() ?? "",
-        stderr: stderr?.toString() || (err ? err.message : ""),
-      });
-    });
-  });
+  return runGit(cwd, args, env, { timeout });
 }
 
 function git(cwd: string, args: string[], env: NodeJS.ProcessEnv): Promise<string | null> {

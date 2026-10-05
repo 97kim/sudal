@@ -19,6 +19,7 @@ import {
 } from "@shared/usage";
 import { Icon } from "../components/Icon";
 import { StackedBars, type StackedPoint } from "../components/StackedBars";
+import { baseName, shortenHome } from "@shared/path-display";
 
 const PERIODS: Period[] = ["today", "7d", "30d", "month"];
 
@@ -184,7 +185,7 @@ export function UsageView() {
               <option value="">{t("usage.allWorkspaces")}</option>
               {wsOptions.map((w) => (
                 <option key={w.cwd} value={w.cwd}>
-                  {w.name} — {shorten(w.cwd)}
+                  {w.name} — {shortenHome(w.cwd)}
                 </option>
               ))}
             </Select>
@@ -367,7 +368,7 @@ export function UsageView() {
                               className="mono block truncate text-[10px] text-muted"
                               title={w.cwd}
                             >
-                              {shorten(w.cwd)}
+                              {shortenHome(w.cwd)}
                             </span>
                           </button>
                         </td>
@@ -781,11 +782,4 @@ function fmtWindow(min: number, t: TFunction): string {
   return t("usage.limits.minute", { count: min });
 }
 
-function shorten(p: string): string {
-  return p.replace(/^\/Users\/[^/]+/, "~");
-}
 
-function baseName(p: string): string {
-  const parts = p.replace(/\/+$/, "").split("/");
-  return parts[parts.length - 1] || p;
-}

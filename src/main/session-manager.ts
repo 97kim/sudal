@@ -44,6 +44,7 @@ import {
   type HookEvent,
 } from "./transcript-mirror";
 import { CodexApprovalDetector } from "./codex-approval";
+import type { PersistedPrompt } from "./persistence";
 
 /** 세션을 누가 제어하는가. "terminal" 이면 CLI(TUI)가 pty 에서 돌고 앱은 기록 파일을 미러만 한다. */
 export type SessionController = "app" | "terminal";
@@ -97,12 +98,8 @@ interface QueuedTurn {
 }
 
 /** 사용자가 턴 진행 중에 써 둔 다음 지시. 턴이 정상 종료되면 순서대로 자동 전송된다. */
-export interface PendingPrompt {
-  id: string;
-  text: string;
-  images: StoredChatImage[];
-  userEvent: ChatEvent;
-}
+/** 큐에 쌓인 프롬프트. 저장하는 모양과 같다. */
+export type PendingPrompt = PersistedPrompt;
 
 export interface PendingPromptSummary {
   id: string;

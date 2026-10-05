@@ -1,5 +1,5 @@
 // 팬아웃 카드 — 세션별 진행 상태·변경 통계·답변 요약. 끝나면 "비교" 로 diff 를 나란히 보고 채택, "정리" 로 worktree 와 탭을 지운다.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { msgText } from "@shared/i18n/msg";
 import type { FanoutVariant } from "@shared/chat-events";
@@ -8,6 +8,7 @@ import { PROVIDER_NAME, fanoutSummary } from "@shared/fanout";
 import { formatDuration } from "@shared/verify";
 import { Icon } from "./Icon";
 import { ProviderLogo } from "./ProviderLogo";
+import { formatElapsed, useNow } from "../hooks/useNow";
 
 function VariantStatus({ v }: { v: FanoutVariant }) {
   const { t } = useTranslation();
@@ -29,12 +30,7 @@ function VariantStatus({ v }: { v: FanoutVariant }) {
 export function FanoutCard({ block, tabId, onCompare }: { block: FanoutBlock; tabId: string; onCompare: (fanoutId: string) => void }) {
   const { t, i18n } = useTranslation();
   const running = block.status === "running";
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!running) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [running]);
+  const now = useNow(running);
   const [confirmClean, setConfirmClean] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -56,7 +52,7 @@ export function FanoutCard({ block, tabId, onCompare }: { block: FanoutBlock; ta
         <span className="text-[11px] text-muted" data-fanout-summary>
           {fanoutSummary(t, block.variants)}
         </span>
-        {running && secs >= 3 && <span className="mono text-[10.5px] text-muted-2">{secs >= 60 ? t("fanout.card.elapsedMinSec", { min: Math.floor(secs / 60), sec: secs % 60 }) : t("fanout.card.elapsedSec", { sec: secs })}</span>}
+        {running && secs >= 3 && <span className="mono text-[10.5px] text-muted-2">{formatElapsed(t, secs)}</span>}
         <span className="flex-1" />
         {block.adoptedTabId && (
           <span className="label text-ok" data-fanout-adopted={block.adoptedTabId}>

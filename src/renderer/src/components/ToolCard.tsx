@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { msgText } from "@shared/i18n/msg";
@@ -9,6 +9,8 @@ import { useOpenFile } from "./FileViewer";
 import { FileChangeList, questionsOf } from "./PermissionPrompt";
 import { Icon, type IconName } from "./Icon";
 import { RunInTerminalContext, normalizeCommand } from "../terminal-run";
+import { shortenHome } from "@shared/path-display";
+import { formatElapsed, useNow } from "../hooks/useNow";
 
 const OUTPUT_PREVIEW_LINES = 12;
 
@@ -50,10 +52,10 @@ function summary(name: string, input: Input, t: TFunction): string {
     case "Write":
     case "MultiEdit":
     case "NotebookEdit":
-      return shortPath(str(input.file_path) || str(input.notebook_path));
+      return shortenHome(str(input.file_path) || str(input.notebook_path));
     case "ApplyPatch": {
       const changes = Array.isArray(input.changes) ? (input.changes as { path?: string }[]) : [];
-      return changes.map((c) => shortPath(str(c.path))).join(", ");
+      return changes.map((c) => shortenHome(str(c.path))).join(", ");
     }
     case "Glob":
     case "Grep":
@@ -79,9 +81,6 @@ function summary(name: string, input: Input, t: TFunction): string {
   }
 }
 
-function shortPath(p: string): string {
-  return p.replace(/^\/Users\/[^/]+/, "~");
-}
 
 /** 파일을 다루는 툴이면 코드 뷰어로 열 경로. Write 는 결과가 온 뒤(파일이 생긴 뒤)에만. */
 function filePathOf(name: string, input: Input): string | null {
@@ -143,12 +142,7 @@ export function ToolCard({ block }: { block: ToolBlock }) {
   const failed = isToolFailed(state);
   const tone = failed ? "text-err" : state === "done" ? "text-ok" : waiting ? "text-warn" : "text-accent";
   const active = isToolActive(state);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [active]);
+  const now = useNow(active);
   const elapsed = active && block.ts ? Math.max(0, Math.floor((now - block.ts) / 1000)) : 0;
 
   return (
@@ -223,7 +217,7 @@ export function ToolCard({ block }: { block: ToolBlock }) {
           </span>
           {active && elapsed >= 2 && (
             <span className="mono normal-case tracking-normal text-muted-2" data-tool-elapsed>
-              {elapsed >= 60 ? t("toolCard.elapsedMinSec", { min: Math.floor(elapsed / 60), sec: elapsed % 60 }) : t("toolCard.elapsedSec", { sec: elapsed })}
+              {formatElapsed(t, elapsed)}
             </span>
           )}
         </span>

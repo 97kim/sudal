@@ -15,6 +15,7 @@ import { useOpenFile } from "./FileViewer";
 import { Icon } from "./Icon";
 import { CheckMark } from "./CheckMark";
 import { closeEditorPaths, dirtyEditorPathsUnder, renameEditorPaths } from "../editor-tabs";
+import { shortenHome } from "@shared/path-display";
 
 /** 편집 중(저장 안 됨)인 파일을 건드리는 조작은 거부한다 — 이름 변경·삭제는 에디터 버퍼를 조용히 버리기 때문. */
 function dirtyBlockMessage(t: TFunction, path: string): string | null {
@@ -213,7 +214,7 @@ export function FileTree({ root }: { root: string }) {
             className="mono min-w-0 flex-1 truncate text-[10.5px] text-muted"
             title={root}
           >
-            {root.replace(/^\/Users\/[^/]+/, "~")}
+            {shortenHome(root)}
           </span>
           <button
             onClick={() => setShowHidden((v) => !v)}

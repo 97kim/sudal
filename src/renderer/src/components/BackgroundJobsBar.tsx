@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { jobRunningLabel, jobsSummaryLabel, type BackgroundJobDto } from "@shared/background-jobs";
 import { Icon } from "./Icon";
+import { useNow } from "../hooks/useNow";
 
 /** 펼쳤을 때의 최대 높이(줄이 많아도 대화를 가리지 않게). 넘치면 그 안에서 스크롤한다. */
 const LIST_MAX_H = "max-h-32";
@@ -20,7 +21,6 @@ const LIST_MAX_H = "max-h-32";
 export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
   const { t } = useTranslation();
   const [jobs, setJobs] = useState<BackgroundJobDto[]>([]);
-  const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -32,11 +32,7 @@ export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
     };
   }, []);
   const mine = sessionId ? jobs.filter((j) => j.sessionId === sessionId) : [];
-  useEffect(() => {
-    if (mine.length === 0) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [mine.length]);
+  const now = useNow(mine.length > 0);
   // 다 끝나면 접힌 상태로 돌아간다 — 다음에 다시 뜰 때 펼쳐진 채로 나타나지 않게.
   useEffect(() => {
     if (mine.length <= 1) setOpen(false);

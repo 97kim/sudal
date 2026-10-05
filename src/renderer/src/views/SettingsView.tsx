@@ -27,7 +27,7 @@ import { applyThemeMode } from "../theme";
 import { Icon } from "../components/Icon";
 import { SchedulesSection } from "../components/SchedulesSection";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { shorten } from "../components/ContextPanel";
+import { shortenHome } from "@shared/path-display";
 import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-open";
 import { useSnippets } from "../hooks/useSnippets";
 import { updatePhaseLabel, useUpdateStatus } from "../hooks/useUpdate";
@@ -505,13 +505,13 @@ function GeneralSection() {
     void refreshInstalled();
     if (!r.ok) setInstallMsg({ ok: false, text: r.error });
     else if (r.hint) setInstallMsg({ ok: false, text: r.hint });
-    else setInstallMsg({ ok: true, cli: shorten(r.path) });
+    else setInstallMsg({ ok: true, cli: shortenHome(r.path) });
   };
   const installSkill = async (agent: "claude" | "codex") => {
     const r = await window.workbench.app.installSkill(agent);
     void refreshInstalled();
     if (!r.ok) setInstallMsg({ ok: false, text: r.error });
-    else setInstallMsg({ ok: true, skills: r.paths.map(shorten).join(", ") });
+    else setInstallMsg({ ok: true, skills: r.paths.map(shortenHome).join(", ") });
   };
   /** 설치 항목 행: 상태 점·문구·버튼 글자를 한 곳에서 정한다. */
   const installRows = () => {
@@ -643,7 +643,7 @@ function GeneralSection() {
                   </span>
                 </div>
                 <div className="mono truncate text-[10.5px] text-muted-2" title={row.path}>
-                  {shorten(row.path)}
+                  {shortenHome(row.path)}
                 </div>
               </div>
               <button
@@ -700,7 +700,7 @@ function GeneralSection() {
           <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-[12.5px]">
             <span className="text-muted">{t("settings.storage.appData")}</span>
             <span className="mono truncate text-[11.5px]" title={settings.dataDir} data-data-dir>
-              {shorten(settings.dataDir)}
+              {shortenHome(settings.dataDir)}
             </span>
             <button onClick={() => void window.workbench.app.openPath("data")} className="justify-self-end rounded-md border border-line px-2.5 py-1 hover:bg-panel-2">
               {t("settings.openFolder")}
@@ -708,7 +708,7 @@ function GeneralSection() {
 
             <span className="text-muted">worktree</span>
             <span className="mono truncate text-[11.5px]" title={settings.worktreeDir} data-worktree-dir>
-              {shorten(settings.worktreeDir)}
+              {shortenHome(settings.worktreeDir)}
               {!settings.worktreeDirCustom && <span className="ml-1.5 font-sans text-muted">{t("settings.storage.isDefault")}</span>}
             </span>
             <span className="flex items-center gap-1.5 justify-self-end">
@@ -930,7 +930,7 @@ function McpSection({ workspacePath }: { workspacePath: string | null }) {
               </span>
             )}
             <span className="mono ml-auto truncate text-[10px] text-muted" title={workspacePath}>
-              {shorten(workspacePath)}
+              {shortenHome(workspacePath)}
               {checkedAt && ` · ${new Date(checkedAt).toLocaleTimeString(intlLocale(i18n.language as Locale))}`}
             </span>
           </div>
@@ -1333,7 +1333,7 @@ function WorktreeCleanup() {
   const remove = async (w: ManagedWorktreeDto) => {
     setConfirm(null);
     const r = await window.workbench.worktree.removeManaged(w.path);
-    setMsg(r.ok ? { ok: true, path: shorten(w.path) } : { ok: false, text: r.error });
+    setMsg(r.ok ? { ok: true, path: shortenHome(w.path) } : { ok: false, text: r.error });
     await load();
   };
   const size = (kb: number | null) => (kb === null ? t("settings.cleanup.sizeUnknown") : kb >= 1024 * 1024 ? `${(kb / 1024 / 1024).toFixed(1)}GB` : kb >= 1024 ? `${Math.round(kb / 1024)}MB` : `${kb}KB`);
@@ -1354,7 +1354,7 @@ function WorktreeCleanup() {
             <li key={w.path} className="flex items-center gap-3 rounded-md px-2 py-1.5 text-[12px] hover:bg-panel-2" data-worktree-row>
               <span className="min-w-0 flex-1">
                 <span className="mono block truncate text-[11.5px]" title={w.path}>
-                  {shorten(w.path)}
+                  {shortenHome(w.path)}
                 </span>
                 <span className="block truncate text-[11px] text-muted">
                   {w.branch || t("settings.cleanup.noBranch")} · {w.tab ? `${w.tab.title === w.branch ? "" : `${w.tab.title} `}${w.tab.open ? t("settings.cleanup.tabOpen") : t("settings.cleanup.tabClosed")}` : t("settings.cleanup.noTab")}

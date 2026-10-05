@@ -15,6 +15,7 @@ import type { ProviderId } from "@shared/workspace-model";
 import { classify, nextOccurrence, parseCron, presetToCron } from "@shared/cron";
 import type { Run, RunStatus, Schedule } from "@shared/schedules";
 import { Icon } from "./Icon";
+import { shortenHome } from "@shared/path-display";
 
 const STATUS_TONE: Record<RunStatus, string> = {
   pending: "text-muted",
@@ -154,8 +155,7 @@ function Toggle({
 
 /** 문장 안에 들어갈 만큼 줄인 경로. 홈은 ~ 로, 너무 길면 뒤쪽 두 칸만 남긴다. */
 function shortPath(p: string): string {
-  const home = "/Users/";
-  const short = p.startsWith(home) ? `~/${p.split("/").slice(3).join("/")}` : p;
+  const short = shortenHome(p);
   const parts = short.split("/");
   return parts.length > 4 ? `…/${parts.slice(-2).join("/")}` : short;
 }

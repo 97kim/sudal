@@ -17,8 +17,6 @@ export const toolCard: DeepPartial<typeof ko> = {
   openInEditor: "Open in editor",
   openInEditorLines: "Open in editor (line {{range}})",
   runInTerminalHint: "Put it in the terminal. Press Enter yourself (⌥-click: run right away)",
-  elapsedMinSec: "{{min}}m {{sec}}s",
-  elapsedSec: "{{sec}}s",
   subagent: "Subagent",
   subagentViaCodexHint: "Progress of the Codex launched by codex-companion (rollout mirror)",
   subagentTools: "{{count}} tool calls",

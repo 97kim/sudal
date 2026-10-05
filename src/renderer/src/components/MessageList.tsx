@@ -14,6 +14,7 @@ import { ToolCard } from "./ToolCard";
 import { VerifyCard } from "./VerifyCard";
 import { FanoutCard } from "./FanoutCard";
 import { OrchestrationCard } from "./OrchestrationCard";
+import { formatElapsed, useNow } from "../hooks/useNow";
 
 /** 이만큼 위로 올라오면 "사람이 올렸다" 로 본다. 손떨림·서브픽셀 잔동은 넘기고, 한 번의 휠은 넘는다. */
 const UP_SLOP = 4;
@@ -356,12 +357,7 @@ function Thinking({
 
 function RunningFooter({ since, blocks, status, ambientFromBg }: { since: number; blocks: Block[]; status: SessionStatus; ambientFromBg: boolean }) {
   const { t } = useTranslation();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const secs = Math.max(0, Math.floor((now - since) / 1000));
+  const secs = Math.max(0, Math.floor((useNow() - since) / 1000));
   let tools = 0;
   let running = 0;
   for (let i = blocks.length - 1; i >= 0; i--) {
@@ -384,7 +380,7 @@ function RunningFooter({ since, blocks, status, ambientFromBg }: { since: number
       <span className="shimmer" style={{ "--shimmer-base": "var(--color-muted)", "--shimmer-hi": "var(--color-fg)" } as React.CSSProperties}>
         {label}
       </span>
-      <span className="mono">{secs >= 60 ? t("chat.messages.elapsedMinSec", { min: Math.floor(secs / 60), sec: secs % 60 }) : t("chat.messages.elapsedSec", { sec: secs })}</span>
+      <span className="mono">{formatElapsed(t, secs)}</span>
       {tools > 0 && <span className="mono">{t("chat.messages.footer.tools", { count: tools })}</span>}
     </div>
   );
@@ -697,12 +693,7 @@ function fmt(n: number): string {
 /** 교차 리뷰 카드: 요청 중엔 shimmer + 경과, 끝나면 리뷰 본문(마크다운). 리뷰 탭으로 바로 갈 수 있다. */
 function ReviewCard({ block }: { block: ReviewBlock }) {
   const { t, i18n } = useTranslation();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (block.status !== "requested") return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [block.status]);
+  const now = useNow(block.status === "requested");
   const name = block.reviewer === "claude" ? "Claude Code" : "Codex";
   const secs = Math.max(0, Math.floor((now - block.ts) / 1000));
   return (
@@ -717,7 +708,7 @@ function ReviewCard({ block }: { block: ReviewBlock }) {
             <span className="shimmer" style={{ "--shimmer-base": "var(--color-accent)", "--shimmer-hi": "var(--color-fg)" } as React.CSSProperties}>
               {t("chat.messages.review.running")}
             </span>
-            {secs >= 3 && <span className="mono normal-case tracking-normal text-muted-2">{secs >= 60 ? t("chat.messages.elapsedMinSec", { min: Math.floor(secs / 60), sec: secs % 60 }) : t("chat.messages.elapsedSec", { sec: secs })}</span>}
+            {secs >= 3 && <span className="mono normal-case tracking-normal text-muted-2">{formatElapsed(t, secs)}</span>}
           </span>
         )}
         {block.status === "done" && <span className="label text-ok">{t("chat.messages.review.done")}</span>}

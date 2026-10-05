@@ -26,7 +26,8 @@ import { type WorktreeMeta,
 } from "@shared/workspace-model";
 import { BackgroundJobsBar } from "../components/BackgroundJobsBar";
 import { Composer } from "../components/Composer";
-import { ContextPanel, shorten } from "../components/ContextPanel";
+import { ContextPanel } from "../components/ContextPanel";
+import { shortenHome } from "@shared/path-display";
 import { LocateFileContext, OpenFileContext, type LocateFile, type OpenFile } from "../components/FileViewer";
 import { EditorPane } from "../components/EditorPane";
 import { isBrowserTab, openBrowserTab, openEditorFile, setEditorPaneVisible, setLastPane, useEditorTabs } from "../editor-tabs";
@@ -513,7 +514,7 @@ export function ChatView({
                   data-cwd
                 >
                   <Icon name="folder" size={10} className="shrink-0" />
-                  <span className="truncate">{shorten(cwd)}</span>
+                  <span className="truncate">{shortenHome(cwd)}</span>
                 </button>
               ) : (
                 <button

@@ -15,4 +15,6 @@ export const common: DeepPartial<typeof ko> = {
   none: "None",
   on: "On",
   off: "Off",
+  elapsedMinSec: "{{min}}m {{sec}}s",
+  elapsedSec: "{{sec}}s",
 };

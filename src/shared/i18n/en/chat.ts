@@ -228,8 +228,6 @@ export const chat: DeepPartial<typeof ko> = {
       toolRunning: "Running tool",
       tools: "· {{count}} tool calls",
     },
-    elapsedMinSec: "{{min}}m {{sec}}s",
-    elapsedSec: "{{sec}}s",
     compacted: "Compacted · {{tokens}} · the conversation above was replaced by a summary",
     compactedAuto: "Auto-compacted · {{tokens}} · the conversation above was replaced by a summary",
     loading: "Loading conversation…",

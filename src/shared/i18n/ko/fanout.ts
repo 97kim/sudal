@@ -33,8 +33,6 @@ export const fanout = {
       cleaned: "비교 종료",
       done: "완료",
     },
-    elapsedMinSec: "{{min}}분 {{sec}}초",
-    elapsedSec: "{{sec}}초",
     adopted: "{{label}} 채택됨",
     compare: "비교",
     compareTitle: "세션별 diff를 나란히 보고 원본에 적용할 결과를 고릅니다",

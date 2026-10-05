@@ -1,5 +1,5 @@
 // 검증 결과 카드 — 저장한 명령을 순서대로 돌린 결과(명령별 통과/실패·출력 꼬리·실행 시점 HEAD). 진행 중엔 출력이 흐르고 중단할 수 있다.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { VerifyCommandResult } from "@shared/chat-events";
 import type { VerifyBlock } from "@shared/session-state";
@@ -7,16 +7,7 @@ import { formatOutputAttachment } from "@shared/attachments";
 import { failedCommandTitle, formatDuration, verifyOutputText, verifySummary } from "@shared/verify";
 import { appendComposerDraft } from "../composer-draft";
 import { Icon } from "./Icon";
-
-function useElapsed(active: boolean, from: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [active]);
-  return Math.max(0, now - from);
-}
+import { useNow } from "../hooks/useNow";
 
 function StatusDot({ status }: { status: VerifyCommandResult["status"] }) {
   if (status === "passed") return <Icon name="check" size={11} className="text-ok" />;
@@ -81,7 +72,7 @@ function CommandRow({ c, tabId, live }: { c: VerifyCommandResult; tabId: string;
 export function VerifyCard({ block, tabId, onRerun }: { block: VerifyBlock; tabId: string; onRerun?: () => void }) {
   const { t } = useTranslation();
   const running = block.status === "running";
-  const elapsed = useElapsed(running, block.ts);
+  const elapsed = Math.max(0, useNow(running) - block.ts);
   const total = running ? elapsed : (block.endedAt ?? block.ts) - block.ts;
   const tone = block.status === "passed" ? "text-ok" : block.status === "failed" ? "text-err" : block.status === "aborted" ? "text-warn" : "text-accent";
   return (

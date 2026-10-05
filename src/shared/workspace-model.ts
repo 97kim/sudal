@@ -1,6 +1,7 @@
 // 워크스페이스(=작업 디렉토리) > 탭(=세션/스레드) 모델. 순수 함수 — main 이 영속화하고 renderer 가 그린다.
 
 import type { PermissionPolicy, SessionStatus } from "./chat-events";
+import { baseName } from "./path-display";
 
 export type ProviderId = "claude" | "codex";
 
@@ -90,10 +91,6 @@ export function activeWorkspace(m: WorkbenchModel): Workspace | null {
   return [...m.workspaces].sort((a, b) => b.lastUsedAt - a.lastUsedAt)[0] ?? null;
 }
 
-function baseName(p: string): string {
-  const parts = p.replace(/\/+$/, "").split("/");
-  return parts[parts.length - 1] || p;
-}
 
 /** 같은 경로가 이미 있으면 그것을 돌려주고 lastUsedAt 만 갱신한다. */
 export function addWorkspace(
