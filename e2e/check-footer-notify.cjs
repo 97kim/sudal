@@ -15,8 +15,8 @@ await page.click('button[title="설정"], [data-nav=settings]').catch(()=>{});aw
 const notify=await ev(()=>{const s=document.querySelector("[data-setting=notify]");return s?{opts:[...s.querySelectorAll("input[type=radio]")].map(i=>i.value+":"+i.checked)}:null});
 console.log("notify setting:",JSON.stringify(notify));console.log("RESULT (알림 설정 라디오, 기본 always):",notify&&notify.opts.includes("always:true")?"PASS":"FAIL");
 await page.click('[data-setting=notify] input[value=unfocused]');await page.waitForTimeout(400);
-const s2=await ev(()=>window.workbench.app.settings ? null : null);
+const s2=await ev(()=>window.sudal.app.settings ? null : null);
 const back=cli("status");
 await ev(()=>[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="채팅")?.click());await page.waitForTimeout(400);
-const st=await ev(()=>window.workbench.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+const st=await ev(()=>window.sudal.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

@@ -24,8 +24,8 @@ export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
-    void window.workbench.jobs.list().then((j) => alive && setJobs(j));
-    const off = window.workbench.jobs.onChanged((j) => setJobs(j));
+    void window.sudal.jobs.list().then((j) => alive && setJobs(j));
+    const off = window.sudal.jobs.onChanged((j) => setJobs(j));
     return () => {
       alive = false;
       off();

@@ -12,5 +12,5 @@ cli("tab","send","--tab","경과2","--text","`sleep 6` 을 Bash 로 실행하고
 let first=null;for(let i=0;i<60;i++){await page.waitForTimeout(300);const f=await ev(()=>{const e=document.querySelector("[data-turn-elapsed]");return e?Number(e.getAttribute("data-turn-elapsed")):null});if(f!==null){first=f;break;}}
 console.log("second turn first footer secs:",first);console.log("RESULT (두 번째 턴 경과가 0초 근처에서 시작):",first!==null&&first<=5?"PASS":"FAIL");
 for(let i=0;i<120;i++){await page.waitForTimeout(500);if(cli("tab","status","--tab","경과2").tab?.status==="idle")break;}
-const st=await ev(()=>window.workbench.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+const st=await ev(()=>window.sudal.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

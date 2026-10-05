@@ -1,8 +1,8 @@
-import type { WorkbenchApi } from "@shared/ipc";
+import type { SudalApi } from "@shared/ipc";
 
 declare global {
   interface Window {
-    workbench: WorkbenchApi;
+    sudal: SudalApi;
   }
 }
 

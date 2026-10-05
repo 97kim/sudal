@@ -129,7 +129,7 @@ export function FileTree({ root }: { root: string }) {
     setConfirmDelete(null);
     const blocked = dirtyBlockMessage(t, entry.path);
     if (blocked) return setOpError(blocked);
-    const r = await window.workbench.files.remove(root, entry.path);
+    const r = await window.sudal.files.remove(root, entry.path);
     if (!r.ok) return setOpError(r.error);
     closeEditorPaths(entry.path);
     refreshDir(parentOf(entry.path));
@@ -161,7 +161,7 @@ export function FileTree({ root }: { root: string }) {
       if (inFlight || document.hidden) return;
       inFlight = true;
       try {
-        const info = await window.workbench.git.info(root);
+        const info = await window.sudal.git.info(root);
         if (!alive) return;
         if (!info) {
           if (lastKey !== "") {
@@ -170,7 +170,7 @@ export function FileTree({ root }: { root: string }) {
           }
           return;
         }
-        const changes = await window.workbench.git.changes(root);
+        const changes = await window.sudal.git.changes(root);
         if (!alive) return;
         // 같은 결과면 새 Map 을 만들지 않는다 (트리 전체 리렌더 방지)
         const key = JSON.stringify([info.prefix, changes]);
@@ -310,7 +310,7 @@ function DirChildren({ dir, depth }: { dir: string; depth: number }) {
     all && !showHidden ? all.filter((e) => !e.name.startsWith(".")) : all;
   useEffect(() => {
     let alive = true;
-    window.workbench.files
+    window.sudal.files
       .list(dir)
       .then((e) => alive && setAll(e))
       .catch(
@@ -349,7 +349,7 @@ function DirChildren({ dir, depth }: { dir: string; depth: number }) {
             placeholder={creating.kind === "dir" ? t("panel.fileTree.newFolderName") : t("panel.fileTree.newFileName")}
             onCancel={() => ops.setPending(null)}
             onCommit={async (name) => {
-              const r = await window.workbench.files.create(ops.root, `${dir}/${name}`, creating.kind);
+              const r = await window.sudal.files.create(ops.root, `${dir}/${name}`, creating.kind);
               if (!r.ok) return r.error;
               ops.setPending(null);
               ops.refreshDir(dir);
@@ -544,7 +544,7 @@ function RenameRow({ entry, depth, ops }: { entry: DirEntryDto; depth: number; o
         const to = `${parent}/${name}`;
         const blocked = dirtyBlockMessage(t, entry.path);
         if (blocked) return blocked;
-        const r = await window.workbench.files.rename(ops.root, entry.path, to);
+        const r = await window.sudal.files.rename(ops.root, entry.path, to);
         if (!r.ok) return r.error;
         renameEditorPaths(entry.path, r.path);
         ops.setPending(null);

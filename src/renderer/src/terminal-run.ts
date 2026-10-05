@@ -83,7 +83,7 @@ export function scanTerminalOutput(termId: string, data: string): void {
   for (let i = 0; i < n; i++) notePrompt(termId);
 }
 
-if (typeof window !== "undefined" && window.workbench?.terminal) window.workbench.terminal.onData(scanTerminalOutput);
+if (typeof window !== "undefined" && window.sudal?.terminal) window.sudal.terminal.onData(scanTerminalOutput);
 
 export function promptEpoch(termId: string): number {
   return promptEpochs.get(termId) ?? 0;

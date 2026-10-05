@@ -18,10 +18,10 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   const tab = cli("tab", "new", "--ws", ws, "--provider", "claude", "--title", "권한" + Date.now(), "--activate").tab.id;
   await page.waitForTimeout(2000);
   // 기본은 "변경 전 물어보기"
-  await ev((t) => window.workbench.chat.configure(t, { policy: "ask" }), tab);
+  await ev((t) => window.sudal.chat.configure(t, { policy: "ask" }), tab);
   await page.waitForTimeout(400);
 
-  const status = () => ev(async (t) => (await window.workbench.chat.snapshot(t)).status, tab);
+  const status = () => ev(async (t) => (await window.sudal.chat.snapshot(t)).status, tab);
   const prompts = () => ev(() => document.querySelectorAll("[data-permission-request], [data-tool-card][data-permission='pending']").length);
 
   // 읽기만 하는 명령(echo·ls)은 CLI 가 안전하다고 보고 그냥 통과시킨다 — 반드시 묻는 동작(파일 쓰기)을 시킨다.
@@ -37,7 +37,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
 
   // 여기서 "전부 자동" 으로 바꾼다 — 대기 중인 창이 풀려야 한다
   const t0 = Date.now();
-  await ev((t) => window.workbench.chat.configure(t, { policy: "full" }), tab);
+  await ev((t) => window.sudal.chat.configure(t, { policy: "full" }), tab);
   let freed = false;
   for (let i = 0; i < 30; i++) { await page.waitForTimeout(500); if ((await status()) !== "waiting_permission") { freed = true; break; } }
   console.log(`바꾼 뒤 풀리기까지 ${Math.round((Date.now() - t0) / 100) / 10}초 · freed=${freed}`);

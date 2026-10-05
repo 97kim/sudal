@@ -17,7 +17,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   cli("tab", "new", "--ws", ws.workspaceId, "--provider", "claude", "--title", "스크롤" + Date.now(), "--activate");
   await page.waitForTimeout(2500);
   const tabId = await ev(() => document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab"));
-  const settle = async () => { for (let i = 0; i < 180; i++) { const s = await ev((id) => window.workbench.chat.snapshot(id), tabId); if (s.status === "idle" || s.status === "error") return s; await page.waitForTimeout(1000); } };
+  const settle = async () => { for (let i = 0; i < 180; i++) { const s = await ev((id) => window.sudal.chat.snapshot(id), tabId); if (s.status === "idle" || s.status === "error") return s; await page.waitForTimeout(1000); } };
   const metrics = () => ev(() => {
     const el = document.querySelector("[data-message-list]");
     if (!el) return null;

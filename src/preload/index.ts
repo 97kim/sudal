@@ -21,10 +21,10 @@ import {
   type TerminalInfoDto,
   type SwitchProviderDto,
   type AppSettingsDto,
-  type WorkbenchApi,
+  type SudalApi,
 } from "@shared/ipc";
 
-const api: WorkbenchApi = {
+const api: SudalApi = {
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),
     checkUpdate: () => ipcRenderer.invoke(IPC.appUpdateCheck),
@@ -326,4 +326,4 @@ const api: WorkbenchApi = {
   },
 };
 
-contextBridge.exposeInMainWorld("workbench", api);
+contextBridge.exposeInMainWorld("sudal", api);

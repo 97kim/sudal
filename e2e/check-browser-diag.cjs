@@ -39,5 +39,5 @@ console.log("RESULT (보통 로그는 제외):",noPlainLog?"PASS":"FAIL");
 console.log("RESULT (404 포함):",has404?"PASS":"FAIL");
 console.log("RESULT (연결 거부 포함):",hasNetErr?"PASS":"FAIL");
 console.log("RESULT (화면 캡처 첨부):",/캡처입니다/.test(draft)?"PASS":"FAIL", "| 썸네일 요소:",imgs);
-const s=await ev(()=>window.workbench.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+const s=await ev(()=>window.sudal.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();srv.close();})().catch(e=>{console.error("ERR",e.message);srv.close();process.exit(1)});

@@ -14,7 +14,7 @@ export function useModels(provider: Provider): { models: ModelOptionDto[]; sourc
     let alive = true;
     const cached = memo.get(provider);
     setState({ provider, models: cached ?? STATIC_MODELS[provider], source: cached ? "cli" : "loading" });
-    window.workbench.app
+    window.sudal.app
       .models(provider)
       .then((r) => {
         if (!alive) return;

@@ -25,5 +25,5 @@ console.log("final status:",st.tab?.status,"| reply has 선택: 초록 ->",/선�
 console.log("RESULT (카드 사라지고 모델이 답을 받아 '선택: 초록' 으로 끝남):",gone&&st.tab?.status==="idle"&&/선택:\s*초록/.test(text)?"PASS":"FAIL");
 if(!/선택:\s*초록/.test(text))console.log("reply tail:",text.slice(-600));
 // 정리
-const s=await ev(()=>window.workbench.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+const s=await ev(()=>window.sudal.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

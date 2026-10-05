@@ -197,7 +197,7 @@ export function ChatView({
   }, []);
   useEffect(
     () =>
-      window.workbench.app.onShortcut((name) => {
+      window.sudal.app.onShortcut((name) => {
         if (name === "toggle-terminal" && focused) toggleTerminal();
       }),
     [toggleTerminal, focused],
@@ -206,18 +206,18 @@ export function ChatView({
     setAttachError(null);
     setTerminalMounted(true);
     setTerminalOpen(true);
-    const r = await window.workbench.chat.attachTerminal(tabId);
+    const r = await window.sudal.chat.attachTerminal(tabId);
     if (r.ok) setConfig(r.snapshot);
     else setAttachError(r.error);
   };
-  const detachTerminal = () => void window.workbench.chat.detachTerminal(tabId);
+  const detachTerminal = () => void window.sudal.chat.detachTerminal(tabId);
   // 교차 리뷰: main 이 diff 를 모아 다른 provider 탭에 보내고 결과 카드를 이 탭에 남긴다
   const [reviewBusy, setReviewBusy] = useState(false);
   const requestCrossReview = async () => {
     setReviewBusy(true);
     setAttachError(null);
     try {
-      const r = await window.workbench.chat.crossReview(tabId);
+      const r = await window.sudal.chat.crossReview(tabId);
       if (!r.ok) setAttachError(r.error);
     } catch (e) {
       setAttachError(e instanceof Error ? e.message : String(e));
@@ -232,13 +232,13 @@ export function ChatView({
   const runVerify = async (commands?: string[]) => {
     setAttachError(null);
     try {
-      const r = await window.workbench.chat.verify(tabId, commands ? { commands } : undefined);
+      const r = await window.sudal.chat.verify(tabId, commands ? { commands } : undefined);
       if (!r.ok) setAttachError(r.error);
     } catch (e) {
       setAttachError(e instanceof Error ? e.message : String(e));
     }
   };
-  const saveVerify = (commands: string[]) => void window.workbench.workspaces.update(workspace.id, { verifyCommands: commands });
+  const saveVerify = (commands: string[]) => void window.sudal.workspaces.update(workspace.id, { verifyCommands: commands });
   const onVerifyClick = () => {
     if (verifyRunning) return;
     if (savedVerify.length > 0) void runVerify();
@@ -260,7 +260,7 @@ export function ChatView({
   const startFanout = useCallback(
     async (req: FanoutStartDto): Promise<string | null> => {
       try {
-        const r = await window.workbench.chat.fanout(tabId, req);
+        const r = await window.sudal.chat.fanout(tabId, req);
         return r.ok ? null : r.error;
       } catch (e) {
         return e instanceof Error ? e.message : String(e);
@@ -312,7 +312,7 @@ export function ChatView({
   const compactContext = async () => {
     setCtxBusy(true);
     try {
-      const r = await window.workbench.chat.compact(tabId);
+      const r = await window.sudal.chat.compact(tabId);
       if (!r.ok) setAttachError(r.error);
       else if (r.config) setConfig(r.config);
       // 네이티브 압축이면 compacted 이벤트가, 폴백이면 session_reset 이 게이지를 정리한다.
@@ -327,7 +327,7 @@ export function ChatView({
   const [modelPicker, setModelPicker] = useState(false);
   const setModel = useCallback(
     async (model: string) => {
-      setConfig(await window.workbench.chat.configure(tabId, { model }));
+      setConfig(await window.sudal.chat.configure(tabId, { model }));
     },
     [tabId, setConfig],
   );
@@ -342,9 +342,9 @@ export function ChatView({
         else setModelPicker(true);
         return;
       }
-      const r = await window.workbench.chat.send(tabId, { text, images });
+      const r = await window.sudal.chat.send(tabId, { text, images });
       if (!r.ok) throw new Error(r.error);
-      setConfig(await window.workbench.chat.snapshot(tabId));
+      setConfig(await window.sudal.chat.snapshot(tabId));
     },
     [tabId, setConfig, onOpenMcp, onOpenSettings, setModel],
   );
@@ -353,7 +353,7 @@ export function ChatView({
     (answer: PermissionAnswer) => {
       const req = state.pendingPermission;
       if (req)
-        void window.workbench.chat.answerPermission(
+        void window.sudal.chat.answerPermission(
           tabId,
           req.requestId,
           answer,
@@ -364,22 +364,22 @@ export function ChatView({
 
   // 세션 작업 경로: 디렉토리 선택 → configure(cwd). 바뀌면 provider 세션은 새로 시작한다.
   const pickCwd = async () => {
-    const dir = await window.workbench.dialog.pickDirectory();
+    const dir = await window.sudal.dialog.pickDirectory();
     if (dir)
-      setConfig(await window.workbench.chat.configure(tabId, { cwd: dir }));
+      setConfig(await window.sudal.chat.configure(tabId, { cwd: dir }));
   };
 
   const onPolicy = (policy: PermissionPolicy) =>
-    void window.workbench.chat.configure(tabId, { policy }).then(setConfig);
+    void window.sudal.chat.configure(tabId, { policy }).then(setConfig);
 
   const onClear = async () => {
-    setConfig(await window.workbench.chat.clear(tabId));
+    setConfig(await window.sudal.chat.clear(tabId));
     // 리듀서 상태는 main 의 이벤트 로그 재생으로 맞춘다.
     reload();
   };
 
   const loadHandoff = useCallback(
-    () => window.workbench.chat.handoffPreview(tabId),
+    () => window.sudal.chat.handoffPreview(tabId),
     [tabId],
   );
 
@@ -398,13 +398,13 @@ export function ChatView({
   const commitRename = useCallback(async () => {
     setEditingTitle(false);
     if (draftTitle.trim() === (tab.title ?? "").trim()) return;
-    await window.workbench.workspaces.renameTab(tabId, draftTitle);
+    await window.sudal.workspaces.renameTab(tabId, draftTitle);
   }, [draftTitle, tab.title, tabId]);
   const cwd = config?.cwd ?? workspace.path;
   const terminalRight = terminalDock === "right" && terminalMounted && terminalOpen && !!cwd;
   // 답변 속 파일 참조 → 실제 경로. Markdown 의 FileRef 가 부른다(결과 캐시는 FileRef 쪽).
   const locateFile = useMemo<LocateFile>(
-    () => ({ cwd: cwd || null, locate: (ref) => (cwd ? window.workbench.files.locate(cwd, ref) : Promise.resolve([])) }),
+    () => ({ cwd: cwd || null, locate: (ref) => (cwd ? window.sudal.files.locate(cwd, ref) : Promise.resolve([])) }),
     [cwd],
   );
   // 같은 디렉토리에서 작업 중인 다른 세션 — 같은 파일을 고치면 서로 덮어쓸 수 있어 알린다. 닫으면 그 조합이 바뀔 때까지 다시 안 띄운다
@@ -439,12 +439,12 @@ export function ChatView({
     let alive = true;
     setCommands([]);
     const load = () =>
-      window.workbench.chat
+      window.sudal.chat
         .commands(tabId)
         .then((c) => alive && setCommands(c))
         .catch(console.error);
     load();
-    const off = window.workbench.chat.onCommandsChanged((changed) => {
+    const off = window.sudal.chat.onCommandsChanged((changed) => {
       if (changed === cwd) load();
     });
     return () => {
@@ -971,9 +971,9 @@ export function ChatView({
               snippets={snippets}
               workspaceId={tab.workspaceId}
               draftKey={tabId}
-              onSaveSnippet={(input) => window.workbench.snippets.save(input)}
+              onSaveSnippet={(input) => window.sudal.snippets.save(input)}
               onSend={onSend}
-              onAbort={() => void window.workbench.chat.abort(tabId)}
+              onAbort={() => void window.sudal.chat.abort(tabId)}
               onClear={() => void onClear()}
             />
             </div>
@@ -1047,7 +1047,7 @@ export function ChatView({
             loadHandoff={loadHandoff}
             onSwitch={async (opts) => {
               setConfig(
-                await window.workbench.chat.switchProvider(tabId, opts),
+                await window.sudal.chat.switchProvider(tabId, opts),
               );
             }}
           />
@@ -1098,25 +1098,25 @@ function WorktreeChip({
     if (!open) return;
     let alive = true;
     setStatus(null);
-    window.workbench.worktree.status(tabId).then((s) => alive && setStatus(s));
+    window.sudal.worktree.status(tabId).then((s) => alive && setStatus(s));
     return () => {
       alive = false;
     };
   }, [open, tabId, msg]);
   const merge = async () => {
     setBusy("merge");
-    const r = await window.workbench.worktree.merge(tabId);
+    const r = await window.sudal.worktree.merge(tabId);
     setBusy(null);
     setMsg(r.ok ? { ok: true, merged: r.merged } : { ok: false, text: r.error });
   };
   const remove = async (force: boolean) => {
     setBusy("remove");
-    const r = await window.workbench.worktree.remove(tabId, { force });
+    const r = await window.sudal.worktree.remove(tabId, { force });
     setBusy(null);
     setConfirmRemove(false);
     if (r.ok) {
       setOpen(false);
-      onChanged(await window.workbench.chat.snapshot(tabId));
+      onChanged(await window.sudal.chat.snapshot(tabId));
     } else setMsg({ ok: false, text: r.error });
   };
   return (
@@ -1227,14 +1227,14 @@ function PendingQueue({
   const steer = async (id: string) => {
     setSteering(id);
     setSteerError(null);
-    const r = await window.workbench.chat.queueSteer(tabId, id);
+    const r = await window.sudal.chat.queueSteer(tabId, id);
     setSteering(null);
     onChanged(r.snapshot);
     if (!r.ok) setSteerError(r.error ?? ""); // 빈 문자열이면 기본 문구를 그릴 때 번역한다
   };
   const save = async () => {
     if (!editing) return;
-    onChanged(await window.workbench.chat.queueUpdate(tabId, editing.id, editing.text));
+    onChanged(await window.sudal.chat.queueUpdate(tabId, editing.id, editing.text));
     setEditing(null);
   };
   return (
@@ -1244,7 +1244,7 @@ function PendingQueue({
         {idle ? t("chat.pending.idle", { count: items.length }) : t("chat.pending.next", { count: items.length })}
         {idle && (
           <button
-            onClick={() => void window.workbench.chat.queueSendNext(tabId).then(onChanged)}
+            onClick={() => void window.sudal.chat.queueSendNext(tabId).then(onChanged)}
             className="ml-auto rounded border border-line px-1.5 py-0.5 text-[11px] text-fg hover:bg-panel-2"
             title={t("chat.pending.sendNextHint")}
             data-pending-send-next
@@ -1296,7 +1296,7 @@ function PendingQueue({
               </button>
             )}
             <button
-              onClick={() => void window.workbench.chat.queueRemove(tabId, p.id).then(onChanged)}
+              onClick={() => void window.sudal.chat.queueRemove(tabId, p.id).then(onChanged)}
               disabled={steering === p.id}
               className="shrink-0 rounded p-0.5 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-40"
               title={t("chat.pending.removeHint")}
@@ -1347,14 +1347,14 @@ function LimitWaitBanner({
           : t("chat.limit.notScheduled")}
       </span>
       <button
-        onClick={() => void window.workbench.chat.limitRetryNow(tabId).then(onChanged)}
+        onClick={() => void window.sudal.chat.limitRetryNow(tabId).then(onChanged)}
         className="shrink-0 rounded border border-warn/40 px-2 py-0.5 hover:bg-warn/10"
         data-limit-retry
       >
         {t("chat.limit.retryNow")}
       </button>
       <button
-        onClick={() => void window.workbench.chat.limitCancel(tabId).then(onChanged)}
+        onClick={() => void window.sudal.chat.limitCancel(tabId).then(onChanged)}
         className="shrink-0 rounded p-0.5 hover:bg-fg/5"
         title={t("chat.limit.cancelRetry")}
         data-limit-cancel

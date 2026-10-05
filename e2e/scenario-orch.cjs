@@ -53,7 +53,7 @@ const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toF
   const closed=cli("orch","run-close","--run",runId,"--key",key);res("E (run-close)",closed.run?.status==="closed");
   // 정리
   fs.writeFileSync(target,orig);
-  const s=await ev(()=>window.workbench.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+  const s=await ev(()=>window.sudal.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
   if(errs.length)log("CONSOLE ERRORS:",errs.slice(0,5));
   log("cleaned up;",results.filter(([,ok])=>!ok).length===0?"ALL PASS":"FAILED: "+results.filter(([,ok])=>!ok).map(([n])=>n).join(", "));
   await b.close();

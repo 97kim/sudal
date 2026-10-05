@@ -64,8 +64,8 @@ export function useGitChanges(cwd: string | null, refreshDep: string | number | 
     }
     let alive = true;
     // 내용이 같으면 상태를 바꾸지 않는다 — 5초 폴링이 리뷰 오버레이의 diff 를 매번 다시 읽게 하지 않도록.
-    window.workbench.git.info(cwd).then((g) => alive && setGit((prev) => (sameJson(prev, g) ? prev : g)));
-    window.workbench.git.changes(cwd).then((c) => {
+    window.sudal.git.info(cwd).then((g) => alive && setGit((prev) => (sameJson(prev, g) ? prev : g)));
+    window.sudal.git.changes(cwd).then((c) => {
       if (!alive) return;
       setChanges((prevChanges) => {
         if (sameJson(prevChanges, c)) return prevChanges;
@@ -98,7 +98,7 @@ export function useGitChanges(cwd: string | null, refreshDep: string | number | 
     if (!cwd || selectedPaths.length === 0) return;
     setBusy("draft");
     setResult(null);
-    const r = await window.workbench.git.draftMessage(cwd, selectedPaths);
+    const r = await window.sudal.git.draftMessage(cwd, selectedPaths);
     setBusy(null);
     if (r.ok) setMessage(r.message);
     else setResult({ ok: false, text: r.error });
@@ -107,7 +107,7 @@ export function useGitChanges(cwd: string | null, refreshDep: string | number | 
     if (!cwd || selectedPaths.length === 0 || !message.trim()) return;
     setBusy("commit");
     setResult(null);
-    const r = await window.workbench.git.commit(cwd, selectedPaths, message);
+    const r = await window.sudal.git.commit(cwd, selectedPaths, message);
     setBusy(null);
     if (r.ok) {
       setMessage("");
@@ -119,7 +119,7 @@ export function useGitChanges(cwd: string | null, refreshDep: string | number | 
     if (!cwd) return;
     setBusy("revert");
     setResult(null);
-    const r = await window.workbench.git.revert(cwd, path);
+    const r = await window.sudal.git.revert(cwd, path);
     setBusy(null);
     if (r.ok) {
       setResult({ ok: true, kind: "reverted", path });

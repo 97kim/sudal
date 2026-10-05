@@ -106,7 +106,7 @@ export function VerifyCard({ block, tabId, onRerun }: { block: VerifyBlock; tabI
         <span className="mono shrink-0 text-[10.5px] text-muted-2">{formatDuration(total, t)}</span>
         {running ? (
           <button
-            onClick={() => void window.workbench.chat.verifyAbort(tabId)}
+            onClick={() => void window.sudal.chat.verifyAbort(tabId)}
             className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-err/10 hover:text-err"
             title={t("chat.verifyCard.abortHint")}
             data-verify-abort

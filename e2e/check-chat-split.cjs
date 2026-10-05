@@ -23,7 +23,7 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
     const r = el.getBoundingClientRect();
     return { side: el.getAttribute("data-chat-pane"), focused: el.getAttribute("data-focused"), x: Math.round(r.left), w: Math.round(r.width) };
   }).sort((a, b) => a.x - b.x));
-  const active = () => ev(async () => (await window.workbench.workspaces.state()).model.activeTabId);
+  const active = () => ev(async () => (await window.sudal.workspaces.state()).model.activeTabId);
   const textOf = (side) => ev((s) => document.querySelector(`[data-chat-pane='${s}']`)?.textContent ?? "", side);
 
   result("처음엔 한 칸", (await panes()).length === 1);
@@ -111,8 +111,8 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   result("칸의 탭을 닫으면 남은 칸(t3) 하나로", p.length === 1 && (await active()) === t3, JSON.stringify({ p, active: await active() }));
   await page.screenshot({ path: E2E + "/shot-chat-split.png" });
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
   process.exit(fails === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

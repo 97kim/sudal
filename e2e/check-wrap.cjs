@@ -38,7 +38,7 @@ const probe = (page) => page.evaluate(() => {
   cli("tab", "new", "--ws", ws.workspaceId, "--provider", "claude", "--title", "줄바꿈", "--activate");
   await page.waitForTimeout(2500);
   const tabId = await page.evaluate(() => document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab"));
-  await page.evaluate((id) => window.workbench.chat.configure(id, { policy: "full" }), tabId);
+  await page.evaluate((id) => window.sudal.chat.configure(id, { policy: "full" }), tabId);
 
   // 채팅 칼럼을 최대한 좁힌다: 사이드바를 접고 창을 줄인다.
   await page.evaluate(() => window.__sudalShortcut?.("toggle-sidebar"));

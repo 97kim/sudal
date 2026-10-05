@@ -38,7 +38,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   cli("tab", "send", "--tab", target, "--text", "한 글자로만 답해라. 좋다는 뜻으로.");
   for (let i = 0; i < 120; i++) {
     await page.waitForTimeout(1000);
-    const st = await ev(async (t) => (await window.workbench.chat.snapshot(t)).status, target);
+    const st = await ev(async (t) => (await window.sudal.chat.snapshot(t)).status, target);
     if (st === "idle" || st === "error") break;
   }
   await page.waitForTimeout(1200);

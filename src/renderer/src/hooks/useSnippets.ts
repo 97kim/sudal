@@ -6,8 +6,8 @@ export function useSnippets(): SnippetDto[] {
   const [items, setItems] = useState<SnippetDto[]>([]);
   useEffect(() => {
     let alive = true;
-    window.workbench.snippets.list().then((s) => alive && setItems(s)).catch(console.error);
-    const off = window.workbench.snippets.onChanged((s) => setItems(s));
+    window.sudal.snippets.list().then((s) => alive && setItems(s)).catch(console.error);
+    const off = window.sudal.snippets.onChanged((s) => setItems(s));
     return () => {
       alive = false;
       off();

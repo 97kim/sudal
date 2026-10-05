@@ -18,7 +18,7 @@ window.addEventListener("beforeunload", () => {
 
 // 처리되지 않은 renderer 오류를 main 로그 파일로. React 19 는 렌더 중 예외도 window error 로 보고한다.
 window.addEventListener("error", (e) => {
-  window.workbench?.app.reportError({
+  window.sudal?.app.reportError({
     kind: "error",
     message: e.message || String(e.error),
     stack: e.error instanceof Error ? e.error.stack : undefined,
@@ -27,7 +27,7 @@ window.addEventListener("error", (e) => {
 });
 window.addEventListener("unhandledrejection", (e) => {
   const reason: unknown = e.reason;
-  window.workbench?.app.reportError({
+  window.sudal?.app.reportError({
     kind: "unhandledrejection",
     message: reason instanceof Error ? reason.message : String(reason),
     stack: reason instanceof Error ? reason.stack : undefined,
@@ -56,14 +56,14 @@ function migrateLocalStorageDrafts() {
 // 테마도 첫 렌더 전에 칠한다(밝은 화면이 번쩍이지 않게).
 async function start() {
   let entries: Record<string, string> = {};
-  const [stateResult, settingsResult] = await Promise.allSettled([window.workbench.state.load(), window.workbench.app.getSettings()]);
+  const [stateResult, settingsResult] = await Promise.allSettled([window.sudal.state.load(), window.sudal.app.getSettings()]);
   if (stateResult.status === "fulfilled") entries = stateResult.value;
   else console.error("[state] load 실패:", stateResult.reason);
   applyThemeMode(settingsResult.status === "fulfilled" ? settingsResult.value.theme : "system");
   // 번역도 첫 렌더 전에 준비한다. 설정을 못 읽으면 한국어로(지금까지의 동작).
   initI18n(settingsResult.status === "fulfilled" ? settingsResult.value.resolvedLocale : "ko");
-  window.workbench.app.onSettingsChanged((s) => applyLocale(s.resolvedLocale));
-  hydrateKv(entries, (key, value) => window.workbench.state.set(key, value));
+  window.sudal.app.onSettingsChanged((s) => applyLocale(s.resolvedLocale));
+  hydrateKv(entries, (key, value) => window.sudal.state.set(key, value));
   migrateLocalStorageDrafts();
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>

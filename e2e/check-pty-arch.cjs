@@ -15,13 +15,13 @@ const { chromium } = require("playwright-core");
 
   const out = await page.evaluate(async ({ tabId, cwd }) => {
     let buf = "";
-    const off = window.workbench.terminal.onData((id, data) => { if (id === tabId) buf += data; });
-    const opened = await window.workbench.terminal.open(tabId, cwd, 80, 24);
+    const off = window.sudal.terminal.onData((id, data) => { if (id === tabId) buf += data; });
+    const opened = await window.sudal.terminal.open(tabId, cwd, 80, 24);
     await new Promise((r) => setTimeout(r, 1200));
-    window.workbench.terminal.write(tabId, "echo PTY_SALUTE_OK\n");
+    window.sudal.terminal.write(tabId, "echo PTY_SALUTE_OK\n");
     await new Promise((r) => setTimeout(r, 2000));
     off();
-    await window.workbench.terminal.close(tabId);
+    await window.sudal.terminal.close(tabId);
     return { opened: !!opened, sawEcho: buf.includes("PTY_SALUTE_OK"), tail: buf.slice(-200) };
   }, { tabId: tab.tabId, cwd: E2E + "/repo" });
 
@@ -29,7 +29,7 @@ const { chromium } = require("playwright-core");
   console.log("RESULT (pty 가 열린다):", out.opened ? "PASS" : "FAIL");
   console.log("RESULT (명령 출력이 돌아온다):", out.sawEcho ? "PASS" : "FAIL");
 
-  const s = await page.evaluate(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await page.evaluate((id) => window.workbench.workspaces.deleteTab(id), t.id); await page.evaluate((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await page.evaluate(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await page.evaluate((id) => window.sudal.workspaces.deleteTab(id), t.id); await page.evaluate((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

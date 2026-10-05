@@ -56,14 +56,14 @@ export function UsageView() {
 
   const load = useCallback(async () => {
     const [s, st, all, month, cfg] = await Promise.all([
-      window.workbench.usage.query(filter),
-      window.workbench.usage.status(),
-      window.workbench.usage.query({ ...filter, cwd: null }),
-      window.workbench.usage.query({
+      window.sudal.usage.query(filter),
+      window.sudal.usage.status(),
+      window.sudal.usage.query({ ...filter, cwd: null }),
+      window.sudal.usage.query({
         ...periodRange("month", Date.now()),
         provider: "all",
       }),
-      window.workbench.usage.getSettings(),
+      window.sudal.usage.getSettings(),
     ]);
     setSummary(s);
     setStatus(st);
@@ -75,19 +75,19 @@ export function UsageView() {
 
   useEffect(() => {
     void load();
-    return window.workbench.usage.onChanged(() => void load());
+    return window.sudal.usage.onChanged(() => void load());
   }, [load]);
 
   const saveBudget = async () => {
     const n = Number(budgetInput);
-    const next = await window.workbench.usage.setSettings({
+    const next = await window.sudal.usage.setSettings({
       monthlyBudgetUsd: Number.isFinite(n) && n > 0 ? n : null,
     });
     setSettings(next);
   };
 
   const exportCsv = async () => {
-    const p = await window.workbench.usage.exportCsv(filter);
+    const p = await window.sudal.usage.exportCsv(filter);
     setExported(p);
     if (p) setTimeout(() => setExported(null), 4000);
   };
@@ -120,7 +120,7 @@ export function UsageView() {
     if (refreshingLimits) return;
     setRefreshingLimits(true);
     try {
-      setStatus(await window.workbench.usage.refreshLimits());
+      setStatus(await window.sudal.usage.refreshLimits());
     } finally {
       setRefreshingLimits(false);
     }
@@ -142,7 +142,7 @@ export function UsageView() {
               ? t("usage.scanInfo", { count: status.files, time: fmtTime(status.lastScanAt, loc) })
               : ""}
           <button
-            onClick={() => void window.workbench.usage.rescan().then(setStatus)}
+            onClick={() => void window.sudal.usage.rescan().then(setStatus)}
             className="rounded-md border border-line p-1.5 hover:bg-panel-2"
             title={t("usage.rescanTitle")}
           >

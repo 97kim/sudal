@@ -17,7 +17,7 @@ const { chromium } = require("playwright-core");
     ? "Bash 도구를 run_in_background:true 로 `sleep 15 && echo 끝` 실행하고, 기다리지 말고 '시작' 한 마디만. 그 명령이 끝나면 결과를 한 줄로 알려라."
     : "'안녕' 한 마디만 답해라. 도구는 쓰지 마라.";
   cli("tab", "send", "--tab", tab, "--text", prompt);
-  const status = () => ev(async (t) => (await window.workbench.chat.snapshot(t)).status, tab);
+  const status = () => ev(async (t) => (await window.sudal.chat.snapshot(t)).status, tab);
   for (let i = 0; i < 90; i++) { await page.waitForTimeout(1000); if ((await status()) === "idle") break; }
   console.log("첫 턴 끝");
   if (kind === "bg") { for (let i = 0; i < 60; i++) { await page.waitForTimeout(1000); } }

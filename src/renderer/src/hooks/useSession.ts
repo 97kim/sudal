@@ -31,10 +31,10 @@ export function useSession(tabId: string) {
   useEffect(() => {
     let alive = true;
     setLoaded(false);
-    const off = window.workbench.chat.onEvent(({ tabId: id, event }) => {
+    const off = window.sudal.chat.onEvent(({ tabId: id, event }) => {
       if (id === tabId) dispatch({ kind: "event", event });
     });
-    window.workbench.chat
+    window.sudal.chat
       .events(tabId)
       .then((events) => {
         if (alive) dispatch({ kind: "replay", events });
@@ -46,12 +46,12 @@ export function useSession(tabId: string) {
       });
     // 마운트 직후의 조회가 푸시보다 늦게 도착하면 더 새 값을 옛 값으로 덮게 된다 — 푸시가 먼저 왔으면 조회 결과는 버린다.
     let pushed = false;
-    window.workbench.chat
+    window.sudal.chat
       .snapshot(tabId)
       .then((s) => alive && !pushed && setConfig(s))
       .catch(console.error);
     // 컨트롤러 전환(터미널 ↔ 앱)·설정 변경처럼 main 이 먼저 바꾼 스냅샷을 받는다.
-    const offSnap = window.workbench.chat.onSnapshotChanged((s) => {
+    const offSnap = window.sudal.chat.onSnapshotChanged((s) => {
       if (s.tabId === tabId) {
         pushed = true;
         setConfig(s);
@@ -66,7 +66,7 @@ export function useSession(tabId: string) {
 
   // 대화 비우기처럼 main 쪽 로그가 통째로 바뀌었을 때 다시 재생한다.
   const reload = useCallback(() => {
-    void window.workbench.chat
+    void window.sudal.chat
       .events(tabId)
       .then((events) => dispatch({ kind: "replay", events }))
       .catch(console.error);

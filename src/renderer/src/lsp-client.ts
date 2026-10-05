@@ -18,11 +18,11 @@ let wired = false;
 function wire() {
   if (wired) return;
   wired = true;
-  window.workbench.lsp.onMessage((id, message) => {
+  window.sudal.lsp.onMessage((id, message) => {
     const e = byId.get(id);
     if (e) for (const h of e.handlers) h(message);
   });
-  window.workbench.lsp.onExit((id) => {
+  window.sudal.lsp.onExit((id) => {
     const e = byId.get(id);
     if (!e) return;
     byId.delete(id);
@@ -62,7 +62,7 @@ export function getLspClient(cwd: string, serverId: LspServerId): Promise<LSPCli
   let p = byCwd.get(key);
   if (!p) {
     p = (async () => {
-      const r = await window.workbench.lsp.start(cwd, serverId);
+      const r = await window.sudal.lsp.start(cwd, serverId);
       if (!r.ok) {
         console.warn("[lsp]", r.error);
         return null;
@@ -72,7 +72,7 @@ export function getLspClient(cwd: string, serverId: LspServerId): Promise<LSPCli
       if (existing) return existing;
       const handlers = new Set<(value: string) => void>();
       const transport: Transport = {
-        send: (message) => window.workbench.lsp.send(r.id, message),
+        send: (message) => window.sudal.lsp.send(r.id, message),
         subscribe: (h) => void handlers.add(h),
         unsubscribe: (h) => void handlers.delete(h),
       };

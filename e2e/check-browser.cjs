@@ -34,5 +34,5 @@ await page.click("[data-browser-devtools]");await page.waitForTimeout(1000);
 const closed=await ev(()=>{const w=document.querySelector("webview");return w&&w.isDevToolsOpened?w.isDevToolsOpened():null});
 console.log("devtools 열림:",opened,"→ 닫힘:",closed);
 console.log("RESULT (개발자 도구 토글):", opened===true&&closed===false?"PASS":"FAIL");
-const s=await ev(()=>window.workbench.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+const s=await ev(()=>window.sudal.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

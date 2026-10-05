@@ -78,8 +78,8 @@ export function SettingsView({
     setState((s) => ({ ...s, [provider]: { ...s[provider], loading: true } }));
     try {
       const [status, candidates] = await Promise.all([
-        window.workbench.cli.status(provider),
-        window.workbench.cli.candidates(provider),
+        window.sudal.cli.status(provider),
+        window.sudal.cli.candidates(provider),
       ]);
       setState((s) => ({ ...s, [provider]: { status, candidates, loading: false, message: null } }));
     } catch (e) {
@@ -93,12 +93,12 @@ export function SettingsView({
   const loadAll = useCallback(async () => {
     const started = Date.now();
     await Promise.all(PROVIDERS.map(load));
-    setDiag(await window.workbench.cli.diagnostics());
+    setDiag(await window.sudal.cli.diagnostics());
     setScannedAt(Date.now() - started);
   }, [load]);
 
   const rescan = async () => {
-    await window.workbench.cli.refresh();
+    await window.sudal.cli.refresh();
     await loadAll();
   };
 
@@ -107,7 +107,7 @@ export function SettingsView({
   }, [loadAll]);
 
   const applyOverride = async (provider: Provider, binPath: string | null) => {
-    const result = await window.workbench.cli.setOverride(provider, binPath);
+    const result = await window.sudal.cli.setOverride(provider, binPath);
     if (!result.ok) {
       setState((s) => ({ ...s, [provider]: { ...s[provider], message: result.message ?? "" } }));
       return;
@@ -302,7 +302,7 @@ export function SettingsView({
                 <p>
                   {t("settings.cli.logFile", { path: info.logPath })}{" "}
                   <button
-                    onClick={() => void window.workbench.app.openLogs()}
+                    onClick={() => void window.sudal.app.openLogs()}
                     className="ml-1 rounded border border-line px-1.5 py-0.5 hover:bg-panel-2"
                   >
                     {t("settings.openFolder")}
@@ -360,7 +360,7 @@ function UpdateCard() {
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   useEffect(() => {
-    window.workbench.app.info().then((i) => setVersion(i.version));
+    window.sudal.app.info().then((i) => setVersion(i.version));
   }, []);
 
   const r = status?.check ?? undefined;
@@ -382,7 +382,7 @@ function UpdateCard() {
     setChecking(true);
     setCheckError(null);
     try {
-      await window.workbench.app.checkUpdate();
+      await window.sudal.app.checkUpdate();
     } catch (e) {
       setCheckError(t("settings.update.checkFailed", { error: e instanceof Error ? e.message : String(e) }));
     } finally {
@@ -392,9 +392,9 @@ function UpdateCard() {
   // 결과는 상태 알림으로 온다. 실행 자체가 거절되면(예외) 그 내용만 여기서 보인다.
   const run = () => {
     setCheckError(null);
-    window.workbench.app.runUpdate().catch((e: unknown) => setCheckError(e instanceof Error ? e.message : String(e)));
+    window.sudal.app.runUpdate().catch((e: unknown) => setCheckError(e instanceof Error ? e.message : String(e)));
   };
-  const openRelease = (url: string) => void window.workbench.browser.openExternal(url);
+  const openRelease = (url: string) => void window.sudal.browser.openExternal(url);
 
   const btn = "shrink-0 rounded-md border border-line px-2.5 py-1 text-[11.5px] text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-40";
 
@@ -431,7 +431,7 @@ function UpdateCard() {
           </button>
         )}
         {st.kind === "done" ? (
-          <button onClick={() => void window.workbench.app.relaunch()} className={btn} data-update-relaunch>
+          <button onClick={() => void window.sudal.app.relaunch()} className={btn} data-update-relaunch>
             {t("settings.update.relaunch")}
           </button>
         ) : st.kind === "upgrading" || (r?.available && r.brew) ? (
@@ -467,12 +467,12 @@ function GeneralSection() {
     setConcurrentDraft(String(s.maxConcurrent));
   };
   useEffect(() => {
-    window.workbench.app.getSettings().then(adopt);
+    window.sudal.app.getSettings().then(adopt);
   }, []);
 
   const save = async (patch: Partial<AppSettingsDto>) => {
     try {
-      adopt(await window.workbench.app.setSettings(patch));
+      adopt(await window.sudal.app.setSettings(patch));
       setMsg({ ok: true, saved: true });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -496,19 +496,19 @@ function GeneralSection() {
 
   const [installMsg, setInstallMsg] = useState<InstallNotice | null>(null);
   const [installed, setInstalled] = useState<InstallStatusDto | null>(null);
-  const refreshInstalled = () => window.workbench.app.installStatus().then(setInstalled).catch(() => setInstalled(null));
+  const refreshInstalled = () => window.sudal.app.installStatus().then(setInstalled).catch(() => setInstalled(null));
   useEffect(() => {
     void refreshInstalled();
   }, []);
   const installCli = async () => {
-    const r = await window.workbench.app.installCli();
+    const r = await window.sudal.app.installCli();
     void refreshInstalled();
     if (!r.ok) setInstallMsg({ ok: false, text: r.error });
     else if (r.hint) setInstallMsg({ ok: false, text: r.hint });
     else setInstallMsg({ ok: true, cli: shortenHome(r.path) });
   };
   const installSkill = async (agent: "claude" | "codex") => {
-    const r = await window.workbench.app.installSkill(agent);
+    const r = await window.sudal.app.installSkill(agent);
     void refreshInstalled();
     if (!r.ok) setInstallMsg({ ok: false, text: r.error });
     else setInstallMsg({ ok: true, skills: r.paths.map(shortenHome).join(", ") });
@@ -702,7 +702,7 @@ function GeneralSection() {
             <span className="mono truncate text-[11.5px]" title={settings.dataDir} data-data-dir>
               {shortenHome(settings.dataDir)}
             </span>
-            <button onClick={() => void window.workbench.app.openPath("data")} className="justify-self-end rounded-md border border-line px-2.5 py-1 hover:bg-panel-2">
+            <button onClick={() => void window.sudal.app.openPath("data")} className="justify-self-end rounded-md border border-line px-2.5 py-1 hover:bg-panel-2">
               {t("settings.openFolder")}
             </button>
 
@@ -712,11 +712,11 @@ function GeneralSection() {
               {!settings.worktreeDirCustom && <span className="ml-1.5 font-sans text-muted">{t("settings.storage.isDefault")}</span>}
             </span>
             <span className="flex items-center gap-1.5 justify-self-end">
-              <button onClick={() => void window.workbench.app.openPath("worktrees")} className="rounded-md border border-line px-2.5 py-1 hover:bg-panel-2">
+              <button onClick={() => void window.sudal.app.openPath("worktrees")} className="rounded-md border border-line px-2.5 py-1 hover:bg-panel-2">
                 {t("settings.openFolder")}
               </button>
               <button
-                onClick={() => void window.workbench.app.pickWorktreeDir().then(adopt)}
+                onClick={() => void window.sudal.app.pickWorktreeDir().then(adopt)}
                 className="rounded-md border border-line px-2.5 py-1 hover:bg-panel-2"
                 data-worktree-dir-pick
               >
@@ -875,7 +875,7 @@ function McpSection({ workspacePath }: { workspacePath: string | null }) {
     setLoading(true);
     setError(null);
     try {
-      setServers(await window.workbench.mcp.status(workspacePath));
+      setServers(await window.sudal.mcp.status(workspacePath));
       setCheckedAt(Date.now());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1094,7 +1094,7 @@ function SnippetsSection({ workspaces }: { workspaces: { id: string; name: strin
 
   const save = async () => {
     if (!editing) return;
-    const r = await window.workbench.snippets.save({
+    const r = await window.sudal.snippets.save({
       id: editing.id,
       name: editing.name ?? "",
       text: editing.text ?? "",
@@ -1214,7 +1214,7 @@ function SnippetsSection({ workspaces }: { workspaces: { id: string; name: strin
                 <Icon name="edit" size={13} />
               </button>
               <button
-                onClick={() => void window.workbench.snippets.remove(s.id)}
+                onClick={() => void window.sudal.snippets.remove(s.id)}
                 className="rounded-md p-1.5 text-muted hover:bg-err-bg hover:text-err"
                 title={t("common.delete")}
                 data-snippet-delete
@@ -1235,7 +1235,7 @@ function LspCard() {
   const { t } = useTranslation();
   const [statuses, setStatuses] = useState<LspStatusDto[] | null>(null);
   const load = useCallback(() => {
-    window.workbench.lsp.status().then(setStatuses);
+    window.sudal.lsp.status().then(setStatuses);
   }, []);
   useEffect(load, [load]);
   return (
@@ -1261,7 +1261,7 @@ function LspServerRow({ status, onChanged }: { status: LspStatusDto; onChanged: 
   const [msg, setMsg] = useState<{ ok: true; auto: boolean } | { ok: false; text: string } | null>(null);
   useEffect(() => setPath(status.override ?? ""), [status.override]);
   const save = async (p: string | null) => {
-    const r = await window.workbench.lsp.setPath(status.serverId, p);
+    const r = await window.sudal.lsp.setPath(status.serverId, p);
     setMsg(r.ok ? { ok: true, auto: !p } : { ok: false, text: r.error });
     onChanged();
   };
@@ -1325,14 +1325,14 @@ function WorktreeCleanup() {
   const load = async () => {
     setLoading(true);
     try {
-      setList(await window.workbench.worktree.listManaged());
+      setList(await window.sudal.worktree.listManaged());
     } finally {
       setLoading(false);
     }
   };
   const remove = async (w: ManagedWorktreeDto) => {
     setConfirm(null);
-    const r = await window.workbench.worktree.removeManaged(w.path);
+    const r = await window.sudal.worktree.removeManaged(w.path);
     setMsg(r.ok ? { ok: true, path: shortenHome(w.path) } : { ok: false, text: r.error });
     await load();
   };

@@ -238,7 +238,7 @@ export function BrowserPane({
       const list = (e as Event & { favicons?: string[] }).favicons ?? [];
       const first = list.find((u) => /^https?:\/\//i.test(u));
       if (!first) return onFaviconRef.current?.(null);
-      void window.workbench.browser
+      void window.sudal.browser
         .favicon(first)
         .then((d) => onFaviconRef.current?.(d))
         .catch(() => onFaviconRef.current?.(null));
@@ -335,9 +335,9 @@ export function BrowserPane({
       } catch {
         /* 캡처 실패는 텍스트만 */
       }
-      let net: Awaited<ReturnType<typeof window.workbench.browser.netFailures>> = [];
+      let net: Awaited<ReturnType<typeof window.sudal.browser.netFailures>> = [];
       try {
-        net = await window.workbench.browser.netFailures(el.getWebContentsId(), true);
+        net = await window.sudal.browser.netFailures(el.getWebContentsId(), true);
       } catch {
         /* 수집이 없으면 빈 목록 */
       }
@@ -432,8 +432,8 @@ export function BrowserPane({
     } catch {
       return; // dom-ready 가 다시 불러 준다
     }
-    window.workbench.browser.register(chatTabId, id, url);
-    return () => window.workbench.browser.register(chatTabId, null, "");
+    window.sudal.browser.register(chatTabId, id, url);
+    return () => window.sudal.browser.register(chatTabId, null, "");
   }, [chatTabId, visible, url, mounted, attached]);
 
   // 자동완성 후보. 목록이 열려 있을 때만 계산한다.
@@ -606,7 +606,7 @@ export function BrowserPane({
           <Icon name="terminal" size={13} />
         </button>
         <button
-          onClick={() => url && void window.workbench.browser.openExternal(url)}
+          onClick={() => url && void window.sudal.browser.openExternal(url)}
           disabled={!url}
           className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30"
           title={t("panel.browser.openExternal")}

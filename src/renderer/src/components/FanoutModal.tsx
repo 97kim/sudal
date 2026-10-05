@@ -18,7 +18,7 @@ function VariantModelSelect({ provider, value, onChange }: { provider: Provider;
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.workbench.cli.status(provider).then((s) => alive && setDefaultModel(s.defaultModel ?? null));
+    void window.sudal.cli.status(provider).then((s) => alive && setDefaultModel(s.defaultModel ?? null));
     return () => {
       alive = false;
     };

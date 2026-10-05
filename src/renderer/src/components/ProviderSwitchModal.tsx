@@ -37,7 +37,7 @@ export function ProviderSwitchModal({
 
   useEffect(() => {
     for (const p of PROVIDERS) {
-      window.workbench.cli.status(p).then((s) => setStatus((prev) => ({ ...prev, [p]: s })));
+      window.sudal.cli.status(p).then((s) => setStatus((prev) => ({ ...prev, [p]: s })));
     }
     loadHandoff().then(setHandoff).catch(console.error);
   }, [loadHandoff]);

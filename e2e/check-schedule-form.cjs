@@ -156,7 +156,7 @@ const NAME = "화면에서만든예약";
     }
     const run = cli("schedule", "runs", "--id", noWsId).runs[0];
     result("그 회차가 건너뛰지 않고 실제로 돈다", run?.status === "completed", `(${run?.status} ${run?.reason ?? ""})`);
-    const made = await ev(() => window.workbench.workspaces.state());
+    const made = await ev(() => window.sudal.workspaces.state());
     const sched = made.model.workspaces.find((w) => w.name === "예약");
     result("예약 전용 워크스페이스가 생긴다", Boolean(sched));
     const tab = made.model.tabs.find((t) => t.id === run?.tabId);

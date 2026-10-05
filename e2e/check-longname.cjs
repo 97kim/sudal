@@ -56,7 +56,7 @@ const probe = (page, long) => page.evaluate((LONG) => {
   cli("tab", "new", "--ws", ws.workspaceId, "--provider", "claude", "--title", "긴이름", "--activate");
   await page.waitForTimeout(2500);
   const tabId = await page.evaluate(() => document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab"));
-  await page.evaluate((id) => window.workbench.chat.configure(id, { policy: "full" }), tabId);
+  await page.evaluate((id) => window.sudal.chat.configure(id, { policy: "full" }), tabId);
   await page.evaluate(() => window.__sudalShortcut?.("toggle-sidebar"));
   await page.setViewportSize({ width: Number(process.env.W || 720), height: 760 });
   await page.waitForTimeout(600);

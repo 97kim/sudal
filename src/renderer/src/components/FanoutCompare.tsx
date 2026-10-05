@@ -19,7 +19,7 @@ export function FanoutCompare({ tabId, fanoutId, adoptedTabId, onClose }: { tabI
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const load = () => {
     setError(null);
-    window.workbench.chat
+    window.sudal.chat
       .fanoutCompare(tabId, fanoutId)
       .then((d) => {
         setData(d);
@@ -45,7 +45,7 @@ export function FanoutCompare({ tabId, fanoutId, adoptedTabId, onClose }: { tabI
   const adopt = async (variantTabId: string) => {
     setAdopting(variantTabId);
     setMsg(null);
-    const r = await window.workbench.chat.fanoutAdopt(tabId, fanoutId, variantTabId);
+    const r = await window.sudal.chat.fanoutAdopt(tabId, fanoutId, variantTabId);
     setAdopting(null);
     setConfirm(null);
     setMsg(r.ok ? { ok: true, text: t("fanout.compare.applied", { count: r.files.length }) } : { ok: false, text: r.error });
@@ -127,7 +127,7 @@ export function FanoutCompare({ tabId, fanoutId, adoptedTabId, onClose }: { tabI
                         {t("fanout.compare.adopt")}
                       </button>
                     )}
-                    <button onClick={() => void window.workbench.workspaces.activateTab(v.tabId)} className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" title={t("fanout.compare.openTabTitle")}>
+                    <button onClick={() => void window.sudal.workspaces.activateTab(v.tabId)} className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" title={t("fanout.compare.openTabTitle")}>
                       {t("fanout.compare.openTab")}
                     </button>
                   </div>

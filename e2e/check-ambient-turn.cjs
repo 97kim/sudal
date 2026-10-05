@@ -20,7 +20,7 @@ const MARK = "백그라운드가끝났다";
   const tab = cli("tab", "new", "--ws", ws, "--provider", "claude", "--title", "이어받기" + Date.now(), "--activate").tab.id;
   await page.waitForTimeout(2000);
 
-  const status = () => ev(async (t) => (await window.workbench.chat.snapshot(t)).status, tab);
+  const status = () => ev(async (t) => (await window.sudal.chat.snapshot(t)).status, tab);
   const blocks = () => ev(() => document.querySelectorAll("[data-block-id]").length);
   const bodyHas = (s) => ev((m) => document.body.innerText.includes(m), s);
 

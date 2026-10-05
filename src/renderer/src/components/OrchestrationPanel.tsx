@@ -41,7 +41,7 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
   }, []);
   const refresh = useCallback(async () => {
     const version = ++loadVersion.current;
-    const next = await window.workbench.orch.list();
+    const next = await window.sudal.orch.list();
     if (mounted.current && version === loadVersion.current) setRuns(next);
     return next;
   }, []);
@@ -52,13 +52,13 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
     });
   }, [refresh, showMessage, t]);
   const cleanupAction = useMemo(() => createWorkerCleanup({
-    remove: (runId, dispatchId) => window.workbench.orch.worker(runId, dispatchId, "cleanup"),
+    remove: (runId, dispatchId) => window.sudal.orch.worker(runId, dispatchId, "cleanup"),
     refresh,
   }), [refresh]);
   useEffect(() => {
     mounted.current = true;
     load();
-    const unsubscribe = window.workbench.orch.onChanged(load);
+    const unsubscribe = window.sudal.orch.onChanged(load);
     return () => {
       mounted.current = false;
       loadVersion.current++;
@@ -139,12 +139,12 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                 <span className="mono text-[10.5px] text-muted-2">{run.run.id}</span>
                 <span className="flex-1" />
                 {run.run.coordinator.kind === "tab" && run.run.status === "active" && (
-                  <button onClick={() => void act(window.workbench.orch.takeover(run.run.id), t("orchestration.panel.takeoverDone"))} className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" title={t("orchestration.panel.takeoverTitle")} data-orch-takeover>
+                  <button onClick={() => void act(window.sudal.orch.takeover(run.run.id), t("orchestration.panel.takeoverDone"))} className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" title={t("orchestration.panel.takeoverTitle")} data-orch-takeover>
                     {t("orchestration.panel.takeover")}
                   </button>
                 )}
                 {run.run.status === "active" && (
-                  <button onClick={() => void act(window.workbench.orch.close(run.run.id), t("orchestration.panel.closeRunDone"))} className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-close>
+                  <button onClick={() => void act(window.sudal.orch.close(run.run.id), t("orchestration.panel.closeRunDone"))} className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-close>
                     {t("orchestration.panel.closeRun")}
                   </button>
                 )}
@@ -180,7 +180,7 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                             <span className="text-ok">{t("orchestration.panel.gateResolved", { choice: g.resolution.choice })}</span>
                           ) : (
                             g.options.map((o) => (
-                              <button key={o} onClick={() => void act(window.workbench.orch.gate(run.run.id, g.id, o), t("orchestration.panel.gateDecided", { choice: o }))} className="rounded-md border border-warn/40 px-2 py-0.5 text-[11px] text-warn hover:bg-warn/10" data-orch-gate-option={o}>
+                              <button key={o} onClick={() => void act(window.sudal.orch.gate(run.run.id, g.id, o), t("orchestration.panel.gateDecided", { choice: o }))} className="rounded-md border border-warn/40 px-2 py-0.5 text-[11px] text-warn hover:bg-warn/10" data-orch-gate-option={o}>
                                 {o}
                               </button>
                             ))
@@ -202,17 +202,17 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                           {d.worktree && <span className="mono text-[10px] text-muted-2">worktree</span>}
                           <span className="flex-1" />
                           {d.tabId && (
-                            <button onClick={() => void window.workbench.workspaces.activateTab(d.tabId)} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg">
+                            <button onClick={() => void window.sudal.workspaces.activateTab(d.tabId)} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg">
                               {t("orchestration.panel.openTab")}
                             </button>
                           )}
                           {(d.status === "live" || d.status === "reported") && (
-                            <button onClick={() => void act(window.workbench.orch.worker(run.run.id, d.id, "stop"), t("orchestration.panel.stopRequested"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-err/10 hover:text-err" data-orch-worker-stop>
+                            <button onClick={() => void act(window.sudal.orch.worker(run.run.id, d.id, "stop"), t("orchestration.panel.stopRequested"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-err/10 hover:text-err" data-orch-worker-stop>
                               {t("orchestration.panel.stop")}
                             </button>
                           )}
                           {d.status === "live" && d.execution.state !== "running" && d.execution.state !== "queued" && d.execution.state !== "waiting_permission" && (
-                            <button onClick={() => void act(window.workbench.orch.worker(run.run.id, d.id, "abandon"), t("orchestration.panel.abandonDone"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-warn/10 hover:text-warn" data-orch-worker-abandon>
+                            <button onClick={() => void act(window.sudal.orch.worker(run.run.id, d.id, "abandon"), t("orchestration.panel.abandonDone"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-warn/10 hover:text-warn" data-orch-worker-abandon>
                               {t("orchestration.panel.abandon")}
                             </button>
                           )}
@@ -227,10 +227,10 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                           {d.cleaned && <span className="text-[10px] text-muted-2">{t(`orchestration.panel.cleanupLabel.${cleanupState(d.cleaned)}`)}</span>}
                           {d.status === "settled" && d.ownership === "supervised" && (
                             <>
-                              <button onClick={() => void act(window.workbench.orch.worker(run.run.id, d.id, "retain"), t("orchestration.panel.retainDone"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-worker-retain>
+                              <button onClick={() => void act(window.sudal.orch.worker(run.run.id, d.id, "retain"), t("orchestration.panel.retainDone"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-worker-retain>
                                 {t("orchestration.panel.retain")}
                               </button>
-                              <button onClick={() => void act(window.workbench.orch.worker(run.run.id, d.id, "release"), t("orchestration.panel.releaseDone"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-worker-release>
+                              <button onClick={() => void act(window.sudal.orch.worker(run.run.id, d.id, "release"), t("orchestration.panel.releaseDone"))} className="rounded border border-line px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-worker-release>
                                 {t("orchestration.panel.release")}
                               </button>
                             </>
@@ -251,7 +251,7 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                               const live = ds.find((d) => d.status === "live");
                               const body = (followup[task.id] ?? "").trim();
                               if (!live || !body) return;
-                              void act(window.workbench.orch.followup(run.run.id, live.id, body), t("orchestration.panel.followupSent")).then(() => setFollowup((m) => ({ ...m, [task.id]: "" })));
+                              void act(window.sudal.orch.followup(run.run.id, live.id, body), t("orchestration.panel.followupSent")).then(() => setFollowup((m) => ({ ...m, [task.id]: "" })));
                             }}
                             className="rounded border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg"
                             data-orch-followup-send
@@ -293,7 +293,7 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                             {m.options && m.options.length > 0 && (
                               <div className="flex flex-wrap gap-1">
                                 {m.options.map((o) => (
-                                  <button key={o} onClick={() => void act(window.workbench.orch.reply(run.run.id, m.id, o), t("orchestration.panel.answerSent"))} className="rounded-md border border-accent/40 bg-accent-tint px-2 py-0.5 text-[11.5px] text-accent hover:bg-accent/15" data-orch-answer-option={o}>
+                                  <button key={o} onClick={() => void act(window.sudal.orch.reply(run.run.id, m.id, o), t("orchestration.panel.answerSent"))} className="rounded-md border border-accent/40 bg-accent-tint px-2 py-0.5 text-[11.5px] text-accent hover:bg-accent/15" data-orch-answer-option={o}>
                                     {o}
                                   </button>
                                 ))}
@@ -304,13 +304,13 @@ export function OrchestrationPanel({ initialRunId, onClose }: { initialRunId: st
                                 value={answers[m.id] ?? ""}
                                 onChange={(e) => setAnswers((s) => ({ ...s, [m.id]: e.target.value }))}
                                 onKeyDown={(e) => {
-                                  if (e.key === "Enter" && (answers[m.id] ?? "").trim()) void act(window.workbench.orch.reply(run.run.id, m.id, answers[m.id].trim()), t("orchestration.panel.answerSent"));
+                                  if (e.key === "Enter" && (answers[m.id] ?? "").trim()) void act(window.sudal.orch.reply(run.run.id, m.id, answers[m.id].trim()), t("orchestration.panel.answerSent"));
                                 }}
                                 placeholder={t("orchestration.panel.answerPlaceholder")}
                                 className="min-w-0 flex-1 rounded border border-line bg-inset px-2 py-1 text-[11.5px] outline-none focus:border-accent"
                                 data-orch-answer-input
                               />
-                              <button onClick={() => (answers[m.id] ?? "").trim() && void act(window.workbench.orch.reply(run.run.id, m.id, answers[m.id].trim()), t("orchestration.panel.answerSent"))} className="rounded border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-answer-send>
+                              <button onClick={() => (answers[m.id] ?? "").trim() && void act(window.sudal.orch.reply(run.run.id, m.id, answers[m.id].trim()), t("orchestration.panel.answerSent"))} className="rounded border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" data-orch-answer-send>
                                 {t("orchestration.panel.answerSend")}
                               </button>
                             </div>

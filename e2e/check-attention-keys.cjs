@@ -35,8 +35,8 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   result("⌘⇧↓ 도", (await selection()) === 0, `(선택 ${await selection()}자)`);
   result("포커스는 입력창에 남는다", await ev(() => document.activeElement?.tagName === "TEXTAREA"));
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
   process.exit(fails === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

@@ -116,7 +116,7 @@ export function TerminalPanel({
   // main 에 이미 떠 있는 터미널(채팅 탭 전환 전에 만든 것)을 복원한다. 없으면 셸 하나를 만든다.
   useEffect(() => {
     let alive = true;
-    window.workbench.terminal.list(tabId).then((list) => {
+    window.sudal.terminal.list(tabId).then((list) => {
       if (!alive) return;
       const restored = list.map((t) => ({
         id: t.id,
@@ -141,7 +141,7 @@ export function TerminalPanel({
       setRatio(layout.ratio);
       setLoaded(true);
     });
-    const offOpened = window.workbench.terminal.onOpened(
+    const offOpened = window.sudal.terminal.onOpened(
       (info: TerminalInfoDto) => {
         if (!info.id.startsWith(prefix)) return;
         setTabs((prev) =>
@@ -219,7 +219,7 @@ export function TerminalPanel({
 
   const closeAll = () => {
     for (const t of tabs) {
-      void window.workbench.terminal.close(t.id);
+      void window.sudal.terminal.close(t.id);
       forgetTerminalGate(t.id);
     }
     setTabs([]);
@@ -242,7 +242,7 @@ export function TerminalPanel({
       closeAll();
       return;
     }
-    void window.workbench.terminal.close(id);
+    void window.sudal.terminal.close(id);
     forgetTerminalGate(id);
     const l = removePane({ active, split }, tabs.map((t) => t.id), id);
     setTabs((prev) => prev.filter((t) => t.id !== id));
@@ -307,7 +307,7 @@ export function TerminalPanel({
       return;
     }
     term.paste(req.command);
-    if (req.run) window.workbench.terminal.write(id, "\r");
+    if (req.run) window.sudal.terminal.write(id, "\r");
     noteDelivered(id, promptEpoch(id));
     term.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -380,7 +380,7 @@ export function TerminalPanel({
     },
     clear: () => {
       // 화면은 여기서 바로 지우지 않는다. main 이 백로그를 비운 자리에 표시를 끼워 보내면 TerminalView 가 그 순서에 맞춰 지운다.
-      if (target) window.workbench.terminal.clear(target);
+      if (target) window.sudal.terminal.clear(target);
     },
     find: openFind,
   };
@@ -762,7 +762,7 @@ function TerminalView({
     if (!term) return;
     setExit(null);
     setError(null);
-    const r = await window.workbench.terminal.open(
+    const r = await window.sudal.terminal.open(
       termId,
       cwd,
       term.cols,
@@ -800,7 +800,7 @@ function TerminalView({
     const openLink = (e: MouseEvent, uri: string) => {
       if (!isLinkClick(e)) return;
       const where = linkTargetFor(uri, e);
-      if (where === "external") void window.workbench.browser.openExternal(uri);
+      if (where === "external") void window.sudal.browser.openExternal(uri);
       else if (where === "app") cbs.current.openFile(uri);
       else setChooser({ href: uri, x: e.clientX, y: e.clientY + 8 });
     };
@@ -925,7 +925,7 @@ function TerminalView({
     const onScroll = term.onScroll(() => {
       if (atBottom()) setUnread(false);
     });
-    const offData = window.workbench.terminal.onData((id, data) => {
+    const offData = window.sudal.terminal.onData((id, data) => {
       if (id !== termId) return;
       if (data === TERMINAL_CLEAR_MARK) {
         // ⌘K. xterm 의 write 는 큐에 쌓였다 비동기로 그려지므로 바로 clear() 하면 이미 받은 출력이 지운 뒤에 나타난다.
@@ -936,16 +936,16 @@ function TerminalView({
       term.write(data);
       setExit(null); // 같은 id 에 새 프로세스가 붙었다
     });
-    const offExit = window.workbench.terminal.onExit((id, code) => {
+    const offExit = window.sudal.terminal.onExit((id, code) => {
       if (id !== termId) return;
       setExit(code);
       cbs.current.onReady?.(false);
     });
     const onInput = term.onData((data) =>
-      window.workbench.terminal.write(termId, data),
+      window.sudal.terminal.write(termId, data),
     );
     const onResize = term.onResize(({ cols, rows }) =>
-      window.workbench.terminal.resize(termId, cols, rows),
+      window.sudal.terminal.resize(termId, cols, rows),
     );
     // 다크/라이트 전환: 토큰 값을 다시 읽어 xterm 색을 바꾼다(xterm 은 CSS 변수를 직접 못 쓴다)
     const offTheme = onThemeChange(() => {
@@ -1031,7 +1031,7 @@ function TerminalView({
             const href = chooser.href;
             setChooser(null);
             if (where === "app") openFile(href);
-            else void window.workbench.browser.openExternal(href);
+            else void window.sudal.browser.openExternal(href);
           }}
           onClose={() => setChooser(null)}
         />

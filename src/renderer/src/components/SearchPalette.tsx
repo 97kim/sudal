@@ -43,7 +43,7 @@ export function SearchPalette({
     const my = ++seq.current;
     setSearching(true);
     const t = setTimeout(() => {
-      window.workbench.chat
+      window.sudal.chat
         .search(q)
         .then((r) => {
           if (my !== seq.current) return;

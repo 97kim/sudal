@@ -47,7 +47,7 @@ const writeJobs = (jobs) => {
   for (let i = 0; i < 40; i++) { await page.waitForTimeout(500); gone = await ev(() => !document.querySelector("[data-background-job]")); if (gone) break; }
   console.log("RESULT (끝나면 진행 줄이 사라짐):", gone ? "PASS" : "FAIL");
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

@@ -233,7 +233,7 @@ export function MessageList({
   // 턴 끝의 "여기서 분기": 지금 이어지는 세션의 턴이고 탭이 쉬고 있을 때만
   const forkCtx: ForkCtx = {
     can: (p) => !!sessionId && p.sessionId === sessionId && (status === "idle" || status === "error"),
-    fork: (pointId) => window.workbench.chat.fork(tabId, pointId),
+    fork: (pointId) => window.sudal.chat.fork(tabId, pointId),
   };
   return (
     <ForkContext.Provider value={forkCtx}>
@@ -714,7 +714,7 @@ function ReviewCard({ block }: { block: ReviewBlock }) {
         {block.status === "done" && <span className="label text-ok">{t("chat.messages.review.done")}</span>}
         {block.status === "failed" && <span className="label text-err">{t("chat.messages.review.failed")}</span>}
         <button
-          onClick={() => void window.workbench.workspaces.activateTab(block.id)}
+          onClick={() => void window.sudal.workspaces.activateTab(block.id)}
           className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg"
           title={t("chat.messages.review.openHint")}
           data-review-open

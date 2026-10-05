@@ -7,8 +7,8 @@ export function useUpdateStatus(): UpdateStatusDto | null {
   const [status, setStatus] = useState<UpdateStatusDto | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.workbench.app.updateStatus().then((s) => alive && setStatus(s));
-    const off = window.workbench.app.onUpdateChanged(setStatus);
+    void window.sudal.app.updateStatus().then((s) => alive && setStatus(s));
+    const off = window.sudal.app.onUpdateChanged(setStatus);
     return () => {
       alive = false;
       off();

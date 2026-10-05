@@ -6,7 +6,7 @@ import path from "node:path";
 import { isInsideRel } from "./path-within";
 import type { ChatEvent } from "@shared/chat-events";
 import type { ProviderRateLimitDto } from "@shared/ipc";
-import { emptyModel, type WorkbenchModel } from "@shared/workspace-model";
+import { emptyModel, type WorkspaceModel } from "@shared/workspace-model";
 import { mt } from "./i18n";
 import { CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_MAX_COUNT, isChatImageMime, toHistoryImages, type StoredChatImage } from "./chat-attachments";
 
@@ -69,11 +69,11 @@ export class Store {
 
   // ===== model =====
 
-  loadModel(): WorkbenchModel {
+  loadModel(): WorkspaceModel {
     if (!fs.existsSync(this.modelPath)) return emptyModel();
     try {
       const raw = fs.readFileSync(this.modelPath, "utf8");
-      const parsed = JSON.parse(raw) as Partial<WorkbenchModel>;
+      const parsed = JSON.parse(raw) as Partial<WorkspaceModel>;
       if (parsed && parsed.version === 1 && Array.isArray(parsed.workspaces)) {
         return {
           version: 1,
@@ -96,7 +96,7 @@ export class Store {
   }
 
   /** 임시 파일에 쓰고 rename — 쓰는 중에 죽어도 반쪽 파일이 남지 않게. */
-  saveModel(model: WorkbenchModel): void {
+  saveModel(model: WorkspaceModel): void {
     fs.mkdirSync(this.dir, { recursive: true });
     const tmp = `${this.modelPath}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(model, null, 2), "utf8");

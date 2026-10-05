@@ -36,7 +36,7 @@ const measure = (page) => page.evaluate(() => {
   await page.waitForTimeout(2500);
   const tabId = await page.evaluate(() => document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab"));
   // 도구를 쓰게 만든다. 승인 대기로 멈추지 않게 전부 자동으로.
-  await page.evaluate((id) => window.workbench.chat.configure(id, { policy: "full" }), tabId);
+  await page.evaluate((id) => window.sudal.chat.configure(id, { policy: "full" }), tabId);
   cli("tab", "send", "--tab", "정렬", "--text", "ls 로 이 디렉토리를 보고, 그다음 pwd 도 실행해라. 각 도구 전후로 한 문장씩 설명해라.");
 
   // 진행 표시("… 결과 보는 중")는 도구 사이에만 잠깐 보인다 — 자주 재서 잡히는 대로 모은다.

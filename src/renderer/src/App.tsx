@@ -47,10 +47,10 @@ export function App() {
     return () => clearTimeout(t);
   }, [notice]);
   const ws = useWorkspaces();
-  const api = window.workbench.workspaces;
+  const api = window.sudal.workspaces;
 
   useEffect(() => {
-    window.workbench.app.info().then(setInfo).catch(console.error);
+    window.sudal.app.info().then(setInfo).catch(console.error);
   }, []);
 
   const { model } = ws;
@@ -216,7 +216,7 @@ export function App() {
   const newWorktreeIn = useCallback(
     async (wsId: string) => {
       const active = model.tabs.find((t) => t.id === model.activeTabId);
-      const r = await window.workbench.worktree.create(wsId, active?.workspaceId === wsId ? active.id : null);
+      const r = await window.sudal.worktree.create(wsId, active?.workspaceId === wsId ? active.id : null);
       if (r.ok) setView("chat");
       else setNotice({ text: r.error, error: true });
     },
@@ -235,7 +235,7 @@ export function App() {
   // `sudal` CLI 가 밀어 넣는 화면 동작: 그 탭으로 가서 파일·브라우저를 연다
   useEffect(
     () =>
-      window.workbench.app.onControlOpen((req) => {
+      window.sudal.app.onControlOpen((req) => {
         setView("chat"); // 설정·사용량 화면에 있어도 요청한 탭이 보이게
         void api.activateTab(req.tabId);
         if (req.kind === "file") openEditorFile(req.tabId, req.path, req.line ? { line: req.line } : null);
@@ -340,7 +340,7 @@ export function App() {
       handle(e.key === "ArrowDown" ? "next-attention" : "prev-attention");
     };
     window.addEventListener("keydown", onKey, true);
-    const off = window.workbench.app.onShortcut(handle);
+    const off = window.sudal.app.onShortcut(handle);
     return () => {
       window.removeEventListener("keydown", onKey, true);
       off();
@@ -384,7 +384,7 @@ export function App() {
         }
         onRenameWorkspace={(id, name) => void api.update(id, { name })}
         onSetWorkspacePath={(id) =>
-          void window.workbench.dialog.pickDirectory().then((dir) => {
+          void window.sudal.dialog.pickDirectory().then((dir) => {
             if (dir) void api.update(id, { path: dir });
           })
         }
@@ -393,7 +393,7 @@ export function App() {
         onSearch={() => setSearch(true)}
         onJumpAttention={() => jumpAttention(1)}
         onNewWorktreeIn={(wsId) => void newWorktreeIn(wsId)}
-        onExportTab={(id) => void window.workbench.chat.exportMarkdown(id)}
+        onExportTab={(id) => void window.sudal.chat.exportMarkdown(id)}
         onSplitTab={openSplitTab}
       />
 

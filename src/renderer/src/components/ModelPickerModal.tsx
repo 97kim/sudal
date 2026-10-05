@@ -22,7 +22,7 @@ export function ModelPickerModal({
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    window.workbench.cli.status(provider).then((s) => alive && setDefaultModel(s.defaultModel ?? null));
+    window.sudal.cli.status(provider).then((s) => alive && setDefaultModel(s.defaultModel ?? null));
     return () => {
       alive = false;
     };

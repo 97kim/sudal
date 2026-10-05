@@ -11,5 +11,5 @@ const ok=m&&!m.noAvatar&&Math.abs(m.avatarMid-m.labelMid)<=2;
 console.log("RESULT (생각 중 라벨이 아바타와 세로 중앙):",ok?"PASS":"FAIL");
 await page.screenshot({path:path.join(E2E,"shot-thinking.png"),clip:{x:400,y:150,width:700,height:200}});
 cli("tab","abort","--tab","생각중");await page.waitForTimeout(1000);
-const st=await page.evaluate(()=>window.workbench.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.workbench.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.workbench.workspaces.remove(id),w.id);}
+const st=await page.evaluate(()=>window.sudal.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.sudal.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

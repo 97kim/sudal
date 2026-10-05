@@ -306,8 +306,8 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.workbench.schedules.list().then((d) => alive && setData(d));
-    const off = window.workbench.schedules.onChanged((d) => setData(d));
+    void window.sudal.schedules.list().then((d) => alive && setData(d));
+    const off = window.sudal.schedules.onChanged((d) => setData(d));
     return () => {
       alive = false;
       off();
@@ -341,7 +341,7 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
     setError(null);
     try {
       setData(
-        await window.workbench.schedules.save({
+        await window.sudal.schedules.save({
           ...(draft.id ? { id: draft.id } : {}),
           name: draft.name.trim(),
           cron,
@@ -470,7 +470,7 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
                   <button
                     type="button"
                     onClick={async () => {
-                      const dir = await window.workbench.dialog.pickDirectory();
+                      const dir = await window.sudal.dialog.pickDirectory();
                       if (dir) set({ cwd: dir, cwdAuto: false });
                     }}
                     className={`${chipWhen} max-w-[14rem] truncate text-left`}
@@ -615,7 +615,7 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button
-                      onClick={() => void act(s.id, () => window.workbench.schedules.runNow(s.id))}
+                      onClick={() => void act(s.id, () => window.sudal.schedules.runNow(s.id))}
                       disabled={busy === s.id}
                       title={t("schedules.item.runNow")}
                       className="rounded-md p-1.5 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-50"
@@ -637,11 +637,11 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
                       on={s.enabled}
                       busy={busy === s.id}
                       title={s.enabled ? t("common.off") : t("common.on")}
-                      onChange={() => void act(s.id, () => window.workbench.schedules.save({ id: s.id, enabled: !s.enabled }))}
+                      onChange={() => void act(s.id, () => window.sudal.schedules.save({ id: s.id, enabled: !s.enabled }))}
                       data-toggle-schedule={s.enabled ? "on" : "off"}
                     />
                     <button
-                      onClick={() => void act(s.id, () => window.workbench.schedules.remove(s.id))}
+                      onClick={() => void act(s.id, () => window.sudal.schedules.remove(s.id))}
                       disabled={busy === s.id}
                       title={t("schedules.item.remove")}
                       className="rounded-md p-1.5 text-muted hover:bg-err-bg hover:text-err disabled:opacity-50"

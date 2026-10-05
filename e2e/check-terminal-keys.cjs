@@ -123,8 +123,8 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   result("마지막 ⌘W 는 패널을 접는다", await ev(() => document.querySelector("[data-terminal-panel]")?.hidden === true));
   result("그래도 채팅 세션은 남는다", openTabCount() === tabsBefore + 1, `(${openTabCount()})`);
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
   process.exit(fails === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

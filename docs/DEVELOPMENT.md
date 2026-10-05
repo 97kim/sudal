@@ -134,6 +134,6 @@ src/main/       Electron main. cli-discovery / claude-adapter + claude-events / 
                 orchestration(Run·Task·Dispatch) / verify(테스트·빌드 실행) / control-server(sudal CLI 소켓)
                 browser-net(웹뷰 요청 실패 수집) / background-jobs(턴 밖 작업) / preview-server(로컬 HTML)
                 transcripts(트랜스크립트 파서 + 스캐너) / transcript-mirror(터미널 모드)
-src/preload/    contextBridge → window.workbench
+src/preload/    contextBridge → window.sudal
 src/renderer/   React + Tailwind. views/ChatView, views/SettingsView, components/*
 ```

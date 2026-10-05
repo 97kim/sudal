@@ -12,10 +12,10 @@ const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toF
   const b=await chromium.connectOverCDP("http://127.0.0.1:9333");const page=b.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes("localhost")||p.url().startsWith("file:"));
   const ev=(fn,arg)=>page.evaluate(fn,arg);
   // 이전 실행 잔재 정리: 탭 코디네이터 Run 은 사람이 인수한 뒤 닫는다
-  for(const r of (cli("orch","run-list").runs||[])){ if(r.status!=="active")continue; const show=cli("orch","run-show","--run",r.id); for(const w of (show.workers||[])) if(w.status==="live"||w.status==="reported"){await ev(({id,d})=>window.workbench.orch.worker(id,d,"stop"),{id:r.id,d:w.dispatchId});} }
+  for(const r of (cli("orch","run-list").runs||[])){ if(r.status!=="active")continue; const show=cli("orch","run-show","--run",r.id); for(const w of (show.workers||[])) if(w.status==="live"||w.status==="reported"){await ev(({id,d})=>window.sudal.orch.worker(id,d,"stop"),{id:r.id,d:w.dispatchId});} }
   await page.waitForTimeout(1500);
-  for(const r of (cli("orch","run-list").runs||[])){ if(r.status!=="active")continue; const show=cli("orch","run-show","--run",r.id); for(const w of (show.workers||[])) if(w.status==="live")await ev(({id,d})=>window.workbench.orch.worker(id,d,"abandon"),{id:r.id,d:w.dispatchId}); await ev(id=>window.workbench.orch.takeover(id),r.id); const c=await ev(id=>window.workbench.orch.close(id),r.id); log("closed leftover run",r.id,JSON.stringify(c)); }
-  { const s0=await ev(()=>window.workbench.workspaces.state()); for(const ww of s0.model.workspaces){for(const t of s0.model.tabs.filter(t=>t.workspaceId===ww.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),ww.id);} }
+  for(const r of (cli("orch","run-list").runs||[])){ if(r.status!=="active")continue; const show=cli("orch","run-show","--run",r.id); for(const w of (show.workers||[])) if(w.status==="live")await ev(({id,d})=>window.sudal.orch.worker(id,d,"abandon"),{id:r.id,d:w.dispatchId}); await ev(id=>window.sudal.orch.takeover(id),r.id); const c=await ev(id=>window.sudal.orch.close(id),r.id); log("closed leftover run",r.id,JSON.stringify(c)); }
+  { const s0=await ev(()=>window.sudal.workspaces.state()); for(const ww of s0.model.workspaces){for(const t of s0.model.tabs.filter(t=>t.workspaceId===ww.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),ww.id);} }
   const ws=cli("ws","add","--path",repo);
   const prompt=`sudal CLI 의 오케스트레이션으로 이 작업을 감독해. 순서대로: (1) \`sudal orch run-create --objective "b.txt 만들기" --coordinator active\` 로 Run 을 만들고 응답의 run id 와 coordinatorKey 를 기억해. (2) \`sudal orch worker-start --run <id> --key <key> --agent claude --policy full --cwd ${repo} --spec "Target: b.txt (저장소 루트). Change: 내용이 hello 한 줄인 b.txt 를 만든다. Acceptance: cat b.txt 가 hello. 끝나면 worker_done 보고(성공)."\` 로 워커 하나를 띄워. (3) \`sudal orch check --run <id> --key <key> --wait --types worker_done,question,escalation,note --timeout-ms 600000\` 으로 완료 보고를 기다려. question 이 오면 reply 로 답하고, worker_done 이 오면 \`--ack <delivery id>\` 로 확인한 뒤 멈춰. (4) 마지막에 "결과: <outcome>" 한 줄로만 답해. 워커 탭을 직접 열거나 파일을 직접 만들지 마.`;
   const coord=cli("tab","new","--ws",ws.workspaceId,"--provider","claude","--policy","full","--title","코디(탭)","--activate","--prompt",prompt);
@@ -41,7 +41,7 @@ const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toF
   res("B (보고 없이 종료 → 앱 통지 → abandon)",!!note&&ab.worker?.status==="abandoned"&&show.tasks?.[0]?.status==="abandoned",JSON.stringify(ab.worker?.status));
   // 정리
   fs.rmSync(bfile,{force:true});
-  const s=await ev(()=>window.workbench.workspaces.state());for(const ww of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===ww.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),ww.id);}
+  const s=await ev(()=>window.sudal.workspaces.state());for(const ww of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===ww.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),ww.id);}
   log("cleaned up;",results.filter(([,ok])=>!ok).length===0?"ALL PASS":"FAILED: "+results.filter(([,ok])=>!ok).map(([n])=>n).join(", "));
   await b.close();
 })().catch(e=>{console.error("ERR",e.message);process.exit(1)});

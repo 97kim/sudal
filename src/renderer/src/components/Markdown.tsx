@@ -221,7 +221,7 @@ function MdWebLink({ href, children, ...rest }: React.AnchorHTMLAttributes<HTMLA
   const openIn = (where: "app" | "external") => {
     if (!href) return;
     if (where === "app") openFile(href);
-    else void window.workbench.browser.openExternal(href);
+    else void window.sudal.browser.openExternal(href);
   };
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (!href) return;

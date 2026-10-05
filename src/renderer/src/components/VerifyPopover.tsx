@@ -43,7 +43,7 @@ export function VerifyPopover({
   useEffect(() => {
     if (saved.length > 0) return;
     let alive = true;
-    void window.workbench.chat.verifySuggest(tabId).then((list) => {
+    void window.sudal.chat.verifySuggest(tabId).then((list) => {
       if (alive && list.length > 0) {
         setText(list.join("\n"));
         setSuggested(true);

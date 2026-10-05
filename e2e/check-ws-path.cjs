@@ -19,7 +19,7 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   await page.waitForTimeout(600);
 
   // 경로 없는 워크스페이스를 만든다
-  const made = await ev(() => window.workbench.workspaces.create("경로시험"));
+  const made = await ev(() => window.sudal.workspaces.create("경로시험"));
   const wsId = made.workspaceId;
   await page.waitForTimeout(700);
   result("워크스페이스를 만든다", Boolean(wsId));
@@ -41,7 +41,7 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   await page.waitForTimeout(300);
 
   // 경로를 정한다(다이얼로그 대신 API)
-  await ev(({ id, dir }) => window.workbench.workspaces.update(id, { path: dir }), { id: wsId, dir: E2E + "/repo" });
+  await ev(({ id, dir }) => window.sudal.workspaces.update(id, { path: dir }), { id: wsId, dir: E2E + "/repo" });
   await page.waitForTimeout(800);
   const saved = cli("ws", "list").workspaces.find((w) => w.id === wsId);
   result("정한 경로가 저장된다", saved?.path === E2E + "/repo", `(${saved?.path})`);
@@ -57,9 +57,9 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   const cwd = cli("tab", "status", "--tab", tabId).tab.cwd;
   result("새 세션이 기본 경로를 물려받는다", cwd === E2E + "/repo", `(${cwd})`);
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const t of s.model.tabs.filter((t) => t.workspaceId === wsId)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id);
-  await ev((id) => window.workbench.workspaces.remove(id), wsId);
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const t of s.model.tabs.filter((t) => t.workspaceId === wsId)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id);
+  await ev((id) => window.sudal.workspaces.remove(id), wsId);
   await b.close();
   process.exit(fails === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

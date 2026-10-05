@@ -69,7 +69,7 @@ export function FileEditor({
   const previewUrl = useRef<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const openInBrowser = useCallback(async () => {
-    const r = await window.workbench.browser.previewUrl(cwd, path);
+    const r = await window.sudal.browser.previewUrl(cwd, path);
     if (!r.ok) {
       setPreviewError(r.error);
       setTimeout(() => setPreviewError(null), 4000);
@@ -119,7 +119,7 @@ export function FileEditor({
     setFile(null);
     setError(null);
     setConflict(false);
-    window.workbench.files
+    window.sudal.files
       .read(cwd, path)
       .then((f) => {
         if (!alive) return;
@@ -158,7 +158,7 @@ export function FileEditor({
       setSaving(true);
       setSaveMsg(null);
       const saved = text; // 저장하는 본문. 응답이 올 때까지 더 칠 수 있다.
-      const r = await window.workbench.files.write(cwd, file.path, saved, {
+      const r = await window.sudal.files.write(cwd, file.path, saved, {
         expectedMtimeMs: file.mtimeMs,
         expectedSize: file.missing ? null : file.size,
         force,

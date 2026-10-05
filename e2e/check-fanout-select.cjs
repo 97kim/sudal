@@ -15,5 +15,5 @@ const pass=s1[0].tag==="SELECT"&&JSON.stringify(s1[0].options)===JSON.stringify(
 console.log("RESULT (모델 셀렉트 + provider 바꾸면 기본으로):",pass?"PASS":"FAIL");
 await page.screenshot({path:path.join(E2E,"shot-fanout-select.png")});
 await page.keyboard.press("Escape");
-const st=await page.evaluate(()=>window.workbench.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.workbench.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.workbench.workspaces.remove(id),w.id);}
+const st=await page.evaluate(()=>window.sudal.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.sudal.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

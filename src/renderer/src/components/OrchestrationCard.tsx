@@ -68,7 +68,7 @@ export function OrchestrationCard({ block, onOpen }: { block: OrchestrationBlock
                   {task.status === "running" && exec && <span className="shrink-0 text-[10.5px] text-muted-2">{t(`orchestration.card.execution.${exec}`)}</span>}
                   <span className="flex-1" />
                   {task.tabId && (
-                    <button onClick={() => void window.workbench.workspaces.activateTab(task.tabId!)} className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" title={t("orchestration.card.openTabTitle", { provider: task.provider ? PROVIDER_NAME[task.provider] : "" })} data-orch-task-tab>
+                    <button onClick={() => void window.sudal.workspaces.activateTab(task.tabId!)} className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg" title={t("orchestration.card.openTabTitle", { provider: task.provider ? PROVIDER_NAME[task.provider] : "" })} data-orch-task-tab>
                       {t("orchestration.card.openTab")}
                     </button>
                   )}

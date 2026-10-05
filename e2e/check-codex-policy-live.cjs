@@ -29,7 +29,7 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   result("묻기 권한에서 승인 대기에 걸린다", waiting);
 
   // 턴 도중 "전부 자동"으로
-  await ev(([id]) => window.workbench.chat.configure(id, { policy: "full" }), [tabId]);
+  await ev(([id]) => window.sudal.chat.configure(id, { policy: "full" }), [tabId]);
   const w = cli("tab", "wait", "--tab", tabId, "--timeout-ms", "240000");
   result("권한을 바꾸면 승인 창이 풀리고 턴이 끝난다", w.wait.satisfied && w.tab.status !== "waiting_permission", JSON.stringify({ s: w.wait.satisfied, st: w.tab.status }));
   const read = cli("tab", "read", "--tab", tabId, "--last", "40");
@@ -38,8 +38,8 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   // 파일은 샌드박스(읽기 전용, 다음 턴부터 풀림) 때문에 못 만들 수 있다 — 결과를 기록만 한다.
   console.log("NOTE 파일 생성:", fs.existsSync(target) ? "됨" : "안 됨(샌드박스는 다음 턴부터 풀린다)");
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const x of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === x.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), x.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const x of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === x.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), x.id); }
   await b.close();
   process.exit(fails === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

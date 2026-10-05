@@ -60,7 +60,7 @@ const { chromium } = require("playwright-core");
   console.log("채팅 포커스에서 ⌘W:", JSON.stringify(afterChat));
   console.log("RESULT (채팅 세션이 닫힘):", afterChat.chatTabs === before.chatTabs - 1 ? "PASS" : `FAIL (${before.chatTabs} → ${afterChat.chatTabs})`);
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

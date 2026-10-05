@@ -26,7 +26,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   const tab = cli("tab", "new", "--ws", ws, "--provider", "claude", "--policy", "full", "--title", "중단" + Date.now(), "--activate").tab.id;
   await page.waitForTimeout(2000);
 
-  const status = () => ev(async (t) => (await window.workbench.chat.snapshot(t)).status, tab);
+  const status = () => ev(async (t) => (await window.sudal.chat.snapshot(t)).status, tab);
   const blocks = () => ev(() => document.querySelectorAll("[data-block-id]").length);
   const bodyHas = (s) => ev((m) => document.body.innerText.includes(m), s);
   const waitFor = async (pred, secs) => { for (let i = 0; i < secs; i++) { await page.waitForTimeout(1000); if (await pred()) return true; } return false; };
@@ -47,7 +47,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   result("이어받은 턴이 실제로 일을 물고 있다", alive0);
 
   // 3) 중단 — 화면의 중단 버튼과 같은 경로(chat.abort IPC)
-  const returned = await ev((t) => window.workbench.chat.abort(t), tab);
+  const returned = await ev((t) => window.sudal.chat.abort(t), tab);
   result("중단이 받아들여진다", returned === true, `(반환 ${returned})`);
 
   const stopped = await waitFor(async () => (await status()) === "idle", 15);

@@ -20,7 +20,7 @@ const { chromium } = require("playwright-core");
   console.log("활성 탭:", tabId);
   if (!tabId) { console.log("RESULT: FAIL (탭을 못 찾음)"); process.exit(1); }
 
-  const snap = () => ev((id) => window.workbench.chat.snapshot(id), tabId);
+  const snap = () => ev((id) => window.sudal.chat.snapshot(id), tabId);
   // 턴이 끝나고 세션 id 가 잡힐 때까지 기다린다 — 압축은 유휴 상태의 살아 있는 세션에만 맡길 수 있다.
   const settle = async (label) => {
     for (let i = 0; i < 180; i++) {
@@ -40,7 +40,7 @@ const { chromium } = require("playwright-core");
   console.log("압축 전:", JSON.stringify(before));
 
   // 여기가 본론 — provider 에게 압축을 맡긴다.
-  const r = await ev((id) => window.workbench.chat.compact(id), tabId);
+  const r = await ev((id) => window.sudal.chat.compact(id), tabId);
   console.log("compact() 반환:", JSON.stringify(r));
 
   // 압축은 턴 하나라 시간이 걸린다. 경계가 그려질 때까지 기다린다.

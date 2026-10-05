@@ -23,7 +23,7 @@ import {
   reorderWorkspaces,
   titleFromMessage,
   updateTab,
-  type WorkbenchModel,
+  type WorkspaceModel,
   type Workspace,
   type WorktreeMeta,
   type TabMeta,
@@ -32,7 +32,7 @@ import type { Store } from "./persistence";
 import type { SessionConfig, SessionManager } from "./session-manager";
 
 export class WorkspaceService {
-  private model: WorkbenchModel;
+  private model: WorkspaceModel;
   private sessions: SessionManager | null = null;
 
   constructor(
@@ -264,7 +264,7 @@ export class WorkspaceService {
     this.commit(reorderTabs(this.model, openTabIds));
   }
 
-  private commit(next: WorkbenchModel) {
+  private commit(next: WorkspaceModel) {
     if (next === this.model) return;
     this.model = next;
     try {

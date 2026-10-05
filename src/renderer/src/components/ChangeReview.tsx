@@ -51,7 +51,7 @@ export function ChangeReview({
     setFile(null);
     setFileError(null);
     const abs = g.git ? `${g.git.root}/${current}` : current;
-    window.workbench.files
+    window.sudal.files
       .read(cwd, abs)
       .then((f) => alive && setFile(f))
       .catch((e) => alive && setFileError(e instanceof Error ? e.message : String(e)));

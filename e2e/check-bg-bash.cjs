@@ -30,14 +30,14 @@ const MARK = "백그라운드시험";
       text: wrap ? wrap.textContent.replace(/\s+/g, " ").trim().slice(0, 120) : "",
     };
   });
-  const status = () => ev(async (id) => (await window.workbench.chat.snapshot(id)).status, tabId).catch(() => null);
+  const status = () => ev(async (id) => (await window.sudal.chat.snapshot(id)).status, tabId).catch(() => null);
 
   cli("tab", "send", "--tab", tabId, "--text",
     `Bash 도구를 run_in_background:true 로 \`sleep 30 && echo ${MARK}\` 를 실행하고, 기다리지 말고 즉시 '시작했습니다' 한 마디만 답해라.`);
 
   // 턴이 끝날 때까지 (여기서부터가 문제의 구간이다)
   let st = null;
-  for (let i = 0; i < 120; i++) { await page.waitForTimeout(1000); st = await ev((id) => window.workbench.chat.snapshot(id), tabId); if (st.status === "idle") break; }
+  for (let i = 0; i < 120; i++) { await page.waitForTimeout(1000); st = await ev((id) => window.sudal.chat.snapshot(id), tabId); if (st.status === "idle") break; }
   await page.waitForTimeout(1500);
   const idle = await jobs();
   console.log("턴이 끝난 뒤:", JSON.stringify({ status: st && st.status, ...idle }));

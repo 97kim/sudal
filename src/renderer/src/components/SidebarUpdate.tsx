@@ -14,7 +14,7 @@ export function SidebarUpdate({ onOpenSettings }: { onOpenSettings: () => void }
   // data-sidebar-update 의 값으로 상태를 본다(e2e 가 문구에 기대지 않게)
   if (status.installed)
     return (
-      <button onClick={() => void window.workbench.app.relaunch()} className={btn} data-sidebar-update="done">
+      <button onClick={() => void window.sudal.app.relaunch()} className={btn} data-sidebar-update="done">
         {t("settings.update.relaunch")}
       </button>
     );
@@ -33,11 +33,11 @@ export function SidebarUpdate({ onOpenSettings }: { onOpenSettings: () => void }
   const c = status.check;
   if (!c?.available) return null;
   return c.brew ? (
-    <button onClick={() => void window.workbench.app.runUpdate()} className={btn} title={t("settings.update.sidebarRunTitle", { version: c.latest })} data-sidebar-update="available">
+    <button onClick={() => void window.sudal.app.runUpdate()} className={btn} title={t("settings.update.sidebarRunTitle", { version: c.latest })} data-sidebar-update="available">
       {t("settings.update.sidebarRun", { version: c.latest })}
     </button>
   ) : (
-    <button onClick={() => void window.workbench.browser.openExternal(c.releaseUrl)} className={btn} title={t("settings.update.sidebarAvailableTitle")} data-sidebar-update="available-manual">
+    <button onClick={() => void window.sudal.browser.openExternal(c.releaseUrl)} className={btn} title={t("settings.update.sidebarAvailableTitle")} data-sidebar-update="available-manual">
       {t("settings.update.sidebarAvailable", { version: c.latest })}
     </button>
   );

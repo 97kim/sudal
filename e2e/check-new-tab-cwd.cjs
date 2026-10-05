@@ -10,7 +10,7 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
   const b = await chromium.connectOverCDP("http://127.0.0.1:9333");
   const page = b.contexts().flatMap((c) => c.pages()).find((p) => p.url().includes("localhost") || p.url().startsWith("file:"));
   const r = await page.evaluate(async ([repoA, repoB]) => {
-    const w = window.workbench.workspaces;
+    const w = window.sudal.workspaces;
     let s = await w.state();
     for (const x of s.model.workspaces.filter((q) => q.name === "A-e2e" || q.name === "B-e2e")) await w.remove(x.id);
     await w.create("A-e2e");
@@ -20,8 +20,8 @@ const result = (n, ok, note) => { if (!ok) fails += 1; console.log(`RESULT (${n}
     const bws = s.model.workspaces.find((x) => x.name === "B-e2e");
     const aTab = s.model.tabs.find((t) => t.workspaceId === aws.id);
     const bTab = s.model.tabs.find((t) => t.workspaceId === bws.id);
-    await window.workbench.chat.configure(aTab.id, { cwd: repoA });
-    await window.workbench.chat.configure(bTab.id, { cwd: repoB });
+    await window.sudal.chat.configure(aTab.id, { cwd: repoA });
+    await window.sudal.chat.configure(bTab.id, { cwd: repoB });
     await w.activateTab(bTab.id);
     const created = await w.createTab(aws.id);
     const newId = typeof created === "string" ? created : created?.tabId;

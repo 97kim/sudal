@@ -18,11 +18,11 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
   useEffect(() => {
     let alive = true;
     const load = () =>
-      window.workbench.usage.status().then((s) => {
+      window.sudal.usage.status().then((s) => {
         if (alive) setLimits(s.rateLimits);
       });
     void load();
-    const off = window.workbench.usage.onChanged(() => void load());
+    const off = window.sudal.usage.onChanged(() => void load());
     return () => {
       alive = false;
       off();
@@ -35,7 +35,7 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const s = await window.workbench.usage.refreshLimits();
+      const s = await window.sudal.usage.refreshLimits();
       setLimits(s.rateLimits);
     } finally {
       setRefreshing(false);

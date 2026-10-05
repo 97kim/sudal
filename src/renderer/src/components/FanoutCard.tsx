@@ -37,7 +37,7 @@ export function FanoutCard({ block, tabId, onCompare }: { block: FanoutBlock; ta
   const cleanup = async () => {
     setBusy(true);
     setMsg(null);
-    const r = await window.workbench.chat.fanoutCleanup(tabId, block.id);
+    const r = await window.sudal.chat.fanoutCleanup(tabId, block.id);
     setBusy(false);
     setConfirmClean(false);
     if (!r.ok) setMsg(r.error);
@@ -104,7 +104,7 @@ export function FanoutCard({ block, tabId, onCompare }: { block: FanoutBlock; ta
                 <span className="flex-1" />
                 {v.status !== "cleaned" && (
                   <button
-                    onClick={() => void window.workbench.workspaces.activateTab(v.tabId)}
+                    onClick={() => void window.sudal.workspaces.activateTab(v.tabId)}
                     className="rounded-md border border-line px-2 py-0.5 text-[10.5px] text-muted hover:bg-panel-2 hover:text-fg"
                     title={t("fanout.card.openTabTitle")}
                     data-fanout-open

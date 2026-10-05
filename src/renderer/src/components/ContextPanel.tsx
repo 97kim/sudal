@@ -320,7 +320,7 @@ export function ContextPanel({
           <button
             onClick={() =>
               config &&
-              void window.workbench.chat
+              void window.sudal.chat
                 .exportMarkdown(config.tabId)
                 .then((p) => p && setExportResult({ ok: true, path: p }))
                 .catch((e: unknown) =>

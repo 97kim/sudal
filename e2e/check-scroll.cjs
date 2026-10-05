@@ -22,5 +22,5 @@ for(let i=0;i<240;i++){await page.waitForTimeout(500);const t=cli("tab","status"
 cli("tab","send","--tab","스크롤","--text","숫자 7만 답해.");await page.waitForTimeout(800);
 const afterSend=await st();console.log("RESULT (내 메시지 보내면 맨 아래로):",afterSend.h-afterSend.top-afterSend.c<80?"PASS":"FAIL",JSON.stringify(afterSend));
 for(let i=0;i<120;i++){await page.waitForTimeout(500);const t=cli("tab","status","--tab","스크롤");if(t.tab?.status==="idle")break;}
-const stt=await ev(()=>window.workbench.workspaces.state());for(const w of stt.model.workspaces){for(const t of stt.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+const stt=await ev(()=>window.sudal.workspaces.state());for(const w of stt.model.workspaces){for(const t of stt.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

@@ -54,7 +54,7 @@ const { chromium } = require("playwright-core");
   console.log("RESULT (복귀해도 페이지 유지):", back.url === before.url ? "PASS" : "FAIL");
   console.log("RESULT (폭이 돌아옴):", Math.abs(back.w - before.w) < 5 ? "PASS" : `FAIL (${before.w} → ${back.w})`);
 
-  const s = await ev(() => window.workbench.workspaces.state());
-  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.workbench.workspaces.deleteTab(id), t.id); await ev((id) => window.workbench.workspaces.remove(id), w.id); }
+  const s = await ev(() => window.sudal.workspaces.state());
+  for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }
   await b.close();
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

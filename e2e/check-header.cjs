@@ -9,5 +9,5 @@ const r=await page.evaluate(()=>({toggle:document.querySelector("[data-editor-to
 console.log(JSON.stringify(r),"RESULT:",r.toggle==="브라우저 1"&&r.open==="새 브라우저"&&r.toggleState==="open"?"PASS":"FAIL");
 const box=await page.evaluate(()=>{const a=document.querySelector("[data-editor-toggle]").getBoundingClientRect();const c=document.querySelector("[data-browser-open]").getBoundingClientRect();return {x:a.left-12,y:a.top-10,width:c.right-a.left+24,height:a.height+20}});
 await page.screenshot({path:path.join(E2E,"shot-header.png"),clip:box});
-const st=await page.evaluate(()=>window.workbench.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.workbench.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.workbench.workspaces.remove(id),w.id);}
+const st=await page.evaluate(()=>window.sudal.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.sudal.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

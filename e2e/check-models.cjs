@@ -19,5 +19,5 @@ const pk=await page.evaluate(()=>document.querySelector("[data-model-picker]")?.
 console.log("picker:",pk);console.log("RESULT (/model 피커에도 Fable):",pk&&/Fable/.test(pk)?"PASS":"FAIL");
 await page.screenshot({path:path.join(E2E,"shot-model-picker.png")});
 await page.keyboard.press("Escape");
-const st=await page.evaluate(()=>window.workbench.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.workbench.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.workbench.workspaces.remove(id),w.id);}
+const st=await page.evaluate(()=>window.sudal.workspaces.state());for(const w of st.model.workspaces){for(const t of st.model.tabs.filter(t=>t.workspaceId===w.id))await page.evaluate(id=>window.sudal.workspaces.deleteTab(id),t.id);await page.evaluate(id=>window.sudal.workspaces.remove(id),w.id);}
 await b.close();})().catch(e=>{console.error("ERR",e.message);process.exit(1)});

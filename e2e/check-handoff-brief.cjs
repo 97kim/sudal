@@ -19,7 +19,7 @@ const { chromium } = require("playwright-core");
 
   const tabId = await ev(() => document.querySelector('[data-tab][data-active="true"]')?.getAttribute("data-tab") ?? null);
   if (!tabId) { console.log("RESULT: FAIL (탭을 못 찾음)"); process.exit(1); }
-  const snap = () => ev((id) => window.workbench.chat.snapshot(id), tabId);
+  const snap = () => ev((id) => window.sudal.chat.snapshot(id), tabId);
   // 정책은 ask 그대로 둔다 — full 로 열면 인계서 턴의 권한 게이트가 통째로 우회돼 검증이 무의미해진다.
   // 대신 준비 턴에서만 사용자처럼 승인해 준다.
   const settle = async (label, { approve = false } = {}) => {
@@ -28,11 +28,11 @@ const { chromium } = require("playwright-core");
       if (approve && s.status === "waiting_permission") {
         // 아직 답 안 한 권한 요청을 기록에서 찾는다.
         const ids = await ev(async (id) => {
-          const evs = await window.workbench.chat.events(id);
+          const evs = await window.sudal.chat.events(id);
           const done = new Set(evs.filter((e) => e.type === "permission_resolved").map((e) => e.requestId));
           return evs.filter((e) => e.type === "permission_request" && !done.has(e.requestId)).map((e) => e.requestId);
         }, tabId);
-        for (const rid of ids) await ev(([id, r]) => window.workbench.chat.answerPermission(id, r, { behavior: "allow" }), [tabId, rid]);
+        for (const rid of ids) await ev(([id, r]) => window.sudal.chat.answerPermission(id, r, { behavior: "allow" }), [tabId, rid]);
       }
       if (s.sessionId && s.status !== "running" && s.status !== "queued" && s.status !== "waiting_permission") return s;
       await page.waitForTimeout(1000);
@@ -52,7 +52,7 @@ const { chromium } = require("playwright-core");
 
   // 본론: Codex 로 넘기면서 떠나는 Claude 에게 인계서를 쓰게 한다.
   const t0 = Date.now();
-  const cfg = await ev((id) => window.workbench.chat.switchProvider(id, { provider: "codex", preserveContext: true, askSummary: true }), tabId);
+  const cfg = await ev((id) => window.sudal.chat.switchProvider(id, { provider: "codex", preserveContext: true, askSummary: true }), tabId);
   console.log(`전환 완료 (${Math.round((Date.now() - t0) / 1000)}s) provider=${cfg.provider} handoffPending=${cfg.handoffPending}`);
 
   // 인계서는 다음 메시지에 실릴 때까지 디스크에 있다.

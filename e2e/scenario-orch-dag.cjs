@@ -45,7 +45,7 @@ const t0=Date.now();const log=(...a)=>console.log(`+${((Date.now()-t0)/1000).toF
   res("C (--terminal 재사용 → B 완료 → c.txt 두 줄 → cleanup 탭 닫힘)",wb.dispatch?.tabId===wa.dispatch.tabId&&/^first\s*\n\s*second\s*$/.test(c.trim()+"\n")===false?/first[\s\S]*second/.test(c):/first[\s\S]*second/.test(c)&&show.tasks?.every(t=>t.status==="succeeded")&&cl.worker?.cleaned?.tabClosed===true&&!tabsNow.tabs.some(t=>t.id===wa.dispatch.tabId),JSON.stringify({c:c.trim(),cleaned:cl.worker?.cleaned}));
   const closed=cli("orch","run-close","--run",runId,"--key",key);res("D (run-close)",closed.run?.status==="closed");
   fs.rmSync(cfile,{force:true});
-  const s=await ev(()=>window.workbench.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.workbench.workspaces.deleteTab(id),t.id);await ev(id=>window.workbench.workspaces.remove(id),w.id);}
+  const s=await ev(()=>window.sudal.workspaces.state());for(const w of s.model.workspaces){for(const t of s.model.tabs.filter(t=>t.workspaceId===w.id))await ev(id=>window.sudal.workspaces.deleteTab(id),t.id);await ev(id=>window.sudal.workspaces.remove(id),w.id);}
   log("cleaned up;",results.filter(([,ok])=>!ok).length===0?"ALL PASS":"FAILED: "+results.filter(([,ok])=>!ok).map(([n])=>n).join(", "));
   await b.close();
 })().catch(e=>{console.error("ERR",e.message);process.exit(1)});

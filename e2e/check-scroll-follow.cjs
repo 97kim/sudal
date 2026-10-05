@@ -30,7 +30,7 @@ const LONG = "1부터 150까지를 마크다운 목록으로 출력해라. 각 �
     const el = document.querySelector("[data-message-list]");
     return { gap: Math.round(el.scrollHeight - el.scrollTop - el.clientHeight), pill: !!document.querySelector("[data-scroll-bottom]"), sh: el.scrollHeight, st: Math.round(el.scrollTop) };
   });
-  const statusOf = () => ev(async (id) => (await window.workbench.chat.snapshot(id)).status, tabId).catch(() => "?");
+  const statusOf = () => ev(async (id) => (await window.sudal.chat.snapshot(id)).status, tabId).catch(() => "?");
   const settle = async () => { for (let i = 0; i < 180; i++) { if ((await statusOf()) === "idle") return; await page.waitForTimeout(1000); } };
 
   // (1) 흐르는 동안 따라가는가
