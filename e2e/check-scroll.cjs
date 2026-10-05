@@ -9,7 +9,7 @@ const ws=cli("ws","add","--path",E2E+"/repo");cli("tab","new","--ws",ws.workspac
 const st=()=>ev(()=>{const el=document.querySelector("[data-message-list]");return {top:el.scrollTop,h:el.scrollHeight,c:el.clientHeight,blocks:document.querySelectorAll("[data-message-list] .ml-11, [data-message-list] [data-tool-card]").length}});
 // 스크롤이 생길 때까지 기다린 뒤 위로 올린다
 let s=null;for(let i=0;i<120;i++){await page.waitForTimeout(500);s=await st();if(s.h-s.c>600)break;}
-await ev(()=>{const el=document.querySelector("[data-message-list]");el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-500);el.dispatchEvent(new Event("scroll"));});
+{const r=await ev(()=>{const x=document.querySelector("[data-message-list]").getBoundingClientRect();return{x:x.x+x.width/2,y:x.y+x.height/2}});await page.mouse.move(r.x,r.y);await page.mouse.wheel(0,-500);}
 await page.waitForTimeout(300);const after=await st();const anchor=after.top;
 // 이후 8초 동안(스트리밍 + 툴카드 등장) scrollTop 이 바뀌지 않아야 한다
 const samples=[];for(let i=0;i<16;i++){await page.waitForTimeout(500);const x=await st();samples.push({top:x.top,h:x.h});}

@@ -24,6 +24,13 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
     return { gap: Math.round(el.scrollHeight - el.scrollTop - el.clientHeight), h: el.scrollHeight, pill: !!document.querySelector("[data-scroll-bottom]") };
   });
 
+  // 사람이 올린 것은 진짜 입력으로만 판단하므로 코드로 scrollTop 을 바꾸지 않고 휠을 굴린다.
+  const wheelUp = async (dy) => {
+    const box = await ev(() => { const r = document.querySelector("[data-message-list]").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    await page.mouse.move(box.x, box.y);
+    await page.mouse.wheel(0, -dy);
+  };
+
   // 스크롤이 생길 만큼 내용을 만든다
   cli("tab", "send", "--tab", tabId, "--text", "1부터 150까지를 마크다운 목록으로 출력해라. 각 줄은 정확히 `- N` 형식이고 다른 말은 하지 마라.");
   await settle();
@@ -35,7 +42,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   if (overflow < 200) { console.log("RESULT: SKIP (스크롤이 생길 만큼 길지 않다)"); await b.close(); return; }
 
   // 사용자가 위로 올려 읽는 상황
-  await ev(() => { const el = document.querySelector("[data-message-list]"); el.scrollTop = 0; el.dispatchEvent(new Event("scroll")); });
+  await wheelUp(100000);
   await page.waitForTimeout(600);
   const up = await metrics();
   console.log("위로 올린 뒤:", JSON.stringify(up));
@@ -68,7 +75,7 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   };
 
   // 위로 올려 둔 상태에서 입력창으로 보낸다
-  await ev(() => { const el = document.querySelector("[data-message-list]"); el.scrollTop = 0; el.dispatchEvent(new Event("scroll")); });
+  await wheelUp(100000);
   await page.waitForTimeout(600);
   console.log("다시 위로:", JSON.stringify(await metrics()));
   await typeSend("입력창으로 보낸다. 짧게 답해라.");

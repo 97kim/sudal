@@ -16,8 +16,6 @@ import { FanoutCard } from "./FanoutCard";
 import { OrchestrationCard } from "./OrchestrationCard";
 import { formatElapsed, useNow } from "../hooks/useNow";
 
-/** 이만큼 위로 올라오면 "사람이 올렸다" 로 본다. 손떨림·서브픽셀 잔동은 넘기고, 한 번의 휠은 넘는다. */
-const UP_SLOP = 4;
 /** 위로 올린 직후 이만큼은 바닥에 있어도 다시 따라가지 않는다(막 떠나는 중). */
 const UP_GRACE_MS = 300;
 
@@ -85,18 +83,12 @@ export function MessageList({
   const contentRef = useRef<HTMLDivElement>(null);
   /** 따라가는 중인지. false 면 "맨 아래로" pill 을 띄운다. */
   const [atBottom, setAtBottom] = useState(true);
-  /**
-   * 지금까지 본 가장 아래 위치. "사용자가 위로 올렸나" 는 이 기준에서 얼마나 올라왔는지로 본다.
-   * 직전 위치와만 비교하면 1px 씩 여러 번 올리는 스크롤을 영영 못 잡는다(매번 기준이 따라 올라가므로).
-   */
-  const anchorTop = useRef(0);
   /** 사람이 마지막으로 위로 올리려 한 시각. 그 직후에 바닥에 붙어 있는 건 다시 따라갈 근거가 아니다(막 떠나는 중). */
   const userUpAt = useRef(0);
   const scrollToBottom = () => {
     const el = containerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-    anchorTop.current = el.scrollTop;
   };
   const follow = () => {
     stickToBottom.current = true;
@@ -110,6 +102,8 @@ export function MessageList({
   const lastScrollAtEnd = useRef(true);
   /** 스크롤바를 잡고 있는 중. 그동안은 바닥에 닿아도 다시 따라가지 않는다 — 손을 뗄 때 정한다. */
   const draggingBar = useRef(false);
+  /** 마지막 클릭이 이 목록 안이었나. 키보드 스크롤은 마지막으로 누른 스크롤 상자로 간다. */
+  const pointerInside = useRef(false);
   const followIfAtEnd = () => {
     if (stickToBottom.current || draggingBar.current || !lastScrollAtEnd.current) return;
     follow();
@@ -121,9 +115,24 @@ export function MessageList({
       draggingBar.current = false;
       followIfAtEnd();
     };
+    const onDown = (e: PointerEvent) => {
+      pointerInside.current = !!containerRef.current?.contains(e.target as Node);
+    };
+    // 위로 가는 키. 입력창·에디터·터미널 안의 키는 목록을 움직이지 않으니 넘긴다.
+    const onKey = (e: KeyboardEvent) => {
+      if (!pointerInside.current || !stickToBottom.current) return;
+      const up = e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home" || (e.key === " " && e.shiftKey);
+      const t = e.target as HTMLElement | null;
+      if (!up || t?.closest("input, textarea, select, [contenteditable], .cm-editor, .xterm")) return;
+      release();
+    };
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
     return () => {
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
       if (recheckTimer.current) clearTimeout(recheckTimer.current);
     };
   }, []);
@@ -177,28 +186,17 @@ export function MessageList({
     draggingBar.current = true;
     release();
   };
-  // 그 밖의 스크롤(키보드 등)은 scroll 이벤트로 본다.
-  //
-  // "바닥에서 멀다" 로 판단하면 안 된다. 글이 흐르는 중에는 우리가 맨 아래로 맞춘 직후에 높이가 또 자라서,
-  // 그 사이에 벌어진 간격이 "사용자가 올렸다" 로 읽힌다 — 사람은 손도 안 댔는데 따라가기가 꺼졌다.
-  // 위로 갔는지(scrollTop 이 줄었는지)를 직접 본다. 내용이 자라도 scrollTop 은 그대로다.
+  // 사람이 올렸는지는 입력(휠·스크롤바·키)으로만 판단한다. scroll 이벤트의 위치 변화로 판단하면 안 된다 —
+  // 위쪽 내용이 줄 때 브라우저가 스스로 위치를 당기고(scroll anchoring), 그 이벤트가 크기 변화를 따라 내리기 전에 와서
+  // 사람은 손도 안 댔는데 따라가기가 꺼졌다(보낸 직후 "생각 중" 이 붙을 때 실측).
+  // scroll 이벤트는 바닥에 다시 닿았는지만 본다.
   const onScroll = () => {
     const el = containerRef.current;
     if (!el) return;
     const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
     lastScrollAtEnd.current = atEnd;
-    if (atEnd && !draggingBar.current && performance.now() - userUpAt.current > UP_GRACE_MS) {
-      // 바닥까지 내려오면 다시 따라간다. 내용이 줄어 브라우저가 스크롤을 끌어내린 경우도 여기로 들어온다.
-      // 바닥 "근처" 로 넓히지 않는다 — 조금 올려 읽는 중에 다시 붙어 버리면 끌어내리기가 이어져 떨린다.
-      if (!stickToBottom.current) follow();
-      anchorTop.current = el.scrollTop;
-    } else if (el.scrollTop < anchorTop.current - UP_SLOP) {
-      release();
-      anchorTop.current = el.scrollTop;
-    } else {
-      // 내용이 자랐거나 아래로 내리는 중이다.
-      anchorTop.current = Math.max(anchorTop.current, el.scrollTop);
-    }
+    // 바닥까지 내려오면 다시 따라간다. 바닥 "근처" 로 넓히지 않는다 — 조금 올려 읽는 중에 다시 붙어 버리면 끌어내리기가 이어져 떨린다.
+    if (atEnd && !stickToBottom.current && !draggingBar.current && performance.now() - userUpAt.current > UP_GRACE_MS) follow();
   };
   // 사용자가 새 메시지를 보냈으면 맨 아래로 붙인다. 마지막 블록만 보면 응답 첫 블록이 같은 렌더에 함께 들어온 경우를 놓친다.
   // 응답 중에 보낸 것은 대기열에만 들어가 목록에 아직 없다 — 대기열이 늘어난 것도 보낸 것으로 본다.
