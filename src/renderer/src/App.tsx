@@ -21,6 +21,7 @@ import { useWorkspaces } from "./hooks/useWorkspaces";
 import { ChatView } from "./views/ChatView";
 import { SettingsView, type SettingsSection } from "./views/SettingsView";
 import { UsageView } from "./views/UsageView";
+import { startDrag } from "./drag";
 
 export function App() {
   const { t } = useTranslation();
@@ -167,12 +168,7 @@ export function App() {
       const r = area.getBoundingClientRect();
       setSplitRatio(Math.min(80, Math.max(20, ((ev.clientX - r.left) / r.width) * 100)));
     };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    startDrag(move);
   };
 
   const newTab = useCallback(async () => {

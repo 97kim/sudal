@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { PaneSplitContext } from "../pane-focus";
 import { FileTree } from "./FileTree";
 import { Icon } from "./Icon";
+import { startDrag } from "../drag";
 
 export type RightPanelTab = "context" | "files";
 
@@ -78,14 +79,7 @@ export function RightPanel({
             Math.max(MIN_W, startW + (startX - ev.clientX)),
           ),
         }));
-      const up = () => {
-        window.removeEventListener("mousemove", move);
-        window.removeEventListener("mouseup", up);
-        document.body.style.cursor = "";
-      };
-      document.body.style.cursor = "col-resize";
-      window.addEventListener("mousemove", move);
-      window.addEventListener("mouseup", up);
+      startDrag(move, "col-resize");
     },
     [saved.width],
   );

@@ -27,6 +27,7 @@ import { useLocateFile, useOpenFile } from "./FileViewer";
 import { LinkChooser } from "./LinkChooser";
 import { PaneSplitContext } from "../pane-focus";
 import { shortenHome } from "@shared/path-display";
+import { startDrag } from "../drag";
 
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 260;
@@ -405,12 +406,7 @@ export function TerminalPanel({
       const startW = panelRef.current?.getBoundingClientRect().width ?? 0;
       const max = maxWidth();
       const moveX = (ev: MouseEvent) => onWidth?.(Math.min(max, Math.max(TERMINAL_MIN_WIDTH, startW + (startX - ev.clientX))));
-      const upX = () => {
-        window.removeEventListener("mousemove", moveX);
-        window.removeEventListener("mouseup", upX);
-      };
-      window.addEventListener("mousemove", moveX);
-      window.addEventListener("mouseup", upX);
+      startDrag(moveX);
       return;
     }
     const startY = e.clientY;
@@ -420,12 +416,7 @@ export function TerminalPanel({
       setHeight(
         Math.min(max, Math.max(MIN_HEIGHT, startH + (startY - ev.clientY))),
       );
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    startDrag(move);
   };
 
   // 두 번 누르면 위아래 반반. 에디터 분할과 같은 규칙이다 — 막대 양옆 두 영역만 기준으로 삼는다.
@@ -601,12 +592,7 @@ export function TerminalPanel({
                 // 한쪽이 사라지면 되돌릴 방법이 없다 — 양쪽에 최소폭을 남긴다.
                 setRatio(Math.min(85, Math.max(15, pct)));
               };
-              const up = () => {
-                window.removeEventListener("mousemove", move);
-                window.removeEventListener("mouseup", up);
-              };
-              window.addEventListener("mousemove", move);
-              window.addEventListener("mouseup", up);
+              startDrag(move);
             }}
             className={`absolute z-10 bg-line/40 hover:bg-accent/40 ${
               split.dir === "row" ? "top-0 bottom-0 w-1 cursor-col-resize" : "left-0 right-0 h-1 cursor-row-resize"

@@ -57,6 +57,7 @@ import {
   setCtxDismissed,
   shouldShowCtxBanner,
 } from "../ctx-dismiss";
+import { startDrag } from "../drag";
 
 const PROVIDER_LABEL: Record<Provider, string> = {
   claude: "Claude Code",
@@ -136,14 +137,7 @@ export function ChatView({
       const startW = editorWidth;
       const move = (ev: MouseEvent) =>
         setEditorWidth(Math.min(1200, Math.max(360, startW + (startX - ev.clientX))));
-      const up = () => {
-        window.removeEventListener("mousemove", move);
-        window.removeEventListener("mouseup", up);
-        document.body.style.cursor = "";
-      };
-      document.body.style.cursor = "col-resize";
-      window.addEventListener("mousemove", move);
-      window.addEventListener("mouseup", up);
+      startDrag(move, "col-resize");
     },
     [editorWidth],
   );
