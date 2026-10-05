@@ -90,6 +90,15 @@ export function cookieFilePath(userData: string): string {
   return path.join(userData, "browser-session-cookies.json");
 }
 
+/**
+ * 암호화를 쓰던 시절(v0.6.6·v0.6.7)의 파일. 풀려면 키체인을 건드려야 하는데 그게 바로 없애려던 프롬프트다 —
+ * 그래서 풀지 않고 지운다. 저장돼 있던 로그인은 그 한 번만 풀린다.
+ * 그 버전에서 바로 업데이트한 사람의 디스크에 로그인 증표가 남지 않도록 이 정리는 계속 둔다.
+ */
+export function encryptedCookieFilePath(userData: string): string {
+  return path.join(userData, "browser-session-cookies.enc");
+}
+
 /** 종료 직전에 부른다. 실패해도 종료를 막지 않는다. */
 export async function saveSessionCookies(ses: Session, userData: string): Promise<number> {
   const file = cookieFilePath(userData);
@@ -110,6 +119,12 @@ export async function saveSessionCookies(ses: Session, userData: string): Promis
 
 /** 저장해 둔 목록을 읽는다. 못 읽으면 빈 목록 — 로그인만 풀린다. */
 function readSaved(userData: string): SavedCookie[] {
+  // 암호화하던 시절의 파일은 풀지 않고 버린다(푸는 순간 키체인이 허용을 묻는다).
+  const enc = encryptedCookieFilePath(userData);
+  if (fs.existsSync(enc)) {
+    fs.rmSync(enc, { force: true });
+    console.log("[browser] 암호화해 두었던 세션 쿠키를 버립니다(키체인을 건드리지 않기 위해). 로그인은 한 번 풀립니다.");
+  }
   try {
     return parseSaved(fs.readFileSync(cookieFilePath(userData), "utf8"));
   } catch {
@@ -133,11 +148,13 @@ export async function restoreSessionCookies(ses: Session, userData: string): Pro
   return ok;
 }
 
-/** 설정을 끄거나 사용자가 지울 때. */
+/** 설정을 끄거나 사용자가 지울 때. 암호화하던 시절의 파일도 같이 지운다. */
 export function forgetSessionCookies(userData: string): void {
-  try {
-    fs.rmSync(cookieFilePath(userData), { force: true });
-  } catch {
-    /* 없으면 그만 */
+  for (const f of [cookieFilePath(userData), encryptedCookieFilePath(userData)]) {
+    try {
+      fs.rmSync(f, { force: true });
+    } catch {
+      /* 없으면 그만 */
+    }
   }
 }

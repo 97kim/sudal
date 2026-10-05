@@ -195,7 +195,7 @@ takes a two-step confirmation, then does `git checkout HEAD -- file` (modified, 
 It can't be undone (`gitRevert`). The commit bar below shares the same state (`useGitChanges`) as the panel's commit form. While a turn is running, commit and revert are locked.
 
 **Browser tab**: "Browser" in the header opens a browser tab in the editor panel. Clicking a link in the chat or a Markdown preview shows an "In-app browser / Default browser"
-choice popup, and "Don't ask again" remembers it (`localStorage` `workbench.linkOpenMode`; ⇧-click asks again, ⌘-click or middle-click goes straight to the default
+choice popup, and "Don't ask again" remembers it (`localStorage` `sudal.linkOpenMode`; ⇧-click asks again, ⌘-click or middle-click goes straight to the default
 browser, and ⌥-click goes straight to the in-app browser).
 The address bar (without a scheme, localhost/IPs get http and everything else gets https; anything with a space is a search), back/forward/reload, and open in default browser. It uses an Electron `<webview>`, and
 main's `will-attach-webview` locks it to no preload, no node, sandboxed, and http(s) only, and a new window from the webview opens in the same webview. Cookies and storage are separated from the app by the

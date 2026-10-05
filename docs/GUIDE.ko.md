@@ -196,7 +196,7 @@ initialize 요청의 `tsserver.path` 에 끼워 준다(없으면 서버가 "vali
 한다 — 되돌릴 수 없다(`gitRevert`). 아래 커밋 바는 패널의 커밋 폼과 같은 상태(`useGitChanges`)를 공유한다. 턴 실행 중엔 커밋·되돌리기를 잠근다.
 
 **브라우저 탭**: 헤더의 "브라우저" 로 에디터 패널에 브라우저 탭이 열린다. 채팅·마크다운 미리보기의 링크를 클릭하면 "인앱 브라우저 / 기본 브라우저"
-선택 팝업이 뜨고 "다음부터 묻지 않기" 로 기억할 수 있다(`localStorage` `workbench.linkOpenMode`; ⇧클릭이면 다시 묻고, ⌘클릭·가운데 클릭은 바로 기본
+선택 팝업이 뜨고 "다음부터 묻지 않기" 로 기억할 수 있다(`localStorage` `sudal.linkOpenMode`; ⇧클릭이면 다시 묻고, ⌘클릭·가운데 클릭은 바로 기본
 브라우저, ⌥클릭은 바로 인앱 브라우저).
 주소창(스킴 없으면 localhost/IP 는 http, 나머지는 https, 공백이 있으면 검색)·뒤로/앞으로/새로고침·기본 브라우저로 열기. Electron `<webview>` 를 쓰며
 main 의 `will-attach-webview` 가 preload 없음·node 없음·샌드박스·http(s) 만으로 고정하고, 웹뷰의 새 창은 같은 웹뷰에서 연다. 쿠키·저장소는
