@@ -256,6 +256,8 @@ function showMainWindow(): { win: BrowserWindow; created: boolean } {
   return { win, created: !live };
 }
 let otter: OtterWindow | null = null;
+/** 탭마다 끝남(안 본 응답)이 생긴 시각. 수달이 끝남을 언제까지 보여 줄지 정한다. */
+const otterDoneAt = new Map<string, number>();
 let jobWatcher: BackgroundJobWatcher | null = null;
 /** Claude Code 가 백그라운드로 돌리는 일(명령·하위 에이전트). SDK 가 살아 있는 전체 집합을 준다. */
 const bgTasks = new BackgroundTaskRegistry();
@@ -1342,12 +1344,19 @@ function bootstrap() {
     join(app.getPath("userData"), "snippets.json"),
     (items) => sendAll(IPC.snippetsChanged, items),
   );
+  // 수달의 "끝났어요" 는 끝난 지 10분만 보여 준다(OTTER_DONE_MS) — 그러려면 끝남이 생긴 시각이 필요하다.
+  // 앱을 다시 켜서 되살아난 끝남은 시각을 모르니 0(이미 지남)으로 둔다.
+  const syncOtterDone = (map: Record<string, string>) => {
+    for (const [id, kind] of Object.entries(map)) if (kind === "done" && !otterDoneAt.has(id)) otterDoneAt.set(id, Date.now());
+    for (const id of [...otterDoneAt.keys()]) if (map[id] !== "done") otterDoneAt.delete(id);
+  };
   attention = new AttentionTracker({
     isViewing: (tabId) =>
       workspaces.isVisible(tabId) &&
       BrowserWindow.getAllWindows().some((w) => w.isFocused()),
     onChange: (map) => {
       workspaces.onAttention();
+      syncOtterDone(map);
       otter?.refresh();
       updateDockBadge();
       // 껐다 켜도 남게. "안 본 응답" 표시가 업데이트 한 번에 사라지면 믿을 수 없는 표시가 된다.
@@ -1355,6 +1364,7 @@ function bootstrap() {
     },
   });
   attention.restore(store.loadAttention());
+  for (const [id, kind] of Object.entries(attention.snapshot())) if (kind === "done") otterDoneAt.set(id, 0);
   workspaces.attentionSource = () => attention.snapshot();
   workspaces.newTabPolicy = () => appSettings().newTabPolicy;
   workspaces.attentionHooks = {
@@ -1822,6 +1832,7 @@ function registerIpc() {
             title: tabTitle(t, mt("shared.untitledTab")),
             status: st.statuses[t.id] ?? "idle",
             attention: st.attention[t.id],
+            doneAt: otterDoneAt.get(t.id),
             limitUntil: sessions.limitUntil(t.id),
           })),
       );

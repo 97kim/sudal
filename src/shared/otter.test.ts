@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { otterState, type OtterTab } from "./otter";
+import { OTTER_DONE_MS, otterState, type OtterTab } from "./otter";
 
 const tab = (id: string, o: Partial<OtterTab> = {}): OtterTab => ({ id, title: id, status: "idle", ...o });
 
@@ -26,8 +26,8 @@ test("otterState: 승인 대기가 다른 모든 상태보다 먼저다", () => 
 });
 
 test("otterState: 오류 → 끝남 → 일하는 중 → 한도 대기 순서", () => {
-  assert.equal(otterState([tab("a", { attention: "done" }), tab("b", { attention: "error" })]).mood, "error");
-  assert.equal(otterState([tab("a", { status: "running" }), tab("b", { attention: "done" })]).mood, "done");
+  assert.equal(otterState([tab("a", { attention: "done", doneAt: 0 }), tab("b", { attention: "error" })], 1).mood, "error");
+  assert.equal(otterState([tab("a", { status: "running" }), tab("b", { attention: "done", doneAt: 0 })], 1).mood, "done");
   assert.equal(otterState([tab("a", { limitUntil: 5 }), tab("b", { status: "running" })]).mood, "working");
   const lim = otterState([tab("a", { limitUntil: 5 })]);
   assert.equal(lim.mood, "limit");
@@ -36,4 +36,34 @@ test("otterState: 오류 → 끝남 → 일하는 중 → 한도 대기 순서",
 
 test("otterState: 다시 시도할 시각을 모르는 한도 대기도 한도 대기다", () => {
   assert.equal(otterState([tab("a", { limitUntil: null })]).mood, "limit");
+});
+
+test("otterState: 끝남은 끝난 지 10분 동안만 보여 주고, 그 뒤에는 일하는 모습이 보인다", () => {
+  const tabs = [tab("a", { attention: "done", doneAt: 1000 }), tab("b", { status: "running" })];
+  const fresh = otterState(tabs, 1000 + OTTER_DONE_MS - 1);
+  assert.equal(fresh.mood, "done");
+  assert.equal(fresh.refreshAt, 1000 + OTTER_DONE_MS);
+  assert.equal(otterState(tabs, 1000 + OTTER_DONE_MS).mood, "working");
+});
+
+test("otterState: 끝난 탭이 여럿이면 아직 10분이 안 된 것만 세고, 가장 먼저 지나는 때에 다시 본다", () => {
+  const six = 6 * 60_000;
+  const tabs = [tab("a", { attention: "done", doneAt: 0 }), tab("c", { attention: "done", doneAt: six })];
+  const both = otterState(tabs, six);
+  assert.equal(both.count, 2);
+  assert.equal(both.refreshAt, OTTER_DONE_MS);
+  const one = otterState(tabs, OTTER_DONE_MS);
+  assert.equal(one.count, 1);
+  assert.equal(one.tabId, "c");
+  assert.equal(otterState(tabs, six + OTTER_DONE_MS).mood, "idle");
+});
+
+test("otterState: 끝난 시각을 모르는 끝남(앱을 다시 켜서 되살아난 것)은 보여 주지 않는다", () => {
+  assert.equal(otterState([tab("a", { attention: "done" })]).mood, "idle");
+});
+
+test("otterState: 승인 대기와 오류는 시간이 지나도 그대로다", () => {
+  const late = 100 * OTTER_DONE_MS;
+  assert.equal(otterState([tab("a", { attention: "permission" })], late).mood, "waiting");
+  assert.equal(otterState([tab("a", { attention: "error" })], late).mood, "error");
 });

@@ -29,6 +29,8 @@ export class OtterWindow {
   private snoozedUntil = 0;
   private snoozeTimer: ReturnType<typeof setTimeout> | null = null;
   private pending = false;
+  /** 시간이 지나 저절로 바뀔 때(끝남 표시가 줄어드는 때) 다시 그리는 타이머. */
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: OtterDeps) {
     ipcMain.on(OTTER_IPC.interactive, (_e, on: boolean) => this.win?.setIgnoreMouseEvents(!on, { forward: true }));
@@ -59,6 +61,8 @@ export class OtterWindow {
     else if (!on && this.win) {
       this.win.destroy();
       this.win = null;
+      if (this.refreshTimer) clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
     }
   }
 
@@ -81,6 +85,8 @@ export class OtterWindow {
     }
     if (!this.win.isVisible()) this.win.showInactive();
     const s = this.deps.state();
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.refreshTimer = s.refreshAt ? setTimeout(() => this.refresh(), Math.max(0, s.refreshAt - Date.now()) + 50) : null;
     const view: OtterViewDto = { mood: s.mood, count: s.count, bubble: this.deps.bubble(s), dim: this.deps.appFocused() };
     this.win.webContents.send(OTTER_IPC.state, view);
   }
