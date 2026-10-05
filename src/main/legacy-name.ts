@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { Provider } from "@shared/ipc";
 
 /** 옛 userData 폴더 이름. 앞의 것이 더 최근 이름이다. */
 export const LEGACY_USERDATA_NAMES = ["Atelier", "ai-workbench"];
@@ -60,8 +61,8 @@ export function migrateUserData(next: string, appData: string, isAlive?: (pid: n
 }
 
 /** 옛 이름으로 설치된 CLI 와 에이전트 스킬. 지우고 나서 같은 것을 새 이름으로 다시 설치할 수 있게 무엇이 있었는지 돌려준다. */
-export function removeLegacyInstall(home: string, codexHome: string): { cli: boolean; skills: ("claude" | "codex")[] } {
-  const found = { cli: false, skills: [] as ("claude" | "codex")[] };
+export function removeLegacyInstall(home: string, codexHome: string): { cli: boolean; skills: (Provider)[] } {
+  const found = { cli: false, skills: [] as (Provider)[] };
   const shim = path.join(home, ".local", "bin", "atelier");
   try {
     // 같은 이름의 남의 프로그램일 수 있으니 우리가 쓴 스크립트일 때만 지운다
@@ -72,7 +73,7 @@ export function removeLegacyInstall(home: string, codexHome: string): { cli: boo
   } catch {
     // 없으면 할 일이 없다
   }
-  const skills: ["claude" | "codex", string][] = [
+  const skills: [Provider, string][] = [
     ["claude", path.join(home, ".claude", "skills", "atelier-cli")],
     ["codex", path.join(codexHome, "skills", "atelier-cli")],
   ];

@@ -17,6 +17,7 @@ import {
   type OrchestrationEvent,
   type ForkPoint,
 } from "./chat-events";
+import type { Provider } from "./ipc";
 
 export interface UserBlock {
   kind: "user";
@@ -114,7 +115,7 @@ export interface NoticeBlock {
 export interface ReviewBlock {
   kind: "review";
   id: string; // === reviewTabId
-  reviewer: "claude" | "codex";
+  reviewer: Provider;
   status: "requested" | "done" | "failed";
   text: string;
   scope?: string;
@@ -172,7 +173,7 @@ export interface SessionTotals {
 export interface SessionState {
   status: SessionStatus;
   sessionId: string | null;
-  provider: "claude" | "codex" | null;
+  provider: Provider | null;
   model: string | null;
   cwd: string | null;
   blocks: Block[];

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import type { UsageRecord } from "@shared/usage";
-import type { ProviderRateLimitDto, RateLimitWindowDto } from "@shared/ipc";
+import type { ProviderRateLimitDto, RateLimitWindowDto, Provider } from "@shared/ipc";
 
 const HOUR = 3_600_000;
 
@@ -244,7 +244,7 @@ export class UsageScanner {
     const seen = new Set<string>();
     let changed = false;
 
-    const targets: { file: string; kind: "claude" | "codex" }[] = [];
+    const targets: { file: string; kind: Provider }[] = [];
     for (const f of listFiles(this.opts.claudeDir, ".jsonl")) targets.push({ file: f, kind: "claude" });
     for (const f of listFiles(this.opts.codexDir, ".jsonl")) targets.push({ file: f, kind: "codex" });
 

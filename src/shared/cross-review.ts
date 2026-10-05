@@ -1,9 +1,10 @@
 // 교차 리뷰: 한 탭의 작업 트리 변경(diff)을 다른 provider 탭에 보내 독립 리뷰를 받는다. 프롬프트는 여기서 만든다.
 import type { TFunction } from "i18next";
+import type { Provider } from "./ipc";
 
 export const CROSS_REVIEW_DIFF_MAX = 120_000;
 
-export function otherProvider(p: "claude" | "codex"): "claude" | "codex" {
+export function otherProvider(p: Provider): Provider {
   return p === "claude" ? "codex" : "claude";
 }
 
@@ -18,7 +19,7 @@ export function reviewScopeParams(changes: { path: string; added: number; delete
   return { count: changes.length, added, deleted };
 }
 
-export function buildReviewPrompt(t: TFunction, o: { originTitle: string; changes: { path: string; kind: string }[]; diff: string; author: "claude" | "codex" }): string {
+export function buildReviewPrompt(t: TFunction, o: { originTitle: string; changes: { path: string; kind: string }[]; diff: string; author: Provider }): string {
   const diff = o.diff.length > CROSS_REVIEW_DIFF_MAX ? `${o.diff.slice(0, CROSS_REVIEW_DIFF_MAX)}\n${t("promptDoc.review.diffClipped", { n: o.diff.length - CROSS_REVIEW_DIFF_MAX })}` : o.diff;
   const files = o.changes.map((c) => `- ${c.path} (${c.kind})`).join("\n");
   const authorLabel = o.author === "claude" ? "Claude Code" : "Codex";

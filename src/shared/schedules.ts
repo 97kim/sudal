@@ -9,7 +9,8 @@
 import type { TFunction } from "i18next";
 import type { PermissionPolicy } from "./chat-events";
 import type { Msg, MsgKey } from "./i18n/msg";
-import type { ProviderId, WorktreeMeta } from "./workspace-model";
+import type { WorktreeMeta } from "./workspace-model";
+import type { Provider } from "./ipc";
 
 /**
  * 실행 대상.
@@ -61,7 +62,7 @@ export interface Schedule {
   /** IANA 이름. 맥의 시간대가 바뀌어도 예약은 안 움직인다. */
   timezone: string;
   prompt: string;
-  provider: ProviderId;
+  provider: Provider;
   model?: string;
   /**
    * 이 예약이 쓸 권한. 탭 설정을 따라가지 않는다 — 낮에 탭을 "전부 자동" 으로 바꿨다고
@@ -137,7 +138,7 @@ export interface Run {
   trigger: "scheduled" | "manual";
   status: RunStatus;
   /** 그때의 설정 스냅샷. 예약을 나중에 고쳐도 지난 회차의 기록은 그대로여야 한다. */
-  snapshot: { prompt: string; cron: string; timezone: string; policy: PermissionPolicy; provider: ProviderId; target: ScheduleTarget };
+  snapshot: { prompt: string; cron: string; timezone: string; policy: PermissionPolicy; provider: Provider; target: ScheduleTarget };
   startedAt: number | null;
   endedAt: number | null;
   /** 실제로 돌아간 탭. 이력에서 그 대화를 열 수 있게. */

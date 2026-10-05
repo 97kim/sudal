@@ -1,7 +1,7 @@
 // 팬아웃(지시 하나 → 격리 세션 N개)의 순수 부분 — 세션 이름·제목·요약·비교용 파일 합집합. 실행은 main/index.ts startFanout.
 import type { TFunction } from "i18next";
 import type { FanoutVariant } from "./chat-events";
-import type { GitChangeDto } from "./ipc";
+import type { GitChangeDto, Provider } from "./ipc";
 
 export const FANOUT_MAX_VARIANTS = 4;
 export const FANOUT_MIN_VARIANTS = 2;
@@ -9,14 +9,14 @@ export const FANOUT_MIN_VARIANTS = 2;
 export const FANOUT_PROMPT_EXCERPT = 300;
 export const FANOUT_SUMMARY_EXCERPT = 400;
 
-export const PROVIDER_NAME: Record<"claude" | "codex", string> = { claude: "Claude Code", codex: "Codex" };
+export const PROVIDER_NAME: Record<Provider, string> = { claude: "Claude Code", codex: "Codex" };
 
 export function variantLabel(index: number): string {
   return String.fromCharCode(65 + index);
 }
 
 /** 세션 탭 제목: "팬아웃 A · Codex". 원래 탭에 이름이 있으면 뒤에 붙인다 — originTitle 은 저장된 제목(이름 없는 탭이면 null)이다. */
-export function fanoutTabTitle(t: TFunction, label: string, provider: "claude" | "codex", originTitle?: string | null): string {
+export function fanoutTabTitle(t: TFunction, label: string, provider: Provider, originTitle?: string | null): string {
   const base = t("main.fanout.tabTitle", { label, provider: PROVIDER_NAME[provider] });
   return originTitle ? `${base} · ${originTitle.slice(0, 24)}` : base;
 }
@@ -56,11 +56,11 @@ export function allSettled(variants: FanoutVariant[]): boolean {
 }
 
 /** 시작 요청 검증 — 렌더러·CLI 입력 공통. */
-export function validateFanoutRequest(t: TFunction, o: { prompt: unknown; variants: unknown; policy?: unknown }): { ok: true; prompt: string; variants: { provider: "claude" | "codex"; model?: string }[]; policy: "ask" | "auto_edit" | "full" } | { ok: false; error: string } {
+export function validateFanoutRequest(t: TFunction, o: { prompt: unknown; variants: unknown; policy?: unknown }): { ok: true; prompt: string; variants: { provider: Provider; model?: string }[]; policy: "ask" | "auto_edit" | "full" } | { ok: false; error: string } {
   const prompt = typeof o.prompt === "string" ? o.prompt.trim() : "";
   if (!prompt) return { ok: false, error: t("main.fanout.validate.promptRequired") };
   if (!Array.isArray(o.variants)) return { ok: false, error: t("main.fanout.validate.variantsUnreadable") };
-  const variants: { provider: "claude" | "codex"; model?: string }[] = [];
+  const variants: { provider: Provider; model?: string }[] = [];
   for (const v of o.variants) {
     const provider = typeof v === "string" ? v : v && typeof v === "object" ? (v as { provider?: unknown }).provider : undefined;
     if (provider !== "claude" && provider !== "codex") return { ok: false, error: t("main.fanout.validate.badProvider", { value: String(provider) }) };

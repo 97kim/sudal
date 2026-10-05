@@ -507,7 +507,7 @@ function GeneralSection() {
     else if (r.hint) setInstallMsg({ ok: false, text: r.hint });
     else setInstallMsg({ ok: true, cli: shortenHome(r.path) });
   };
-  const installSkill = async (agent: "claude" | "codex") => {
+  const installSkill = async (agent: Provider) => {
     const r = await window.sudal.app.installSkill(agent);
     void refreshInstalled();
     if (!r.ok) setInstallMsg({ ok: false, text: r.error });

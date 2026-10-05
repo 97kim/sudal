@@ -784,7 +784,7 @@ export interface SudalApi {
     /** `sudal` 명령을 ~/.local/bin 에 설치한다(앱 동봉 스크립트를 앱의 node 로 실행하는 셸 스크립트). */
     installCli(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }>;
     /** 스킬 스텁을 이 PC 에 있는 에이전트(Claude Code · Codex CLI)마다 설치한다. */
-    installSkill(agent?: "claude" | "codex"): Promise<{ ok: true; paths: string[]; skipped: string[] } | { ok: false; error: string }>;
+    installSkill(agent?: Provider): Promise<{ ok: true; paths: string[]; skipped: string[] } | { ok: false; error: string }>;
     /** 두 설치물의 현재 상태(있는지·이 앱을 가리키는지·PATH 에 있는지·스텁이 최신인지). */
     installStatus(): Promise<InstallStatusDto>;
   };
@@ -996,7 +996,7 @@ export interface InstallStatusDto {
 }
 
 export interface SkillInstallDto {
-  agent: "claude" | "codex";
+  agent: Provider;
   label: string;
   path: string;
   /** 그 에이전트가 이 PC 에 있는지(홈 디렉토리 존재). 없으면 설치를 건너뛴다. */

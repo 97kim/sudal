@@ -3,6 +3,7 @@
 // 모든 이벤트에 ts(ms) 를 찍어 threads/*.jsonl 에 그대로 append 할 수 있게 한다.
 
 import type { Msg } from "./i18n/msg";
+import type { Provider } from "./ipc";
 
 export type SessionStatus = "idle" | "queued" | "running" | "waiting_permission" | "error";
 
@@ -53,7 +54,7 @@ export interface StatusEvent extends Base {
 export interface SessionEvent extends Base {
   type: "session";
   sessionId: string;
-  provider?: "claude" | "codex";
+  provider?: Provider;
   model?: string;
   cwd?: string;
 }
@@ -165,7 +166,7 @@ export interface TurnResultEvent extends Base {
 }
 
 export interface ForkPoint {
-  provider: "claude" | "codex";
+  provider: Provider;
   sessionId: string;
   pointId: string;
 }
@@ -193,7 +194,7 @@ export interface CompactedEvent extends Base {
  */
 export interface ReviewEvent extends Base {
   type: "review";
-  reviewer: "claude" | "codex";
+  reviewer: Provider;
   reviewTabId: string;
   status: "requested" | "done" | "failed";
   /** done 이면 리뷰 본문(마크다운), failed 면 이유. */
@@ -244,7 +245,7 @@ export interface FanoutVariant {
   tabId: string;
   /** A·B·C… */
   label: string;
-  provider: "claude" | "codex";
+  provider: Provider;
   model?: string;
   /** waiting = 권한 응답 대기(사람이 봐야 함). cleaned = worktree 정리됨. */
   status: "running" | "waiting" | "done" | "failed" | "cleaned";
@@ -284,7 +285,7 @@ export interface OrchestrationEvent extends Base {
   objective: string;
   status: "active" | "closed";
   coordinator: "user" | "tab";
-  tasks: { id: string; seq: number; spec: string; status: string; tabId: string | null; provider: "claude" | "codex" | null; execution: string | null; summary: string | null; blocked?: string | null; /** 대기 사유의 코드 값. 그릴 때 지금 언어로 번역하고, 없으면(예전 기록) blocked 문장을 쓴다. */ blockedBy?: { kind: "deps"; seqs: (number | "?")[] } | { kind: "gates" } | null }[];
+  tasks: { id: string; seq: number; spec: string; status: string; tabId: string | null; provider: Provider | null; execution: string | null; summary: string | null; blocked?: string | null; /** 대기 사유의 코드 값. 그릴 때 지금 언어로 번역하고, 없으면(예전 기록) blocked 문장을 쓴다. */ blockedBy?: { kind: "deps"; seqs: (number | "?")[] } | { kind: "gates" } | null }[];
   gates?: number;
   questions: number;
   escalations: number;

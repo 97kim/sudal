@@ -9,9 +9,8 @@ import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
 import { msgText } from "@shared/i18n/msg";
-import type { ScheduleListDto } from "@shared/ipc";
+import type { ScheduleListDto, Provider } from "@shared/ipc";
 import type { PermissionPolicy } from "@shared/chat-events";
-import type { ProviderId } from "@shared/workspace-model";
 import { classify, nextOccurrence, parseCron, presetToCron } from "@shared/cron";
 import type { Run, RunStatus, Schedule } from "@shared/schedules";
 import { Icon } from "./Icon";
@@ -85,7 +84,7 @@ interface Draft {
   cron: string;
   timezone: string;
   prompt: string;
-  provider: ProviderId;
+  provider: Provider;
   policy: PermissionPolicy;
   /**
    * 폴더를 앱이 채웠나. 폼을 열면 최근 실행된 세션의 경로가 들어가는데, 그걸 알려 주지 않으면
@@ -486,7 +485,7 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
               i18nKey="schedules.form.runWith"
               components={{
                 provider: (
-                  <Pick value={draft.provider} onChange={(v) => set({ provider: v as ProviderId })}>
+                  <Pick value={draft.provider} onChange={(v) => set({ provider: v as Provider })}>
                     <option value="claude">Claude Code</option>
                     <option value="codex">Codex</option>
                   </Pick>
