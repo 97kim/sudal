@@ -15,7 +15,7 @@ import type { LspServerId } from "./lsp-servers";
 import type { SlashCommandDto } from "./slash-commands";
 import type { SnippetDto } from "./snippets";
 import type { SearchHit } from "./transcript-search";
-import type { WorkbenchModel } from "./workspace-model";
+import type { WorkspaceModel } from "./workspace-model";
 import type { PricingEntry, UsageFilter, UsageSummary } from "./usage";
 
 export type Provider = "claude" | "codex";
@@ -51,12 +51,7 @@ export interface CliCandidateDto {
 
 export interface OverrideSetResultDto {
   ok: boolean;
-  reason?:
-    | "not_found"
-    | "permission_denied"
-    | "disk_full"
-    | "readonly_fs"
-    | "unknown";
+  /** 실패했을 때 사용자에게 보여 줄 이유. */
   message?: string;
 }
 
@@ -468,7 +463,7 @@ export interface FanoutCompareDto {
 export type FanoutAdoptResult = { ok: true; files: string[] } | { ok: false; error: string };
 
 export interface WorkspaceStateDto {
-  model: WorkbenchModel;
+  model: WorkspaceModel;
   statuses: Record<string, SessionStatus>;
   attention: Record<string, SessionAttention>;
 }
@@ -755,8 +750,8 @@ export interface ChatEventEnvelope {
   event: ChatEvent;
 }
 
-/** preload 가 window.workbench 로 노출하는 API. */
-export interface WorkbenchApi {
+/** preload 가 window.sudal 로 노출하는 API. */
+export interface SudalApi {
   app: {
     info(): Promise<AppInfoDto>;
     /** GitHub 최신 릴리즈와 지금 버전을 비교한다. */
