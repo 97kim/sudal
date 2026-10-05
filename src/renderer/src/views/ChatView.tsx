@@ -64,7 +64,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
 };
 
-const EDITOR_W_KEY = "workbench.editorPane.width";
+const EDITOR_W_KEY = "sudal.editorPane.width";
 /** "작업 중" 으로 보는 세션 상태 — 같은 디렉토리 충돌 알림용. */
 const BUSY_STATUS = new Set(["running", "waiting_permission", "queued"]);
 const shortTitle = (t: string) => (t.length > 28 ? `${t.slice(0, 28)}…` : t);

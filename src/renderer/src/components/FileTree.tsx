@@ -100,7 +100,7 @@ const DIM_DIRS = new Set([
   "__pycache__",
 ]);
 
-const HIDDEN_KEY = "workbench.fileTree.showHidden";
+const HIDDEN_KEY = "sudal.fileTree.showHidden";
 const ShowHiddenContext = createContext(false);
 
 export function FileTree({ root }: { root: string }) {

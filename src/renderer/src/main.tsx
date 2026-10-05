@@ -4,9 +4,9 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 import { App } from "./App";
-import { EDITOR_STORAGE_KEY, flushEditorTabsStorage } from "./editor-tabs";
+import { flushEditorTabsStorage } from "./editor-tabs";
 import { flushComposerDrafts } from "./composer-draft";
-import { hydrateKv, kvGet, kvSet } from "./kv-store";
+import { hydrateKv } from "./kv-store";
 import { applyThemeMode } from "./theme";
 import { applyLocale, initI18n } from "./i18n";
 
@@ -34,18 +34,17 @@ window.addEventListener("unhandledrejection", (e) => {
   });
 });
 
-/** 이전 빌드가 localStorage 에 두었던 초안을 한 번 옮긴다(옮긴 뒤 localStorage 쪽은 지운다). */
-function migrateLocalStorageDrafts() {
+/**
+ * 옛 이름(AI Workbench)으로 저장한 화면 설정 키를 sudal.* 로 한 번 옮긴다. 새 키가 이미 있으면 그쪽이 이긴다.
+ * 0.11.2 까지의 설치본만 해당한다 — 충분히 지나면 지워도 된다.
+ */
+function migrateLegacyStorageKeys() {
   try {
-    const old = localStorage.getItem("workbench.editorTabs.v1");
-    if (old && !kvGet(EDITOR_STORAGE_KEY)) kvSet(EDITOR_STORAGE_KEY, old);
-    localStorage.removeItem("workbench.editorTabs.v1");
-    for (const k of Object.keys(localStorage)) {
-      if (!k.startsWith("workbench.composerDraft.")) continue;
-      const key = `composerDraft.${k.slice("workbench.composerDraft.".length)}`;
-      const v = localStorage.getItem(k);
-      if (v && !kvGet(key)) kvSet(key, v);
-      localStorage.removeItem(k);
+    for (const name of ["linkOpenMode", "fileTree.showHidden", "sidebar.collapsed", "rightPanel", "editorPane.width"]) {
+      const old = localStorage.getItem(`workbench.${name}`);
+      if (old === null) continue;
+      if (localStorage.getItem(`sudal.${name}`) === null) localStorage.setItem(`sudal.${name}`, old);
+      localStorage.removeItem(`workbench.${name}`);
     }
   } catch {
     /* 없거나 막힘 */
@@ -64,7 +63,7 @@ async function start() {
   initI18n(settingsResult.status === "fulfilled" ? settingsResult.value.resolvedLocale : "ko");
   window.sudal.app.onSettingsChanged((s) => applyLocale(s.resolvedLocale));
   hydrateKv(entries, (key, value) => window.sudal.state.set(key, value));
-  migrateLocalStorageDrafts();
+  migrateLegacyStorageKeys();
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <App />

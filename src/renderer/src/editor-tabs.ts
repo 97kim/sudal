@@ -33,7 +33,7 @@ export const MAX_EDITOR_FILES = 12;
 // ===== 디스크 보존 =====
 // 열린 파일 목록과 미저장 본문을 kv-store(main 의 renderer-state.json) 에 둔다(앱 종료·충돌 뒤 다시 열면 그대로). reveal 은 일회성이라 제외.
 // 처음 접근할 때 한 번 읽고, 바뀌면 잠깐 모아서 쓴다. main 은 받는 즉시 파일에 쓰므로 그 뒤 앱이 죽어도 남는다.
-export const EDITOR_STORAGE_KEY = "editorTabs.v1";
+const EDITOR_STORAGE_KEY = "editorTabs.v1";
 /** 파일 뷰어 상한(1MB)과 같다 — 그보다 큰 초안은 메모리에만 둔다. */
 const DRAFT_MAX_CHARS = 1_000_000;
 const SAVE_DELAY_MS = 300;

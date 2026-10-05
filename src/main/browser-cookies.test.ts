@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cookieFilePath, cookieUrl, encryptedCookieFilePath, parseSaved, toSetDetails, type SavedCookie } from "./browser-cookies";
+import { cookieFilePath, cookieUrl, parseSaved, toSetDetails, type SavedCookie } from "./browser-cookies";
 
 const c = (o: Partial<SavedCookie>): SavedCookie => ({
   name: "sid", value: "v", domain: "example.com", path: "/", secure: true, httpOnly: true, hostOnly: true, ...o,
@@ -30,8 +30,6 @@ test("디스크의 값은 믿지 않는다", () => {
   assert.equal(ok[0].name, "s");
 });
 
-test("저장 파일은 평문 json, 암호화하던 시절 파일은 이름이 달라 따로 지울 수 있다", () => {
+test("저장 파일은 평문 json", () => {
   assert.match(cookieFilePath("/u"), /browser-session-cookies\.json$/);
-  assert.match(encryptedCookieFilePath("/u"), /browser-session-cookies\.enc$/);
-  assert.notEqual(cookieFilePath("/u"), encryptedCookieFilePath("/u"));
 });

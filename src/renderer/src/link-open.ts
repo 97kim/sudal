@@ -2,7 +2,7 @@
 
 /** 링크 열기 방식. "ask" 면 클릭할 때마다 고른다. localStorage 에 기억. */
 export type LinkOpenMode = "ask" | "app" | "external";
-const LINK_MODE_KEY = "workbench.linkOpenMode";
+const LINK_MODE_KEY = "sudal.linkOpenMode";
 
 export function getLinkOpenMode(): LinkOpenMode {
   try {

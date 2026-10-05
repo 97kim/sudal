@@ -1082,7 +1082,7 @@ async function installStatus(): Promise<InstallStatusDto> {
 }
 
 /** 스킬 스텁을 둘 곳: 에이전트마다 자기 홈의 skills 디렉토리. 그 에이전트 홈이 없으면(설치 안 됨) 건너뛴다. */
-function skillTargets(): { agent: "claude" | "codex"; label: string; home: string; path: string }[] {
+function skillTargets(): { agent: Provider; label: string; home: string; path: string }[] {
   const home = app.getPath("home");
   const codexHome = process.env.CODEX_HOME || join(home, ".codex");
   return [
@@ -1091,7 +1091,7 @@ function skillTargets(): { agent: "claude" | "codex"; label: string; home: strin
   ];
 }
 
-function installSkillStub(agent?: "claude" | "codex"): { ok: true; paths: string[]; skipped: string[] } | { ok: false; error: string } {
+function installSkillStub(agent?: Provider): { ok: true; paths: string[]; skipped: string[] } | { ok: false; error: string } {
   try {
     const stub = readFileSync(join(cliDir(), "skill-stub.md"), "utf8");
     const paths: string[] = [];
@@ -1292,15 +1292,11 @@ function bootstrap() {
   lsp = new LspManager({
     env: () => sdkEnv(),
     resolveRoot: async (cwd) => repoRoot(cwd, await cliDiscovery().buildEnv()),
-    // 설정: lspServerPaths[serverId]. 옛 단일 키 lspServerPath 는 typescript 것으로 읽는다.
-    loadOverride: (serverId) => {
-      const st = store.loadSettings<{ lspServerPath?: string | null; lspServerPaths?: Record<string, string | null> }>({});
-      return st.lspServerPaths?.[serverId] ?? (serverId === "typescript" ? (st.lspServerPath ?? null) : null);
-    },
+    // 설정: lspServerPaths[serverId]
+    loadOverride: (serverId) => store.loadSettings<{ lspServerPaths?: Record<string, string | null> }>({}).lspServerPaths?.[serverId] ?? null,
     saveOverride: (serverId, path) => {
-      const st = store.loadSettings<{ lspServerPath?: string | null; lspServerPaths?: Record<string, string | null> }>({});
-      const { lspServerPath: _legacy, ...rest } = st;
-      store.saveSettings({ ...rest, lspServerPaths: { ...(st.lspServerPaths ?? {}), [serverId]: path } });
+      const st = store.loadSettings<{ lspServerPaths?: Record<string, string | null> }>({});
+      store.saveSettings({ ...st, lspServerPaths: { ...(st.lspServerPaths ?? {}), [serverId]: path } });
     },
     onMessage: (id, message) => sendAll(IPC.lspMessage, id, message),
     onExit: (id) => sendAll(IPC.lspExit, id),

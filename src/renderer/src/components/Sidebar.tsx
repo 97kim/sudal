@@ -28,7 +28,7 @@ const NAV: { id: View; icon: "chat" | "usage" | "settings" }[] =
 
 /** 워크스페이스마다 닫힌 세션은 이만큼만. 그 아래는 "n개 더" 로 접는다. */
 const CLOSED_LIMIT = 12;
-const COLLAPSED_KEY = "workbench.sidebar.collapsed";
+const COLLAPSED_KEY = "sudal.sidebar.collapsed";
 /** 드래그 중 자동 스크롤이 작동하는 가장자리 폭과 최대 속도(px/s). */
 const EDGE_PX = 24;
 const MAX_SCROLL_SPEED = 360;

@@ -13,7 +13,7 @@ export type RightPanelTab = "context" | "files";
 const MIN_W = 240;
 const MAX_W = 640;
 const DEFAULT_W = 300;
-const KEY = "workbench.rightPanel";
+const KEY = "sudal.rightPanel";
 
 interface Saved {
   width: number;
