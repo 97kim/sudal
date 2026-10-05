@@ -63,6 +63,12 @@ export const settings: DeepPartial<typeof ko> = {
       off: { label: "Off", hint: "No notification when a response finishes. Approval requests still notify you." },
     },
   },
+  otter: {
+    title: "Floating otter",
+    description: "Shows an otter in a corner of your screen with your agents' status. It waves when an approval is waiting and lets you know when work is done. Click it to jump to that tab.",
+    toggle: "Show the otter",
+    hint: "Drag to move it. Right-click to hide it for a while or turn it off.",
+  },
   newTabPolicy: {
     title: "Default permission for new tabs",
     description: "Choose which permission new tabs, and the first tab of a new workspace, start with. You can change it per tab in the right panel.",

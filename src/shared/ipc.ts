@@ -7,6 +7,7 @@ import type {
   SessionStatus,
 } from "./chat-events";
 import type { BackgroundJobDto } from "./background-jobs";
+import type { OtterMood } from "./otter";
 import type { Run, Schedule } from "./schedules";
 import type { NetFailure } from "./browser-diagnostics";
 import type { Handoff } from "./handoff";
@@ -116,6 +117,8 @@ export interface AppSettingsDto {
   notifyOnDone: NotifyOnDone;
   /** 새 탭의 권한. inherit = 새 탭을 열 때 보고 있던 탭과 같게. */
   newTabPolicy: NewTabPolicy;
+  /** 화면에 수달을 띄워 에이전트 상태를 보여 준다. 처음엔 꺼져 있다. */
+  otter: boolean;
   /**
    * 인앱 브라우저의 로그인을 앱을 껐다 켜도 유지한다. 로그인 세션은 대개 만료 없는 세션 쿠키라
    * Chromium 이 종료할 때 버린다 — 끌 때 받아 적고 켤 때 되돌려 놓는다(크롬의 "이전 세션 계속하기").
@@ -131,6 +134,27 @@ export interface AppSettingsDto {
   worktreeDirCustom: boolean;
   /** 앱 데이터(워크스페이스·채팅 기록·설정) 폴더. 읽기 전용 표시용. */
   dataDir: string;
+}
+
+/** 수달 창에 보내는 것. 무엇을 그릴지만 담는다 — 문구는 main 이 앱 언어로 만든다. */
+export interface OtterViewDto {
+  mood: OtterMood;
+  count: number;
+  bubble: string | null;
+  /** Sudal 창을 보고 있어 흐리게 둔다. */
+  dim: boolean;
+}
+
+/** 수달 창(otter.html)의 window.otter. 수달이 하는 일만 연다. */
+export interface OtterApi {
+  onState(listener: (v: OtterViewDto) => void): () => void;
+  ready(): void;
+  /** 마우스가 수달 위에 있을 때만 클릭을 받는다 — 나머지는 아래 창으로 지나간다. */
+  setInteractive(on: boolean): void;
+  click(): void;
+  drag(dx: number, dy: number): void;
+  dragEnd(): void;
+  menu(): void;
 }
 
 export type NewTabPolicy = "inherit" | PermissionPolicy;
@@ -492,7 +516,9 @@ export type ShortcutName =
   | "prev-attention"
   | "next-tab"
   | "prev-tab"
-  | `tab-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
+  | `tab-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
+  /** 설정의 일반 화면을 연다(수달 메뉴의 "설정 열기"). */
+  | "open-settings";
 
 export interface GitInfoDto {
   root: string;

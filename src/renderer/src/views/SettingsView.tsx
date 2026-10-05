@@ -33,6 +33,7 @@ import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-ope
 import { useSnippets } from "../hooks/useSnippets";
 import { updatePhaseLabel, useUpdateStatus } from "../hooks/useUpdate";
 import { snippetSummary, type SnippetDto } from "@shared/snippets";
+import { Logo } from "../components/Logo";
 
 export type SettingsSection = "general" | "cli" | "mcp" | "snippets" | "schedules";
 
@@ -622,6 +623,25 @@ function GeneralSection() {
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="otter">
+        <div className="mb-1 flex items-center gap-2 font-medium">
+          <Logo size={14} className="text-accent" />
+          {t("settings.otter.title")}
+        </div>
+        <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.otter.description")}</p>
+        <label className="flex cursor-pointer items-center gap-2 text-[12.5px]">
+          <input
+            type="checkbox"
+            checked={settings?.otter ?? false}
+            disabled={!settings}
+            onChange={(e) => void save({ otter: e.target.checked })}
+            data-otter-toggle
+          />
+          <span>{t("settings.otter.toggle")}</span>
+        </label>
+        <p className="mt-2 text-[12px] leading-5 text-muted-2">{t("settings.otter.hint")}</p>
       </div>
 
       <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="new-tab-policy">

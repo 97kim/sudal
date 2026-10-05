@@ -1,0 +1,136 @@
+/* 화면에 떠 있는 수달. 창 전체가 투명하고, 수달은 오른쪽 아래, 말풍선은 그 위에 놓인다. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: "Inter Variable", -apple-system, system-ui, sans-serif;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.3s;
+}
+/* Sudal 창을 보고 있으면 같은 정보가 앱 안에 있으니 흐리게 둔다. */
+#stage.dim {
+  opacity: 0.4;
+}
+#stage.dim:hover {
+  opacity: 1;
+}
+
+#otter {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #1b2027;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), inset 0 0 0 2px rgb(255 255 255 / 0.08);
+  cursor: pointer;
+  transform-origin: 50% 90%;
+  animation: float 3.2s ease-in-out infinite;
+}
+#stage.dragging #otter {
+  cursor: grabbing;
+  animation-play-state: paused;
+}
+
+.face {
+  position: absolute;
+  inset: 12px;
+  background: #f4efe6;
+  -webkit-mask: var(--logo) center / contain no-repeat;
+  mask: var(--logo) center / contain no-repeat;
+}
+
+#badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: #4f5bd5;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+#bubble {
+  position: absolute;
+  right: 18px;
+  bottom: 92px;
+  max-width: 200px;
+  padding: 7px 11px;
+  border-radius: 12px 12px 4px 12px;
+  background: #ffffff;
+  color: #1b2027;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 위의 display 가 hidden 속성을 덮어쓰지 않게 */
+#bubble[hidden],
+#badge[hidden] {
+  display: none;
+}
+
+/* 기분별 움직임. 그림을 제대로 그리기 전까지는 같은 얼굴에 움직임과 테두리 색만 다르다. */
+#otter[data-mood="working"] {
+  animation: knock 0.7s ease-in-out infinite;
+}
+#otter[data-mood="waiting"] {
+  animation: wave 1s ease-in-out infinite;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 3px #f2b84b;
+}
+#otter[data-mood="done"] {
+  animation: hop 1.6s ease-in-out infinite;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 3px #4fbf8a;
+}
+#otter[data-mood="error"] {
+  animation: droop 2.4s ease-in-out infinite;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 3px #e0625a;
+}
+#otter[data-mood="limit"] {
+  animation: float 5s ease-in-out infinite;
+  filter: saturate(0.4) brightness(0.85);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-5px) rotate(2deg); }
+}
+@keyframes knock {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-7deg); }
+  60% { transform: rotate(4deg); }
+}
+@keyframes wave {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  25% { transform: translateY(-6px) rotate(-10deg); }
+  75% { transform: translateY(-6px) rotate(10deg); }
+}
+@keyframes hop {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-12px); }
+}
+@keyframes droop {
+  0%, 100% { transform: rotate(8deg) translateY(2px); }
+  50% { transform: rotate(5deg) translateY(4px); }
+}

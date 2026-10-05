@@ -15,10 +15,21 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { "@shared": shared } },
-    build: { rollupOptions: { output: { format: "cjs" } } },
+    build: {
+      rollupOptions: {
+        // 메인 창과 화면에 떠 있는 수달 창. 수달 창에는 메인 창의 API 를 열지 않는다.
+        input: { index: resolve(__dirname, "src/preload/index.ts"), otter: resolve(__dirname, "src/preload/otter.ts") },
+        output: { format: "cjs" },
+      },
+    },
   },
   renderer: {
     plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        input: { index: resolve(__dirname, "src/renderer/index.html"), otter: resolve(__dirname, "src/renderer/otter.html") },
+      },
+    },
     resolve: {
       alias: {
         "@shared": shared,

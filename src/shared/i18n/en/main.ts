@@ -2,6 +2,23 @@ import type { main as ko } from "../ko/main";
 import type { DeepPartial } from "../types";
 
 export const main: DeepPartial<typeof ko> = {
+  otter: {
+    bubble: {
+      waiting: "Waiting for you · {{title}}",
+      waitingMany: "{{count}} tabs are waiting for you",
+      error: "Something went wrong · {{title}}",
+      errorMany: "{{count}} tabs hit an error",
+      done: "Done · {{title}}",
+      doneMany: "{{count}} finished",
+      limitAt: "I'll try again at {{time}} when the limit resets",
+      limit: "Waiting for the limit to reset",
+    },
+    menu: {
+      snooze: "Hide for 1 hour",
+      hide: "Turn off the otter",
+      settings: "Open settings",
+    },
+  },
   menu: {
     file: "File",
     newSession: "New Session",

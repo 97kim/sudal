@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <title>Sudal otter</title>
+  </head>
+  <body>
+    <div id="stage">
+      <div id="bubble" hidden></div>
+      <div id="otter" data-mood="idle">
+        <span class="face"></span>
+        <span id="badge" hidden></span>
+      </div>
+    </div>
+    <script type="module" src="/src/otter.ts"></script>
+  </body>
+</html>

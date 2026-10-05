@@ -105,6 +105,8 @@ import { TerminalManager } from "./terminals";
 import { fetchUsageText } from "./claude-control";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
 import { WorkspaceService } from "./workspaces";
+import { OtterWindow } from "./otter-window";
+import { otterState, type OtterState } from "@shared/otter";
 
 // ===== userData 이관: 앱 이름이 바뀌면(ai-workbench → Atelier → Sudal) 폴더도 바뀐다 =====
 // 세션 기록·설정·사용량 캐시를 옛 폴더에서 넘겨받는다(legacy-name.ts). userData 를 읽는 어떤 코드보다 먼저 한다.
@@ -240,6 +242,7 @@ async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
 // ===== Broadcast helpers =====
 
 let mainWindow: BrowserWindow | null = null;
+let otter: OtterWindow | null = null;
 let jobWatcher: BackgroundJobWatcher | null = null;
 /** Claude Code 가 백그라운드로 돌리는 일(명령·하위 에이전트). SDK 가 살아 있는 전체 집합을 준다. */
 const bgTasks = new BackgroundTaskRegistry();
@@ -542,6 +545,25 @@ function notifyIfUnfocused(title: string, body: string, tabId?: string) {
 }
 
 /** macOS 알림. 클릭하면 창을 앞으로 가져오고(탭이 있으면 그 탭으로) 간다. */
+/** 수달 말풍선. 사람이 해야 할 일과 결과만 말한다 — 일하는 중·쉬는 중에는 말하지 않는다. */
+function otterBubble(s: OtterState): string | null {
+  const many = s.count > 1;
+  switch (s.mood) {
+    case "waiting":
+      return many ? mt("main.otter.bubble.waitingMany", { count: s.count }) : mt("main.otter.bubble.waiting", { title: s.title ?? "" });
+    case "error":
+      return many ? mt("main.otter.bubble.errorMany", { count: s.count }) : mt("main.otter.bubble.error", { title: s.title ?? "" });
+    case "done":
+      return many ? mt("main.otter.bubble.doneMany", { count: s.count }) : mt("main.otter.bubble.done", { title: s.title ?? "" });
+    case "limit":
+      return s.limitUntil
+        ? mt("main.otter.bubble.limitAt", { time: new Date(s.limitUntil).toLocaleTimeString(intlLocale(mainI18n().language as Locale), { hour: "2-digit", minute: "2-digit" }) })
+        : mt("main.otter.bubble.limit");
+    default:
+      return null;
+  }
+}
+
 function notify(title: string, body: string, tabId?: string) {
   if (!Notification.isSupported()) {
     console.log(`[notify] 이 환경은 알림을 지원하지 않습니다: ${title}`);
@@ -1215,6 +1237,7 @@ function appSettings(): AppSettingsDto {
     maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.SUDAL_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
     newTabPolicy: isNewTabPolicy(raw.newTabPolicy) ? raw.newTabPolicy : "inherit",
+    otter: raw.otter === true,
     keepBrowserLogin: raw.keepBrowserLogin !== false,
     worktreeDir: worktreeRootDir(),
     worktreeDirCustom: typeof raw.worktreeDir === "string" && isAbsolute(raw.worktreeDir),
@@ -1225,6 +1248,8 @@ function appSettings(): AppSettingsDto {
 function applyAppSettings(s: AppSettingsDto) {
   // 네이티브 UI(다이얼로그·컨텍스트 메뉴·스크롤바)도 같은 테마로. 렌더러는 자기 설정값으로 따로 칠한다.
   nativeTheme.themeSource = s.theme;
+  otter?.setEnabled(s.otter);
+  otter?.refresh();
   const prevLanguage = mainI18n().language;
   setMainLocale(s.resolvedLocale);
   // 메뉴는 만들 때의 언어로 굳는다 — 언어가 바뀌면 다시 만든다(앱 시작 전 첫 호출에서는 아직 메뉴가 없다)
@@ -1315,6 +1340,7 @@ function bootstrap() {
       BrowserWindow.getAllWindows().some((w) => w.isFocused()),
     onChange: (map) => {
       workspaces.onAttention();
+      otter?.refresh();
       updateDockBadge();
       // 껐다 켜도 남게. "안 본 응답" 표시가 업데이트 한 번에 사라지면 믿을 수 없는 표시가 된다.
       store.saveAttention(map);
@@ -1382,6 +1408,7 @@ function bootstrap() {
     onStatus: (tabId, status) => {
       attention.status(tabId, status);
       workspaces.onStatus(tabId, status);
+      otter?.refresh();
     },
     maxConcurrent: appSettings().maxConcurrent,
     log(tabId, line) {
@@ -1474,6 +1501,7 @@ function bootstrap() {
     hookLogDir: cleanHookLogDir(join(app.getPath("userData"), "hooks")),
     onSnapshot: (tabId, snapshot) => {
       sendAll(IPC.chatSnapshotChanged, snapshot);
+      otter?.refresh();
       // 터미널 모드의 권한 대기(훅 감지)도 응답 필요 표시·알림에 태운다.
       // 터미널 모드 스냅샷만 본다 — 앱 모드에서 온 스냅샷이 열려 있는 앱 권한 표시를 지우지 않게.
       const waiting =
@@ -1775,6 +1803,52 @@ function registerIpc() {
     app.relaunch();
     app.quit();
   });
+  otter = new OtterWindow({
+    state: () => {
+      const st = workspaces.state();
+      return otterState(
+        st.model.tabs
+          .filter((t) => t.open)
+          .map((t) => ({
+            id: t.id,
+            title: tabTitle(t, mt("shared.untitledTab")),
+            status: st.statuses[t.id] ?? "idle",
+            attention: st.attention[t.id],
+            limitUntil: sessions.limitUntil(t.id),
+          })),
+      );
+    },
+    bubble: otterBubble,
+    appFocused: () => BrowserWindow.getFocusedWindow() === mainWindow && !!mainWindow,
+    open: (tabId) => {
+      const win = mainWindow ?? BrowserWindow.getAllWindows()[0];
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+      if (tabId && workspaces.tab(tabId)) workspaces.activateTab(tabId);
+    },
+    openSettings: () => {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return;
+      win.show();
+      win.focus();
+      win.webContents.send(IPC.shortcut, "open-settings");
+    },
+    turnOff: () => {
+      store.saveSettings({ ...store.loadSettings<Record<string, unknown>>({}), otter: false });
+      const s = appSettings();
+      applyAppSettings(s);
+      sendAll(IPC.appSettingsChanged, s);
+    },
+    loadPosition: () => {
+      const p = store.loadSettings<{ otterPosition?: { x: number; y: number } }>({}).otterPosition;
+      return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null;
+    },
+    savePosition: (p) => store.saveSettings({ ...store.loadSettings<Record<string, unknown>>({}), otterPosition: p }),
+    menuLabels: () => ({ hide: mt("main.otter.menu.hide"), snooze: mt("main.otter.menu.snooze"), settings: mt("main.otter.menu.settings") }),
+  });
   applyAppSettings(appSettings());
   ipcMain.handle(IPC.appSettingsGet, (): AppSettingsDto => appSettings());
   ipcMain.handle(IPC.appSettingsSet, (_e, patch: Partial<AppSettingsDto>): AppSettingsDto => {
@@ -1807,6 +1881,7 @@ function registerIpc() {
       if (!isNotifyOnDone(patch.notifyOnDone)) throw new Error(mt("main.error.badNotifySetting"));
       next.notifyOnDone = patch.notifyOnDone;
     }
+    if (patch.otter !== undefined) next.otter = patch.otter === true;
     if (patch.newTabPolicy !== undefined) {
       if (!isNewTabPolicy(patch.newTabPolicy)) throw new Error(mt("main.error.badPolicy"));
       next.newTabPolicy = patch.newTabPolicy;
@@ -2731,7 +2806,9 @@ function createWindow(): BrowserWindow {
   // 창에 포커스가 돌아오면 보고 있던 탭의 완료/오류 표시를 지운다.
   win.on("focus", () => {
     for (const id of workspaces?.visibleTabIds() ?? []) attention?.viewed(id);
+    otter?.refresh();
   });
+  win.on("blur", () => otter?.refresh());
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };

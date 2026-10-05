@@ -350,6 +350,12 @@ export class SessionManager {
     return s;
   }
 
+  /** 한도 대기 중이면 다시 시도할 시각(모르면 null), 아니면 undefined. snapshot 과 달리 세션을 새로 만들지 않는다. */
+  limitUntil(tabId: string): number | null | undefined {
+    const w = this.sessions.get(tabId)?.limitWait;
+    return w ? w.until : undefined;
+  }
+
   snapshot(tabId: string): SessionSnapshot {
     const s = this.ensure(tabId);
     return {

@@ -1,6 +1,24 @@
 // main 이 직접 그리거나 돌려주는 문구: 메뉴, macOS 알림, 창 요청(IPC)의 오류, shared 의 표시 함수(팬아웃·교차 리뷰·스니펫).
 // msg 아래는 대화 기록에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
 export const main = {
+  // 화면에 떠 있는 수달의 말풍선과 우클릭 메뉴. 탭 제목 뒤에 조사가 붙지 않게 제목을 끝에 둔다.
+  otter: {
+    bubble: {
+      waiting: "답을 기다려요 · {{title}}",
+      waitingMany: "{{count}}개 탭이 답을 기다려요",
+      error: "오류가 났어요 · {{title}}",
+      errorMany: "{{count}}개 탭에서 오류가 났어요",
+      done: "끝났어요 · {{title}}",
+      doneMany: "{{count}}개 끝났어요",
+      limitAt: "한도가 풀리면 {{time}}에 다시 해요",
+      limit: "한도가 풀리길 기다려요",
+    },
+    menu: {
+      snooze: "1시간 동안 숨기기",
+      hide: "수달 끄기",
+      settings: "설정 열기",
+    },
+  },
   menu: {
     file: "파일",
     newSession: "새 세션",

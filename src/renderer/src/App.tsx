@@ -266,7 +266,10 @@ export function App() {
         window.dispatchEvent(new CustomEvent("sudal:terminal-command", { detail: cmd }));
         return;
       }
-      if (name === "new-tab") void newTab();
+      if (name === "open-settings") {
+        setSettingsSection("general");
+        setView("settings");
+      } else if (name === "new-tab") void newTab();
       else if (name === "close-tab" && model.activeTabId) {
         const tabId = model.activeTabId;
         const t = getEditorTabs(tabId);
