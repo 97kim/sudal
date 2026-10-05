@@ -4,7 +4,8 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { isWithin } from "./path-within";
 import type { WorktreeMeta } from "@shared/workspace-model";
 import type { GitChangeDto } from "@shared/ipc";
 import { mt } from "./i18n";
@@ -52,8 +53,7 @@ export async function worktreeCreate(
     return { ok: false, error: mt("repo.worktree.detachedHead") };
   const base = baseRef;
   // worktree 폴더를 저장소 안에 두면 만든 worktree 가 원본에 untracked 로 잡힌다(위치는 설정에서 고른다)
-  const inside = relative(resolve(top), resolve(opts.rootDir));
-  if (inside === "" || (!inside.startsWith("..") && !isAbsolute(inside)))
+  if (isWithin(resolve(top), resolve(opts.rootDir)))
     return { ok: false, error: mt("repo.worktree.insideRepo", { dir: opts.rootDir }) };
   const dir = join(opts.rootDir, basename(top));
   fs.mkdirSync(dir, { recursive: true });

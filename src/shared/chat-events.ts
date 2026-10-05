@@ -337,8 +337,6 @@ export type ChatEvent =
   | NoticeEvent
   | ErrorEvent;
 
-export type ChatEventType = ChatEvent["type"];
-
 /** renderer → main 권한 응답. */
 export interface PermissionAnswer {
   behavior: "allow" | "deny";

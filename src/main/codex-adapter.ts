@@ -99,10 +99,6 @@ const opening = new Map<string, Promise<LiveCodex>>();
 /** app-server 를 한 번 못 띄웠으면(옛 CLI) 이 실행 동안은 exec 로만 간다. */
 let appServerUnavailable: string | null = null;
 
-export function liveCodexSessions(): string[] {
-  return [...live.keys()];
-}
-
 export function closeCodexSession(key: string): void {
   const s = live.get(key);
   if (!s) return;

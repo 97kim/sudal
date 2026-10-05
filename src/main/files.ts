@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { isInsideRel, isWithin } from "./path-within";
 import type { DirEntryDto, FileViewDto } from "@shared/ipc";
 import { mt } from "./i18n";
 
@@ -123,7 +124,7 @@ export async function readFileView(cwd: string, requested: string, env: NodeJS.P
   }
 
   // HEAD 버전: 레포 안의 경로만. 추적 안 하는 새 파일이면 git show 가 실패해 null. 이미지는 diff 를 안 보여 주므로 생략.
-  if (root && !out.image && !imageMimeOf(path) && !relPath.startsWith("..") && !isAbsolute(relPath)) {
+  if (root && !out.image && !imageMimeOf(path) && isInsideRel(relPath)) {
     const head = await git(root, ["show", `HEAD:${relPath.split("\\").join("/")}`], env);
     if (head && head.length <= MAX_FILE_BYTES && !looksBinary(head)) out.headContent = head.toString("utf8");
   }
@@ -166,8 +167,7 @@ export async function writeFileView(
   // 쓰기는 세션의 저장소(없으면 cwd) 안으로만. 심링크를 푼 실제 경로로 비교한다.
   const base = await repoRoot(cwd, env);
   const realTarget = await realishDeep(path);
-  const rel = relative(base, realTarget);
-  if (rel.startsWith("..") || isAbsolute(rel))
+  if (!isWithin(base, realTarget))
     return { ok: false, error: mt("repo.files.outsideRepo", { base }) };
   if (!opts.force) {
     let current: { mtimeMs: number; size: number } | null = null;
@@ -198,8 +198,7 @@ export async function writeFileView(
 type FileOpResult = { ok: true; path: string } | { ok: false; error: string };
 
 function outside(base: string, p: string): boolean {
-  const rel = relative(base, p);
-  return rel.startsWith("..") || isAbsolute(rel);
+  return !isWithin(base, p);
 }
 
 /**

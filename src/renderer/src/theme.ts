@@ -11,9 +11,6 @@ export type Resolved = "light" | "dark";
 let mode: ThemeMode = "system";
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 
-export function themeMode(): ThemeMode {
-  return mode;
-}
 export function currentTheme(): Resolved {
   return resolveTheme(mode, media.matches);
 }

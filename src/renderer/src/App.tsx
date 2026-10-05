@@ -329,7 +329,6 @@ export function App() {
       }
     };
     // 네이티브 메뉴 가속기는 자동화로 못 누른다 — e2e 가 같은 경로를 타도록 열어 둔다.
-    void 0;
     (window as unknown as { __sudalShortcut?: (n: ShortcutName) => void }).__sudalShortcut = handle;
     // ⌘⇧↓/↑(응답 필요 세션으로)는 입력창·에디터·터미널에 포커스가 있으면 편집 명령("끝까지 선택")이 먼저 처리해
     // 메뉴 가속기까지 오지 않는다. 캡처 단계에서 먼저 받아 막는다 — 막힌 키는 메뉴로도 가지 않으니 두 번 돌지 않는다.

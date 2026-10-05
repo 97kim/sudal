@@ -256,12 +256,12 @@ const SKILL_GUIDE = path.join(__dirname, "skill-guide.md");
 
 async function main() {
   const { pos, flags } = parseArgs(process.argv.slice(2));
-  if (flags.help || flags.h || pos.length === 0) {
-    process.stdout.write(t("help"));
-    return;
-  }
   if (flags.version) {
     out({ cli: readVersion() });
+    return;
+  }
+  if (flags.help || flags.h || pos.length === 0) {
+    process.stdout.write(t("help"));
     return;
   }
   const [group, cmd] = pos;
@@ -408,9 +408,11 @@ async function main() {
   out(res.result);
 }
 
+// 앱 번들 안에서는 Contents/Resources/cli/ 옆의 app.asar 에 앱의 package.json 이 있다(Electron 은 node 로 돌 때도 asar 를 읽는다).
+// 저장소에서 바로 실행하면 그 자리에 없으니 dev 다.
 function readVersion() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, "version.json"), "utf8")).version;
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "app.asar", "package.json"), "utf8")).version;
   } catch {
     return "dev";
   }

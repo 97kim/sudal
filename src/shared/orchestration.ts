@@ -398,10 +398,6 @@ export function resolveGroup(s: OrchRunState, to: string): OrchDispatch[] | null
   }
 }
 
-export function isSettledDispatch(d: OrchDispatch): boolean {
-  return d.status === "settled" || d.status === "abandoned" || d.status === "failed_to_start";
-}
-
 /** Run 이 끝났는지: 모든 Task 가 pending/running 이 아니고 Dispatch 가 전부 정리됨. */
 export function runSettled(s: OrchRunState): boolean {
   return s.tasks.length > 0 && s.tasks.every((t) => t.status !== "pending" && t.status !== "running") && s.dispatches.every((d) => !isOpenDispatch(d));
@@ -477,12 +473,3 @@ export function buildWorkerPrompt(t: TFunction, i: PreambleInput): string {
   ].join("\n");
 }
 
-/** 코디네이터 탭에 붙이는 안내(run-create 를 탭이 했을 때). */
-export function coordinatorHint(t: TFunction, cli: string, run: OrchRun): string {
-  return [
-    t("prompt.coordinator.created", { id: run.id }),
-    t("prompt.coordinator.start", { cli, id: run.id, key: run.coordinator.key }),
-    `${cli} orch check --run ${run.id} --key ${run.coordinator.key} --wait --timeout-ms 900000`,
-    t("prompt.coordinator.reply"),
-  ].join("\n");
-}

@@ -16,12 +16,10 @@ export function withTimeout<T>(
   ms: number,
   label: string,
 ): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error(mt("session.error.timeout", { label, sec: ms / 1000 }))), ms),
-    ),
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(mt("session.error.timeout", { label, sec: ms / 1000 }))), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
 }
 
 /**

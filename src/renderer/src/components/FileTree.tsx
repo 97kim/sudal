@@ -370,9 +370,7 @@ function DirChildren({ dir, depth }: { dir: string; depth: number }) {
   );
 }
 
-function rowClass(depth: number) {
-  return "flex w-full items-center gap-1.5 rounded-md py-[3px] pr-2 text-left text-[12px] hover:bg-panel-2";
-}
+const ROW_CLASS = "flex w-full items-center gap-1.5 rounded-md py-[3px] pr-2 text-left text-[12px] hover:bg-panel-2";
 
 function DirNode({ entry, depth }: { entry: DirEntryDto; depth: number }) {
   const { t } = useTranslation();
@@ -394,7 +392,7 @@ function DirNode({ entry, depth }: { entry: DirEntryDto; depth: number }) {
       <button
         onClick={() => setOpen((o) => !o)}
         onContextMenu={(e) => ops?.openMenu(e, entry)}
-        className={`${rowClass(depth)} ${dim ? "text-muted" : "text-fg"} ${
+        className={`${ROW_CLASS} ${dim ? "text-muted" : "text-fg"} ${
           hasChanges && !open ? "bg-warn-bg/60 hover:bg-warn-bg" : ""
         }`}
         style={{ paddingLeft: 6 + depth * 14 }}
@@ -436,7 +434,7 @@ function FileNode({ entry, depth }: { entry: DirEntryDto; depth: number }) {
     <button
       onClick={onClick}
       onContextMenu={(e) => ops?.openMenu(e, entry)}
-      className={`${rowClass(depth)} ${kind ? "hover:bg-transparent" : ""} ${color}`}
+      className={`${ROW_CLASS} ${kind ? "hover:bg-transparent" : ""} ${color}`}
       style={{ paddingLeft: 6 + 14 + depth * 14 }}
       title={`${entry.path} · ${fmtSize(entry.size)}${kind ? ` · ${t(`panel.fileTree.status.${kind}`)}` : ""}`}
       data-file={entry.path}

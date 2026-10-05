@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { isInsideRel } from "./path-within";
 import type { ChatEvent } from "@shared/chat-events";
 import type { ProviderRateLimitDto } from "@shared/ipc";
 import { emptyModel, type WorkbenchModel } from "@shared/workspace-model";
@@ -402,7 +403,7 @@ export class Store {
     try {
       const real = fs.realpathSync(filePath);
       const rel = path.relative(attachmentsDir, real);
-      if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return [];
+      if (!rel || !isInsideRel(rel)) return [];
       const st = fs.statSync(real);
       if (!st.isFile() || st.size > CHAT_IMAGE_MAX_BYTES) return [];
       return [{ name: name.slice(0, 255), mime, filePath: real, base64: fs.readFileSync(real).toString("base64") }];

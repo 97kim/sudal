@@ -60,9 +60,4 @@ export const prompt = {
     r5: "5. 다른 워커를 띄우거나 새 Run 을 만들지 마세요. 이 Task 범위 밖의 파일은 건드리지 마세요.",
     deps: "- 이 Task 는 앞선 Task({{deps}})가 끝난 뒤 시작됐습니다. 그 산출물이 필요하면 spec 에 적힌 위치에서 읽으세요.",
   },
-  coordinator: {
-    created: "[Sudal 오케스트레이션 · 코디네이터] Run {{id}} 이 만들어졌습니다. 워커를 띄운 뒤 인박스를 기다리세요:",
-    start: '{{cli}} orch worker-start --run {{id}} --key {{key}} --spec "<작업>" --agent claude|codex [--worktree]',
-    reply: "질문엔 reply, 완료 보고를 받으면 결과를 검증한 뒤 --ack <delivery_id> 로 다음을 기다립니다. 빈 대기는 실패가 아닙니다.",
-  },
 };

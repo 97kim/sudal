@@ -98,11 +98,6 @@ export function runVerdict(s: RunState): RunVerdict {
   return finished(s) ? { state: "completed", isError: s.resultIsError } : { state: "running" };
 }
 
-/** 후속 턴을 기다리는 중인가. 엔진이 "언제까지 기다릴지" 를 정할 때 쓴다. */
-export function awaitingFollowUp(s: RunState): boolean {
-  return !s.ended && s.sawResult && s.followUpExpected;
-}
-
 /** 신호를 순서대로 먹여 판정한다(시험·재생용). */
 export function judgeRun(signals: RunSignal[]): RunVerdict {
   return runVerdict(signals.reduce(applyRunSignal, newRunState()));

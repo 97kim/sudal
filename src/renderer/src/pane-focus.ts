@@ -16,8 +16,3 @@ export function usePaneFocusRef(): MutableRefObject<boolean> {
 /** 분할 중인가(칸 안이면서 포커스가 아닐 수 있는 상황). RightPanel 이 분할 중엔 기본으로 접는 데 쓴다. */
 export const PaneSplitContext = createContext(false);
 
-/** DOM 기준 판정 — 칸 밖에서 "지금 포커스가 포커스 안 된 칸 안에 남아 있나" 를 볼 때(App). */
-export function inFocusedPane(el: Element | null | undefined): boolean {
-  const pane = el?.closest?.("[data-chat-pane]");
-  return !pane || pane.getAttribute("data-focused") === "true";
-}

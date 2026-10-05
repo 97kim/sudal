@@ -2,8 +2,6 @@ import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import hljs from "highlight.js/lib/common";
 import { diffLines } from "diff";
-import type { FileViewDto } from "@shared/ipc";
-import { Icon } from "./Icon";
 
 /** 변경 파일 목록·툴카드 어디서든 파일을 열 수 있게 ChatView 가 내려주는 콜백. */
 /** 파일 열기. at 을 주면(Read 툴카드의 줄 범위) 에디터가 그 줄을 선택하고 가운데로 스크롤한다. */
@@ -144,10 +142,6 @@ export function buildDiff(
   return { rows, flat, added, deleted };
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full items-center justify-center text-muted">{children}</div>;
-}
-
 /** 줄 번호 거터 + 하이라이트된 코드. 둘 다 같은 줄 높이라 세로로 맞물리고, 거터는 가로 스크롤에도 고정. */
 export function CodeTable({ html, lines }: { html: string; lines: number }) {
   const numbers = useMemo(() => Array.from({ length: lines }, (_, i) => i + 1).join("\n"), [lines]);
@@ -195,10 +189,4 @@ export function DiffTable({ rows }: { rows: DiffRow[] }) {
       )}
     </div>
   );
-}
-
-function fmtSize(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${n} B`;
 }

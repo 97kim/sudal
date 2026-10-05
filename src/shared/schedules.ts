@@ -166,11 +166,6 @@ export function runReason(t: TFunction, key: MsgKey, params?: Msg["params"]): Ru
   return { reason, reasonMsg: params ? { key, params } : { key } };
 }
 
-/** 이 예약의 회차 하나를 가리키는 안정된 열쇠. 중복 시작을 막는다. */
-export function runKey(scheduleId: string, scheduledFor: number): string {
-  return `${scheduleId}@${scheduledFor}`;
-}
-
 /** 아직 끝나지 않은 회차. 하나라도 있으면 다음 회차는 겹침으로 건너뛴다. */
 export function isLiveRun(r: Run): boolean {
   return !isFinalRunStatus(r.status);

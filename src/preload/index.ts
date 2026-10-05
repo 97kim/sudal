@@ -204,7 +204,6 @@ const api: WorkbenchApi = {
     setPath: (serverId, path) => ipcRenderer.invoke(IPC.lspSetPath, serverId, path),
     start: (cwd, serverId) => ipcRenderer.invoke(IPC.lspStart, cwd, serverId),
     send: (id: string, message: string) => ipcRenderer.send(IPC.lspSend, id, message),
-    stop: (id: string) => ipcRenderer.invoke(IPC.lspStop, id),
     onMessage: (listener) => {
       const handler = (_e: IpcRendererEvent, id: string, message: string) => listener(id, message);
       ipcRenderer.on(IPC.lspMessage, handler);

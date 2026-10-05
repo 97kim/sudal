@@ -5,7 +5,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { extname, join, relative, resolve, sep } from "node:path";
+import { isInsideRel, isWithin } from "./path-within";
 import type { AddressInfo } from "node:net";
 
 const MIME: Record<string, string> = {
@@ -85,7 +86,7 @@ export class PreviewServer {
       return null;
     }
     const rel = relative(realRoot, realFile);
-    if (!rel || rel.startsWith("..") || rel.includes(`${sep}..${sep}`)) return null;
+    if (!rel || !isInsideRel(rel)) return null;
     const port = await this.start();
     const rootId = createHash("sha1").update(realRoot).digest("hex").slice(0, 12);
     this.roots.set(rootId, realRoot);
@@ -127,11 +128,7 @@ export class PreviewServer {
     } catch {
       return deny(404, "not found");
     }
-    const inside = (p: string) => {
-      const r = relative(root, p);
-      return r === "" || (!r.startsWith("..") && !isAbsolute(r));
-    };
-    if (!inside(real)) return deny(404, "not found");
+    if (!isWithin(root, real)) return deny(404, "not found");
     let st = await fs.stat(real);
     if (st.isDirectory()) {
       target = join(real, "index.html");
@@ -141,7 +138,7 @@ export class PreviewServer {
       } catch {
         return deny(404, "not found");
       }
-      if (!inside(real) || !st.isFile()) return deny(404, "not found");
+      if (!isWithin(root, real) || !st.isFile()) return deny(404, "not found");
     }
     if (!st.isFile()) return deny(404, "not found");
     const type = MIME[extname(real).toLowerCase()] ?? "application/octet-stream";

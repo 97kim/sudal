@@ -194,9 +194,6 @@ function MdCode(props: React.HTMLAttributes<HTMLElement> & RefAttrs & { node?: u
   return <FileRef {...ref} as="code" className={rest.className}>{rest.children}</FileRef>;
 }
 
-// 링크 열기 방식은 link-open.ts 에 산다(터미널 속 URL 도 같은 규칙). 설정 화면이 여기서 가져가므로 이름을 남긴다.
-export { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-open";
-
 /**
  * 링크: 클릭하면 "인앱 브라우저 / 기본 브라우저" 선택 팝업(기억 가능). ⌘/Ctrl·가운데 클릭은 바로 기본 브라우저,
  * ⌥클릭은 바로 인앱 브라우저, ⇧클릭은 기억을 무시하고 다시 묻는다. 메인 창이 이동하는 일은 없다(preventDefault + main 의 will-navigate).

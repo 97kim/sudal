@@ -22,13 +22,13 @@ import {
   type WarmTarget,
 } from "@shared/ipc";
 import type { NotifyOnDone } from "@shared/ipc";
-import type { ThemeMode } from "@shared/theme";
+import { THEME_MODES } from "@shared/theme";
 import { applyThemeMode } from "../theme";
 import { Icon } from "../components/Icon";
 import { SchedulesSection } from "../components/SchedulesSection";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { shorten } from "../components/ContextPanel";
-import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../components/Markdown";
+import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-open";
 import { useSnippets } from "../hooks/useSnippets";
 import { updatePhaseLabel, useUpdateStatus } from "../hooks/useUpdate";
 import { snippetSummary, type SnippetDto } from "@shared/snippets";
@@ -324,7 +324,6 @@ export function SettingsView({
 // 선택지는 값만 든다. 문구는 사전(settings.<카드>.options.<값>)에서 그릴 때 가져온다 — 언어를 바꾸면 따라오게.
 const LINK_MODE_OPTIONS: LinkOpenMode[] = ["ask", "app", "external"];
 const WARM_OPTIONS: WarmTarget[] = ["active", "off"];
-const THEME_OPTIONS: ThemeMode[] = ["system", "light", "dark"];
 const NOTIFY_OPTIONS: NotifyOnDone[] = ["always", "unfocused", "off"];
 
 // 알림 문구는 state 에 번역해서 담지 않는다. 종류와 값만 두고 그릴 때 번역한다.
@@ -582,7 +581,7 @@ function GeneralSection() {
         </div>
         <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.theme.description")}</p>
         <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
-          {THEME_OPTIONS.map((v) => (
+          {THEME_MODES.map((v) => (
             <label key={v} className={radioCls(settings?.theme === v)}>
               <input
                 type="radio"

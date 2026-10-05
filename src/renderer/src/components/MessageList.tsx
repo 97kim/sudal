@@ -56,7 +56,6 @@ export function MessageList({
   loading?: boolean;
 }) {
   const { t } = useTranslation();
-  const endRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // 검색 결과에서 "이 블록으로": 예약된 블록이 이 탭의 것이고 화면에 생겼으면 스크롤 + 잠깐 강조.
   // 블록 목록이 바뀔 때마다(재생 진행) 다시 시도하므로 닫혀 있던 세션도 마운트 뒤 정상 이동한다.
@@ -271,7 +270,6 @@ export function MessageList({
           />
         )}
         {status !== "idle" && status !== "error" && (turnStartedAt ?? lastUserTs) !== null && <RunningFooter since={status === "queued" ? lastUserTs! : (turnStartedAt ?? lastUserTs!)} blocks={blocks} status={status} ambientFromBg={ambientFromBg} />}
-        <div ref={endRef} />
       </div>
     </div>
       {!atBottom && blocks.length > 0 && (

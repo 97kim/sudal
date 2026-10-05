@@ -1,5 +1,5 @@
 // 앱 전역 아이콘 세트 (lucide 스타일 스트로크). 외부 아이콘 패키지 없이 필요한 것만 인라인.
-const PATHS: Record<string, string> = {
+const PATHS = {
   terminal: "M4 17l6-6-6-6M12 19h8",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   maximize: "M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5",
@@ -43,7 +43,7 @@ const PATHS: Record<string, string> = {
   clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
   chevronDown: "M6 9l6 6 6-6",
   copy: "M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1",
-};
+} satisfies Record<string, string>;
 
 export type IconName = keyof typeof PATHS;
 

@@ -59,9 +59,4 @@ export const prompt = {
     r5: "5. Do not start other workers or create a new Run. Do not touch files outside the scope of this Task.",
     deps: "- This Task started after the preceding Task ({{deps}}) finished. If you need its output, read it from the location given in the spec.",
   },
-  coordinator: {
-    created: "[Sudal orchestration · coordinator] Run {{id}} has been created. Start workers, then wait on the inbox:",
-    start: '{{cli}} orch worker-start --run {{id}} --key {{key}} --spec "<task>" --agent claude|codex [--worktree]',
-    reply: "Answer questions with reply; when you receive a completion report, verify the result, then wait for the next one with --ack <delivery_id>. An empty wait is not a failure.",
-  },
 };

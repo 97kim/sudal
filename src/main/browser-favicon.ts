@@ -13,10 +13,6 @@ const CACHE_MAX = 200;
 /** url → data URL(못 받았으면 null). null 도 기억해 같은 주소를 반복해서 두드리지 않는다. */
 const cache = new Map<string, string | null>();
 
-export function faviconCacheSize(): number {
-  return cache.size;
-}
-
 /** 주소가 받아올 만한 것인가. http(s) 만 — file:·data: 는 여기서 받을 이유가 없다. */
 export function isFetchableFavicon(url: string): boolean {
   try {

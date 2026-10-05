@@ -106,7 +106,7 @@ export function ChatView({
 }) {
   const { t } = useTranslation();
   const tabId = tab.id;
-  const { state, config, setConfig, loaded } = useSession(tabId);
+  const { state, config, setConfig, loaded, reload } = useSession(tabId);
   const [switching, setSwitching] = useState(false);
   // 에디터 패널(채팅 옆 분할). 변경 파일 목록·파일 트리·툴카드 경로 클릭으로 파일을 연다. 열린 파일은 탭마다 기억.
   const editorTabs = useEditorTabs(tabId);
@@ -374,7 +374,7 @@ export function ChatView({
   const onClear = async () => {
     setConfig(await window.workbench.chat.clear(tabId));
     // 리듀서 상태는 main 의 이벤트 로그 재생으로 맞춘다.
-    window.location.hash = `#cleared-${Date.now()}`;
+    reload();
   };
 
   const loadHandoff = useCallback(

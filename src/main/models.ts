@@ -77,7 +77,7 @@ async function codexModels(src: ModelSources): Promise<ModelOptionDto[]> {
   const server = new CodexAppServer({ onNotification: () => {}, onServerRequest: () => Promise.reject(new Error("unsupported")), onExit: () => {} });
   try {
     await withTimeout(server.start(rt.codexPath, rt.env, process.cwd()), 20_000, mt("session.error.label.appServerStart"));
-    const r = await withTimeout(server.request<{ data?: Record<string, unknown>[] }>("model/list", {}, 20_000), 20_000, "codex model/list");
+    const r = await server.request<{ data?: Record<string, unknown>[] }>("model/list", {}, 20_000);
     const rows = Array.isArray(r?.data) ? r.data : [];
     return rows
       .filter((m) => m.hidden !== true && typeof m.id === "string")

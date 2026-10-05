@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
-import type { TFunction } from "i18next";
 import type {
   ProviderRateLimitDto,
   RateLimitWindowDto,

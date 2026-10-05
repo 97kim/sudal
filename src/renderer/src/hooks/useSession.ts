@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 import type { ChatEvent } from "@shared/chat-events";
 import type { SessionSnapshotDto } from "@shared/ipc";
 import {
@@ -64,16 +64,13 @@ export function useSession(tabId: string) {
     };
   }, [tabId]);
 
-  // 대화 비우기 등 main 쪽 로그가 통째로 바뀌면 hash 변경으로 재생을 트리거한다.
-  useEffect(() => {
-    const onHash = () => {
-      window.workbench.chat
-        .events(tabId)
-        .then((events) => dispatch({ kind: "replay", events }));
-    };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+  // 대화 비우기처럼 main 쪽 로그가 통째로 바뀌었을 때 다시 재생한다.
+  const reload = useCallback(() => {
+    void window.workbench.chat
+      .events(tabId)
+      .then((events) => dispatch({ kind: "replay", events }))
+      .catch(console.error);
   }, [tabId]);
 
-  return { state, config, setConfig, loaded };
+  return { state, config, setConfig, loaded, reload };
 }

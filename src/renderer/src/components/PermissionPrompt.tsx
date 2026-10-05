@@ -35,7 +35,6 @@ export function PermissionPrompt({
 }) {
   const { t, i18n } = useTranslation();
   const isQuestion = request.tool === "AskUserQuestion";
-  const root = useRef<HTMLDivElement>(null);
   const paneFocus = usePaneFocusRef();
   const allowBtn = useRef<HTMLButtonElement>(null);
   // "허용" 에 포커스를 준다 — 단, 분할 화면의 다른 칸이면 주지 않는다. 옆 칸에서 쓰던 중에 누른 Enter 가 이 버튼을 누르게 된다.
@@ -64,15 +63,11 @@ export function PermissionPrompt({
   }, [onAnswer, isQuestion]);
 
   if (isQuestion)
-    return (
-      <div ref={root}>
-        <QuestionPrompt request={request} onAnswer={onAnswer} />
-      </div>
-    );
+    return <QuestionPrompt request={request} onAnswer={onAnswer} />;
 
   const { tool, input } = request;
   return (
-    <div ref={root} className="mx-6 mb-2 rounded-xl border border-warn/50 bg-panel p-4 shadow-2xl">
+    <div className="mx-6 mb-2 rounded-xl border border-warn/50 bg-panel p-4 shadow-2xl">
       <div className="mb-1 flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-warn" />
         <span className="font-medium">{request.title ? msgText(i18n, request.titleMsg, request.title) : t("chat.permission.title", { tool })}</span>

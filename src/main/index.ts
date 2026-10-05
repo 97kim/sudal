@@ -1,4 +1,5 @@
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isWithin } from "./path-within";
 import { existsSync, rmSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { randomUUID } from "node:crypto";
@@ -823,7 +824,6 @@ async function startFanout(tabId: string, req: FanoutStartDto): Promise<FanoutSt
   const cwd = sessions.snapshot(tabId).cwd;
   if (!cwd) return { ok: false, error: mt("main.error.cwdRequired") };
   const env = await cliDiscovery().buildEnv();
-  const originTitle = tabTitleOf(tabId);
   const prevActive = workspaces.state().model.activeTabId;
   const fanoutId = randomUUID();
   const variants: FanoutVariant[] = [];
@@ -999,10 +999,6 @@ function deliverControlOpen(req: ControlOpenDto) {
   });
 }
 
-/** POSIX 셸 single-quote 인용: 경로에 $ · 백틱 · 따옴표가 있어도 그대로 전달된다. */
-function shq(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
 
 /** ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트. */
 async function installCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }> {
@@ -1014,9 +1010,10 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
       "#!/bin/sh",
       mt("main.cli.shimComment"),
       // 이 앱의 userData(개발 실행은 이름이 달라 경로도 다르다). 이미 정해 두었으면 그것을 존중한다.
-      `: "\${SUDAL_USERDATA:=${shq(app.getPath("userData")).replace(/^'|'$/g, "")}}"`,
+      // 큰따옴표 안의 기본값이라 큰따옴표 규칙으로 감싼다(작은따옴표로 감쌌다 떼면 $ · 백틱이 그대로 풀린다).
+      `: "\${SUDAL_USERDATA:=${app.getPath("userData").replace(/[\\"$`]/g, "\\$&")}}"`,
       "export SUDAL_USERDATA",
-      `ELECTRON_RUN_AS_NODE=1 exec ${shq(process.execPath)} ${shq(join(cliDir(), "sudal.cjs"))} "$@"`,
+      `ELECTRON_RUN_AS_NODE=1 exec ${shellQuote(process.execPath)} ${shellQuote(join(cliDir(), "sudal.cjs"))} "$@"`,
       "",
     ].join("\n");
     writeFileSync(target, script, { mode: 0o755 });
@@ -1074,7 +1071,7 @@ async function installStatus(): Promise<InstallStatusDto> {
     cli: {
       path: cliPath,
       installed: cliText !== null,
-      current: cliText !== null && cliText.includes(shq(process.execPath)) && cliText.includes(shq(join(cliDir(), "sudal.cjs"))),
+      current: cliText !== null && cliText.includes(shellQuote(process.execPath)) && cliText.includes(shellQuote(join(cliDir(), "sudal.cjs"))),
       onPath: shellPath.split(":").some((p) => p.replace(/\/+$/, "") === dir),
     },
     skills: skillTargets().map((t) => {
@@ -1117,10 +1114,6 @@ function installSkillStub(agent?: "claude" | "codex"): { ok: true; paths: string
 function approveRoot(dir: string) {
   approvedRoots.add(resolve(dir));
 }
-function within(root: string, p: string): boolean {
-  const rel = relative(root, p);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
 function realOrSelf(p: string): string {
   try {
     return realpathSync(p);
@@ -1133,7 +1126,7 @@ function isApprovedDir(dir: string): boolean {
   const p = resolve(dir);
   const pr = realOrSelf(p);
   for (const root of approvedRoots) {
-    if (within(root, p) || within(realOrSelf(root), pr)) return true;
+    if (isWithin(root, p) || isWithin(realOrSelf(root), pr)) return true;
   }
   return false;
 }
@@ -1149,7 +1142,7 @@ function isKnownCwd(cwd: string): boolean {
 function isInsideKnownCwd(dir: string): boolean {
   const p = resolve(dir);
   const pr = realOrSelf(p);
-  for (const k of workspaces.knownCwds()) if (within(k, p) || within(realOrSelf(k), pr)) return true;
+  for (const k of workspaces.knownCwds()) if (isWithin(k, p) || isWithin(realOrSelf(k), pr)) return true;
   return false;
 }
 
@@ -1907,7 +1900,7 @@ function registerIpc() {
     dir: join(app.getPath("userData"), "orchestration"),
     cliCommand: () => {
       const shim = join(app.getPath("home"), ".local", "bin", "sudal");
-      return existsSync(shim) ? "sudal" : `ELECTRON_RUN_AS_NODE=1 ${shq(process.execPath)} ${shq(join(cliDir(), "sudal.cjs"))}`;
+      return existsSync(shim) ? "sudal" : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(process.execPath)} ${shellQuote(join(cliDir(), "sudal.cjs"))}`;
     },
     log: (line) => console.log(line),
     createWorkerTab: async (o) => {
@@ -2196,7 +2189,6 @@ function registerIpc() {
       locale: intlLocale(mainI18n().language as Locale),
     });
     try {
-      const { writeFileSync } = await import("node:fs");
       writeFileSync(r.filePath, md, "utf8");
     } catch (e) {
       throw new Error(mt("main.export.failed", { detail: e instanceof Error ? e.message : String(e) }));
@@ -2215,7 +2207,6 @@ function registerIpc() {
   ipcMain.on(IPC.lspSend, (_e, id: string, message: string) => {
     if (typeof id === "string" && typeof message === "string") lsp.send(id, message);
   });
-  ipcMain.handle(IPC.lspStop, (_e, id: string) => lsp.stop(id));
 
   ipcMain.handle(IPC.snippetsList, () => snippets.list());
   ipcMain.handle(
@@ -2586,7 +2577,6 @@ function registerIpc() {
       ? await dialog.showSaveDialog(win, opts)
       : await dialog.showSaveDialog(opts);
     if (r.canceled || !r.filePath) return null;
-    const { writeFileSync } = await import("node:fs");
     writeFileSync(
       r.filePath,
       usageCsv(usage.records(), filter, pricing()),

@@ -239,7 +239,6 @@ export const IPC = {
   lspSetPath: "lsp:set-path",
   lspStart: "lsp:start",
   lspSend: "lsp:send",
-  lspStop: "lsp:stop",
   lspMessage: "lsp:message",
   lspExit: "lsp:exit",
   fileRename: "file:rename",
@@ -560,7 +559,6 @@ export interface LspApi {
   /** 탭 cwd 를 주면 main 이 저장소 루트를 정해 그 서버를 띄운다((서버, 루트)마다 하나). */
   start(cwd: string, serverId: LspServerId): Promise<{ ok: true; id: string; root: string } | { ok: false; error: string }>;
   send(id: string, message: string): void;
-  stop(id: string): Promise<void>;
   onMessage(listener: (id: string, message: string) => void): () => void;
   onExit(listener: (id: string) => void): () => void;
 }

@@ -235,11 +235,6 @@ export function reopenClosedEditorTab(tabId: string): boolean {
   return true;
 }
 
-/** 되살릴 탭이 있나 — 메뉴·버튼 비활성화용. */
-export function hasClosedEditorTabs(tabId: string): boolean {
-  return (closedStacks.get(tabId)?.length ?? 0) > 0;
-}
-
 export function getEditorDraft(path: string): EditorDraft | null {
   ensureLoaded();
   return drafts.get(path) ?? null;
