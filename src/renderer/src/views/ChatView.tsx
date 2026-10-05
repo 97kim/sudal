@@ -797,6 +797,7 @@ export function ChatView({
                 turnStartedAt={config?.turnStartedAt ?? null}
                 ambientFromBg={config?.ambientFromBg ?? false}
                 sessionId={config?.sessionId ?? null}
+                queuedCount={config?.pendingPrompts.length ?? 0}
               />
             </div>
             </div>

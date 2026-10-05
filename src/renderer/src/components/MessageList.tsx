@@ -34,6 +34,7 @@ export function MessageList({
   sessionId = null,
   ambientFromBg = false,
   loading = false,
+  queuedCount = 0,
 }: {
   tabId: string;
   blocks: Block[];
@@ -55,6 +56,8 @@ export function MessageList({
   turnStartedAt?: number | null;
   /** 기록을 아직 불러오는 중. 빈 대화와 구분해 "대화가 없다" 고 단정하지 않는다. */
   loading?: boolean;
+  /** 응답 중에 보내 대기열에 있는 메시지 수. 목록에는 앞 응답이 끝난 뒤에야 나타난다. */
+  queuedCount?: number;
 }) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -198,15 +201,19 @@ export function MessageList({
     }
   };
   // 사용자가 새 메시지를 보냈으면 맨 아래로 붙인다. 마지막 블록만 보면 응답 첫 블록이 같은 렌더에 함께 들어온 경우를 놓친다.
+  // 응답 중에 보낸 것은 대기열에만 들어가 목록에 아직 없다 — 대기열이 늘어난 것도 보낸 것으로 본다.
   // 그 밖의 새 블록은 붙어 있을 때만 따라간다.
   const prevUserId = useRef(lastUserId);
+  const prevQueued = useRef(queuedCount);
   useEffect(() => {
     if (lastUserId !== prevUserId.current) {
       prevUserId.current = lastUserId;
       if (lastUserId) follow();
     }
+    if (queuedCount > prevQueued.current) follow();
+    prevQueued.current = queuedCount;
     if (stickToBottom.current) scrollToBottom();
-  }, [blocks, thinking, lastUserId]);
+  }, [blocks, thinking, lastUserId, queuedCount]);
   // 내용 높이(스트리밍·이미지·하이라이트)나 목록 영역 높이(입력창이 커지거나 권한 요청이 뜸)가 바뀌어도 따라 내려간다.
   useEffect(() => {
     const content = contentRef.current;

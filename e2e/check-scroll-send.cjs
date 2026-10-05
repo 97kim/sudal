@@ -77,14 +77,24 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   console.log("입력창으로 보낸 직후:", JSON.stringify(typed));
   result("입력창으로 보내도 맨 아래로 간다", typed && typed.gap < 80, `(아래까지 ${typed && typed.gap}px 남음)`);
 
-  // 응답이 도는 중에 한 번 더 보낸다(대기열로 들어가는 경로)
-  await ev(() => { const el = document.querySelector("[data-message-list]"); el.scrollTop = 0; el.dispatchEvent(new Event("scroll")); });
-  await page.waitForTimeout(400);
+  // 응답이 도는 중에 한 번 더 보낸다(대기열로 들어가는 경로). 보낸 메시지는 앞 응답이 끝나야 목록에 나타나므로,
+  // 앞 응답이 아직 흐르는 동안 맨 아래로 왔는지 본다. 앞 응답이 금방 끝나 버리면 검사가 안 되니 긴 응답을 쓴다.
+  await settle();
+  cli("tab", "send", "--tab", tabId, "--text", "1부터 200까지를 마크다운 목록으로 출력해라. 각 줄은 정확히 `- N` 형식이고 다른 말은 하지 마라.");
+  const h0 = (await metrics()).h;
+  for (let i = 0; i < 60 && (await metrics()).h - h0 < 300; i++) await page.waitForTimeout(250);
+  const box = await ev(() => { const r = document.querySelector("[data-message-list]").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.wheel(0, -1500);
+  await page.waitForTimeout(600);
+  const before = await metrics();
   await typeSend("이건 대기열로 들어갈 것이다.");
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(800);
   const queued = await metrics();
-  console.log("응답 중에 보낸 직후:", JSON.stringify(queued));
-  result("응답 중에 보내도 맨 아래로 간다", queued && queued.gap < 80, `(아래까지 ${queued && queued.gap}px 남음)`);
+  const still = (await ev((id) => window.sudal.chat.snapshot(id), tabId)).status;
+  console.log("올린 뒤:", JSON.stringify(before), "· 응답 중에 보낸 직후:", JSON.stringify(queued), "· 상태:", still);
+  result("응답 중에 올려 읽고 있었다", before.gap > 300 && before.pill, `(간격 ${before.gap}px)`);
+  result("응답 중에 보내도 맨 아래로 간다(앞 응답이 아직 도는 중)", still === "running" && queued.gap < 2 && !queued.pill, `(상태 ${still}, 아래까지 ${queued.gap}px)`);
   await settle();
 
   await page.screenshot({ path: E2E + "/shot-scroll-send.png" });
