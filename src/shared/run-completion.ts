@@ -1,6 +1,6 @@
 // "예약 회차가 끝났나" 를 판정한다. 순수 상태 기계 — 신호를 받아 판정만 내린다.
 //
-// 이 규칙은 추측이 아니라 실측에서 나왔다(WORKBENCH_DEBUG_SDK 로 잡은 순서):
+// 이 규칙은 추측이 아니라 실측에서 나왔다(SUDAL_DEBUG_SDK 로 잡은 순서):
 //
 //   정상(백그라운드 후속 턴 있음)
 //     tasks=1 → result(첫 턴) → tasks=0(sdk) → task_notification → 새 턴 → result → 끝

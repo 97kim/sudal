@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { judgeRun, type RunSignal } from "@shared/run-completion";
 
-// 아래 세 순서는 지어낸 것이 아니라 실제 앱에서 잡은 것이다(WORKBENCH_DEBUG_SDK).
+// 아래 세 순서는 지어낸 것이 아니라 실제 앱에서 잡은 것이다(SUDAL_DEBUG_SDK).
 // 규칙을 바꾸려면 먼저 이 순서가 여전히 그러한지부터 확인할 것.
 
 test("실측① 단순 턴 — 작업 목록이 아예 오지 않는다", () => {

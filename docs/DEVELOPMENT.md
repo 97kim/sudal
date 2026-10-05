@@ -12,10 +12,10 @@ yarn typecheck  # main/preload/shared + renderer
 yarn package    # ad-hoc 서명 arm64 DMG (release/sudal-<version>-arm64.dmg)
 ```
 
-- `WORKBENCH_DEV_CWD=/path/to/repo yarn dev` — 워크스페이스를 미리 추가하고 탭을 하나 연다.
-- `WORKBENCH_MAX_CONCURRENT=4` — 동시에 실행하는 턴 수 상한(기본 4). 넘으면 탭 상태가 "대기열"이 된다.
+- `SUDAL_DEV_CWD=/path/to/repo yarn dev` — 워크스페이스를 미리 추가하고 탭을 하나 연다.
+- `SUDAL_MAX_CONCURRENT=4` — 동시에 실행하는 턴 수 상한(기본 4). 넘으면 탭 상태가 "대기열"이 된다.
 - `yarn dev -- --remote-debugging-port=9333` — CDP 로 UI 자동화/디버깅.
-- `WORKBENCH_DEBUG_SDK=1` — Claude CLI stderr 를 콘솔에 출력.
+- `SUDAL_DEBUG_SDK=1` — Claude CLI stderr 를 콘솔에 출력.
 - `SUDAL_APPROVED_ROOTS=경로:경로` — 검증용으로 작업 경로를 미리 승인한다.
 
 ## 릴리스

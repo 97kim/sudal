@@ -1212,7 +1212,7 @@ function appSettings(): AppSettingsDto {
     warmTarget: raw.warmTarget === "off" ? "off" : "active",
     sessionIdleMinutes: clamp(raw.sessionIdleMinutes, SESSION_IDLE_MINUTES_MIN, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_DEFAULT),
     // 환경변수는 설정 파일에 값이 없을 때의 기본값으로만 쓴다.
-    maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.WORKBENCH_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
+    maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.SUDAL_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
     keepBrowserLogin: raw.keepBrowserLogin !== false,
     worktreeDir: worktreeRootDir(),
@@ -1387,11 +1387,11 @@ function bootstrap() {
     },
     maxConcurrent: appSettings().maxConcurrent,
     log(tabId, line) {
-      if (process.env.WORKBENCH_DEBUG_SDK)
+      if (process.env.SUDAL_DEBUG_SDK)
         console.log(`[sdk:${tabId}] ${line}`);
     },
     onBackgroundTasks(tabId, sessionId, tasks, source) {
-      if (process.env.WORKBENCH_DEBUG_SDK) console.log(`[bgtasks ${tabId.slice(0, 6)}] ${tasks.length}개 출처=${source}`);
+      if (process.env.SUDAL_DEBUG_SDK) console.log(`[bgtasks ${tabId.slice(0, 6)}] ${tasks.length}개 출처=${source}`);
       scheduleEngine?.onSignal(tabId, { kind: "tasks", count: tasks.length, source });
       // 늘 "살아 있는 전체" 라 갈아 끼운다. 턴이 끝난 뒤에도 오므로, 노는 것처럼 보이던 구간이 채워진다.
       bgTasks.replace(tabId, sessionId, sessions.snapshot(tabId).cwd ?? "", tasks);
@@ -1534,8 +1534,8 @@ function bootstrap() {
   void usage.scan().then(() => usage.watch());
 
   // 개발 편의: 워크스페이스를 환경변수로 미리 추가 (디렉토리 선택 다이얼로그 생략).
-  if (!app.isPackaged && process.env.WORKBENCH_DEV_CWD) {
-    workspaces.addWorkspace(process.env.WORKBENCH_DEV_CWD);
+  if (!app.isPackaged && process.env.SUDAL_DEV_CWD) {
+    workspaces.addWorkspace(process.env.SUDAL_DEV_CWD);
   }
 }
 

@@ -394,10 +394,10 @@ async function pump(s: LiveSession) {
   try {
     for await (const message of s.q) handleMessage(s, message);
     // 예외 없이 끝났다 = 프로세스가 스스로 스트림을 닫았다.
-    if (process.env.WORKBENCH_DEBUG_SDK) console.log(`[sdkend ${s.key.slice(0, 6)}] 정상종료(EOF) turn=${s.turn ? "있음" : "없음"}`);
+    if (process.env.SUDAL_DEBUG_SDK) console.log(`[sdkend ${s.key.slice(0, 6)}] 정상종료(EOF) turn=${s.turn ? "있음" : "없음"}`);
     s.onStreamEnded?.(s.closing ?? mt("session.msg.streamClosed"), s.closing !== null);
   } catch (e) {
-    if (process.env.WORKBENCH_DEBUG_SDK)
+    if (process.env.SUDAL_DEBUG_SDK)
       console.log(`[sdkend ${s.key.slice(0, 6)}] 예외 turn=${s.turn ? "있음" : "없음"} ${e instanceof Error ? e.message : String(e)}`);
     s.onStreamEnded?.(s.closing ?? (e instanceof Error ? e.message : String(e)), s.closing !== null);
     s.turn?.reject(e);
@@ -416,8 +416,8 @@ async function pump(s: LiveSession) {
 function handleMessage(s: LiveSession, message: SDKMessage) {
   const t = s.turn;
   // 진단용: 무엇이 어떤 순서로 오는지. 회차 완료 판정처럼 "순서" 가 답인 문제는 이게 없으면 추측이 된다.
-  // WORKBENCH_DEBUG_SDK 일 때만 찍는다.
-  if (process.env.WORKBENCH_DEBUG_SDK) {
+  // SUDAL_DEBUG_SDK 일 때만 찍는다.
+  if (process.env.SUDAL_DEBUG_SDK) {
     const m = message as { type: string; subtype?: string; state?: string; status?: string; is_error?: boolean; tasks?: unknown[] };
     const extra = [
       m.subtype ? `subtype=${m.subtype}` : "",
