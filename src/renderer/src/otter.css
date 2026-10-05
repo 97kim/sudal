@@ -17,7 +17,7 @@ body {
 }
 /* Sudal 창을 보고 있으면 같은 정보가 앱 안에 있으니 흐리게 둔다. */
 #stage.dim {
-  opacity: 0.4;
+  opacity: 0.45;
 }
 #stage.dim:hover {
   opacity: 1;
@@ -25,34 +25,30 @@ body {
 
 #otter {
   position: absolute;
-  right: 14px;
-  bottom: 10px;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: #1b2027;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), inset 0 0 0 2px rgb(255 255 255 / 0.08);
+  right: 12px;
+  bottom: 4px;
+  width: 92px;
+  height: 108px;
   cursor: pointer;
-  transform-origin: 50% 90%;
-  animation: float 3.2s ease-in-out infinite;
+}
+#otter svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* 어떤 바탕 화면에서도 윤곽이 보이게 */
+  filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.25)) drop-shadow(0 3px 6px rgb(0 0 0 / 0.25));
 }
 #stage.dragging #otter {
   cursor: grabbing;
-  animation-play-state: paused;
 }
-
-.face {
-  position: absolute;
-  inset: 12px;
-  background: #f4efe6;
-  -webkit-mask: var(--logo) center / contain no-repeat;
-  mask: var(--logo) center / contain no-repeat;
+#stage.dragging #otter * {
+  animation-play-state: paused !important;
 }
 
 #badge {
   position: absolute;
-  top: -2px;
-  right: -2px;
+  top: 2px;
+  right: 2px;
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
@@ -68,8 +64,8 @@ body {
 
 #bubble {
   position: absolute;
-  right: 18px;
-  bottom: 92px;
+  right: 22px;
+  bottom: 112px;
   max-width: 200px;
   padding: 7px 11px;
   border-radius: 12px 12px 4px 12px;
@@ -91,46 +87,103 @@ body {
   display: none;
 }
 
-/* 기분별 움직임. 그림을 제대로 그리기 전까지는 같은 얼굴에 움직임과 테두리 색만 다르다. */
-#otter[data-mood="working"] {
-  animation: knock 0.7s ease-in-out infinite;
-}
-#otter[data-mood="waiting"] {
-  animation: wave 1s ease-in-out infinite;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 3px #f2b84b;
-}
-#otter[data-mood="done"] {
-  animation: hop 1.6s ease-in-out infinite;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 3px #4fbf8a;
-}
-#otter[data-mood="error"] {
-  animation: droop 2.4s ease-in-out infinite;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 3px #e0625a;
-}
-#otter[data-mood="limit"] {
-  animation: float 5s ease-in-out infinite;
-  filter: saturate(0.4) brightness(0.85);
-}
+/* ===== 그림 ===== */
+.fur { fill: #8a5a3b; }
+.fur.dark { fill: #6e452c; }
+.cream { fill: #f2dfc4; }
+.inner { fill: #d9a98a; }
+.ink { fill: #23180f; }
+.glint { fill: #ffffff; }
+.blush { fill: #e99a8b; opacity: 0.55; }
+.stroke { fill: none; stroke: #23180f; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.whisker { stroke-width: 1.2; opacity: 0.7; }
+.shadow { fill: rgb(0 0 0 / 0.22); }
+.stone { fill: #8f949c; }
+.shell path { fill: #f6c9a4; stroke: #c98a62; stroke-width: 1; stroke-linejoin: round; }
+.shell .line { fill: none; stroke: #c98a62; stroke-width: 1; stroke-linecap: round; }
+.zzz text { fill: #4f5bd5; font: 700 11px "Inter Variable", system-ui, sans-serif; }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0) rotate(-2deg); }
-  50% { transform: translateY(-5px) rotate(2deg); }
+/* 회전·이동의 기준점(SVG 좌표). 팔은 어깨, 머리는 목, 몸 전체는 발. */
+.whole { transform-origin: 60px 132px; animation: bob 3.2s ease-in-out infinite; }
+.head { transform-origin: 60px 74px; }
+.arm-r { transform-origin: 74px 84px; }
+.arm-l { transform-origin: 46px 84px; }
+.ears { transform-origin: 60px 33px; }
+
+/* 기본으로 감춰 두는 것들. 기분마다 필요한 것만 켠다. */
+.eyes.closed,
+.eyes.sad,
+.stone,
+.shell,
+.zzz { display: none; }
+.eyes.open { transform-origin: 60px 47px; animation: blink 4.6s infinite; }
+
+/* 일하는 중: 배 위 조개를 돌로 두드린다 */
+#otter[data-mood="working"] .belly-shell,
+#otter[data-mood="working"] .stone { display: inline; }
+#otter[data-mood="working"] .arm-r { animation: knock 0.55s ease-in-out infinite; }
+#otter[data-mood="working"] .whole { animation-duration: 1.6s; }
+
+/* 기다림: 한 팔을 들어 흔든다 */
+#otter[data-mood="waiting"] .arm-r { animation: wave 0.9s ease-in-out infinite; }
+#otter[data-mood="waiting"] .whole { animation: bounce 0.9s ease-in-out infinite; }
+
+/* 끝남: 조개를 머리 위로 들고 폴짝 */
+#otter[data-mood="done"] .paw-shell { display: inline; }
+#otter[data-mood="done"] .arm-r { transform: translate(7px, 0) rotate(-125deg); }
+#otter[data-mood="done"] .whole { animation: hop 1.4s ease-in-out infinite; }
+
+/* 오류: 눈이 처지고 고개와 귀가 내려간다 */
+#otter[data-mood="error"] .eyes.open { display: none; }
+#otter[data-mood="error"] .eyes.sad { display: inline; }
+#otter[data-mood="error"] .mouth { transform: translateY(2px) scaleY(-1); transform-origin: 60px 63px; }
+#otter[data-mood="error"] .head { transform: rotate(-6deg) translateY(3px); }
+#otter[data-mood="error"] .ears { transform: translateY(3px); }
+#otter[data-mood="error"] .whole { animation: droop 3s ease-in-out infinite; }
+
+/* 한도 대기: 눈을 감고 존다 */
+#otter[data-mood="limit"] .eyes.open { display: none; }
+#otter[data-mood="limit"] .eyes.closed,
+#otter[data-mood="limit"] .zzz { display: inline; }
+#otter[data-mood="limit"] .zzz { animation: zzz 2.4s ease-in-out infinite; }
+#otter[data-mood="limit"] .whole { animation: breathe 3.6s ease-in-out infinite; }
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-3px) rotate(1.5deg); }
+}
+@keyframes blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
 }
 @keyframes knock {
   0%, 100% { transform: rotate(0); }
-  30% { transform: rotate(-7deg); }
+  45% { transform: rotate(-26deg); }
   60% { transform: rotate(4deg); }
 }
+/* 어깨를 바깥으로 옮긴 뒤 들어 올린다 — 그대로 돌리면 팔이 얼굴을 가린다. */
 @keyframes wave {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  25% { transform: translateY(-6px) rotate(-10deg); }
-  75% { transform: translateY(-6px) rotate(10deg); }
+  0%, 100% { transform: translate(10px, 0) rotate(-130deg); }
+  50% { transform: translate(10px, 0) rotate(-155deg); }
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 @keyframes hop {
-  0%, 60%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-12px); }
+  0%, 55%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-10px); }
 }
 @keyframes droop {
-  0%, 100% { transform: rotate(8deg) translateY(2px); }
-  50% { transform: rotate(5deg) translateY(4px); }
+  0%, 100% { transform: translateY(1px); }
+  50% { transform: translateY(3px); }
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.015, 0.985); }
+}
+@keyframes zzz {
+  0% { opacity: 0; transform: translateY(4px); }
+  40%, 70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
 }

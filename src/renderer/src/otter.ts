@@ -1,13 +1,11 @@
-// 화면에 떠 있는 수달(otter.html). 그림은 지금은 로고를 쓰는 임시본이고, 기분마다 움직임만 다르다.
+// 화면에 떠 있는 수달(otter.html). 그림은 otter.html 의 SVG, 기분별 몸짓은 otter.css 가 맡는다.
 import "./otter.css";
-import logo from "./assets/logo.png";
 import type { OtterViewDto } from "@shared/ipc";
 
 const otter = document.getElementById("otter")!;
 const bubble = document.getElementById("bubble")!;
 const badge = document.getElementById("badge")!;
 const stage = document.getElementById("stage")!;
-otter.querySelector<HTMLElement>(".face")!.style.setProperty("--logo", `url(${logo})`);
 
 window.otter.onState((v: OtterViewDto) => {
   otter.dataset.mood = v.mood;
