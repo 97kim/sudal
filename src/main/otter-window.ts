@@ -49,7 +49,13 @@ export class OtterWindow {
 
   /** 설정에 따라 띄우거나 내린다. */
   setEnabled(on: boolean) {
-    if (on && !this.win) this.create();
+    if (on && !this.win) {
+      // 끈 뒤 다시 켜는 것은 "보여 달라" 는 뜻이다 — 걸어 둔 숨기기를 풀고 띄운다.
+      this.snoozedUntil = 0;
+      if (this.snoozeTimer) clearTimeout(this.snoozeTimer);
+      this.snoozeTimer = null;
+      this.create();
+    }
     else if (!on && this.win) {
       this.win.destroy();
       this.win = null;
@@ -142,11 +148,14 @@ function defaultPosition(): { x: number; y: number } {
   return { x: wa.x + wa.width - WIDTH - 16, y: wa.y + wa.height - HEIGHT - 8 };
 }
 
-/** 저장된 위치가 지금 연결된 화면 밖이면(모니터를 뺐다) 기본 위치로. */
+/**
+ * 저장된 위치를 가장 가까운 화면의 작업 영역 안으로 끌어넣는다. 모니터를 빼거나 배치를 바꾸면 저장된 자리가 화면 밖일 수 있다.
+ * 중심만 보면 안 된다 — 수달은 창 오른쪽 아래에 있어서 중심이 화면 안이어도 수달은 밖에 그려질 수 있다.
+ */
 function onScreen(p: { x: number; y: number }): { x: number; y: number } {
-  const inside = screen.getAllDisplays().some((d) => {
-    const a = d.workArea;
-    return p.x + WIDTH / 2 >= a.x && p.x + WIDTH / 2 <= a.x + a.width && p.y + HEIGHT / 2 >= a.y && p.y + HEIGHT / 2 <= a.y + a.height;
-  });
-  return inside ? p : defaultPosition();
+  const a = screen.getDisplayNearestPoint({ x: Math.round(p.x + WIDTH / 2), y: Math.round(p.y + HEIGHT / 2) }).workArea;
+  return {
+    x: Math.min(Math.max(p.x, a.x), a.x + a.width - WIDTH),
+    y: Math.min(Math.max(p.y, a.y), a.y + a.height - HEIGHT),
+  };
 }

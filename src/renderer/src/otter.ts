@@ -89,11 +89,24 @@ const onUp = () => {
   if (dragging) window.otter.dragEnd();
   else window.otter.click();
   dragging = false;
+  if (!otter.matches(":hover") && !bubble.matches(":hover")) window.otter.setInteractive(false);
+};
+// 포인터가 취소되면(입력 장치가 끊기는 등) 클릭으로 치지 않고 정리한다. 끌던 중이면 그 자리를 저장하고,
+// 마우스가 수달 위에 없으면 클릭 통과를 되돌린다 — pointerleave 는 누른 동안 무시했으므로 여기서 해야 한다.
+const onCancel = () => {
+  if (!pressed) return;
+  pressed = false;
+  stage.classList.remove("dragging");
+  if (dragging) window.otter.dragEnd();
+  dragging = false;
+  if (!otter.matches(":hover") && !bubble.matches(":hover")) window.otter.setInteractive(false);
 };
 for (const el of [otter, bubble]) {
   el.addEventListener("pointerdown", onDown);
   el.addEventListener("pointermove", onMove);
   el.addEventListener("pointerup", onUp);
+  el.addEventListener("pointercancel", onCancel);
+  el.addEventListener("lostpointercapture", onCancel);
   el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     window.otter.menu();

@@ -242,6 +242,19 @@ async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
 // ===== Broadcast helpers =====
 
 let mainWindow: BrowserWindow | null = null;
+/** 살아 있는 메인 창. 닫은 뒤의 객체나 수달 창은 아니다. */
+function liveMainWindow(): BrowserWindow | null {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+/** 메인 창을 앞으로. 닫아 두었으면 새로 만든다(macOS 는 창을 다 닫아도 앱이 살아 있다). */
+function showMainWindow(): { win: BrowserWindow; created: boolean } {
+  const live = liveMainWindow();
+  const win = live ?? (mainWindow = createWindow());
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return { win, created: !live };
+}
 let otter: OtterWindow | null = null;
 let jobWatcher: BackgroundJobWatcher | null = null;
 /** Claude Code 가 백그라운드로 돌리는 일(명령·하위 에이전트). SDK 가 살아 있는 전체 집합을 준다. */
@@ -572,12 +585,7 @@ function notify(title: string, body: string, tabId?: string) {
   console.log(`[notify] ${title} — ${body.slice(0, 60)}`);
   const n = new Notification({ title, body: body.slice(0, 200), silent: false });
   n.on("click", () => {
-    const win = mainWindow ?? BrowserWindow.getAllWindows()[0];
-    if (win && !win.isDestroyed()) {
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-    }
+    showMainWindow();
     if (tabId && workspaces.tab(tabId)) workspaces.activateTab(tabId);
   });
   n.show();
@@ -1007,7 +1015,7 @@ function verifySuggestions(tabId: string): string[] {
 
 /** 렌더러에 화면 동작을 전달한다. macOS 에서 창을 다 닫아 둔 상태면 창을 만든 뒤 렌더러가 준비되면 보낸다. */
 function deliverControlOpen(req: ControlOpenDto) {
-  if (BrowserWindow.getAllWindows().length > 0) {
+  if (liveMainWindow()) {
     sendAll(IPC.controlOpen, req);
     return;
   }
@@ -1819,22 +1827,16 @@ function registerIpc() {
       );
     },
     bubble: otterBubble,
-    appFocused: () => BrowserWindow.getFocusedWindow() === mainWindow && !!mainWindow,
+    appFocused: () => !!liveMainWindow() && BrowserWindow.getFocusedWindow() === mainWindow,
     open: (tabId) => {
-      const win = mainWindow ?? BrowserWindow.getAllWindows()[0];
-      if (win && !win.isDestroyed()) {
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
-      }
+      showMainWindow();
       if (tabId && workspaces.tab(tabId)) workspaces.activateTab(tabId);
     },
     openSettings: () => {
-      const win = mainWindow;
-      if (!win || win.isDestroyed()) return;
-      win.show();
-      win.focus();
-      win.webContents.send(IPC.shortcut, "open-settings");
+      const { win, created } = showMainWindow();
+      // 새로 만든 창이면 렌더러가 단축키 리스너를 달 때까지 기다린다(deliverControlOpen 과 같은 이유)
+      if (created) win.webContents.once("did-finish-load", () => setTimeout(() => win.webContents.send(IPC.shortcut, "open-settings"), 400));
+      else win.webContents.send(IPC.shortcut, "open-settings");
     },
     turnOff: () => {
       store.saveSettings({ ...store.loadSettings<Record<string, unknown>>({}), otter: false });
@@ -2828,13 +2830,7 @@ hardenWebviews();
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    const win = mainWindow ?? BrowserWindow.getAllWindows()[0];
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  });
+  app.on("second-instance", () => showMainWindow());
 }
 app.whenReady().then(async () => {
   bootstrap();
@@ -2865,8 +2861,9 @@ app.whenReady().then(async () => {
     );
   }
 
+  // 수달 창은 창으로 치지 않는다 — 수달만 떠 있을 때 Dock 을 누르면 메인 창을 다시 연다.
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+    if (!liveMainWindow()) mainWindow = createWindow();
   });
 });
 

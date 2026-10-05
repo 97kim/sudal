@@ -1652,7 +1652,10 @@ export class SessionManager {
     s.limitAttempts = 0;
     this.deps.store?.resetThread(tabId);
     this.deps.onMeta?.(tabId, { sessionId: null, title: "" });
-    return this.snapshot(tabId);
+    // 대기열·한도 대기가 지워졌다 — 이 탭을 보는 다른 곳(분할의 다른 칸, 수달)도 새 상태를 받게 알린다.
+    const snap = this.snapshot(tabId);
+    this.deps.onSnapshot?.(tabId, snap);
+    return snap;
   }
 
   /** 탭을 닫을 때: 중단하고 메모리에서 내린다. 디스크의 스레드는 남는다(다시 열기). */
