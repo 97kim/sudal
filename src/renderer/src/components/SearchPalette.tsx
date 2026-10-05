@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SearchResultDto } from "@shared/ipc";
 import { Icon } from "./Icon";
+import { Modal } from "./Modal";
 
 interface Row {
   tabId: string;
@@ -92,72 +93,63 @@ export function SearchPalette({
   const total = results.reduce((n, r) => n + r.hits.length, 0);
 
   return (
-    <div
-      className="absolute inset-0 z-30 flex items-start justify-center bg-overlay/50 pt-24"
-      onClick={onClose}
-      data-search-palette
-    >
-      <div
-        className="w-[640px] overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-          <Icon name="search" size={14} className="text-muted" />
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("nav.search.placeholder")}
-            className="flex-1 bg-transparent outline-none placeholder:text-muted"
-            style={{ userSelect: "text" }}
-          />
-          {searching && (
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
-          )}
-          <kbd className="label">esc</kbd>
-        </div>
-        <ul ref={listRef} className="max-h-[420px] overflow-y-auto p-2">
-          {rows.length === 0 && (
-            <li className="px-3 py-6 text-center text-muted">
-              {query.trim()
-                ? searching
-                  ? t("nav.search.searching")
-                  : t("nav.search.noMatch")
-                : t("nav.search.hint")}
-            </li>
-          )}
-          {rows.map((row, i) => (
-            <li key={`${row.tabId}:${row.blockId}`}>
-              {row.first && (
-                <div className="mt-2 flex items-baseline gap-2 px-3 pb-1 pt-1 first:mt-0">
-                  <span className="truncate font-medium">{row.title}</span>
-                  <span className="label shrink-0 text-muted">{row.workspaceName}</span>
-                  {!row.open && <span className="label shrink-0 text-muted-2">{t("nav.search.closed")}</span>}
-                </div>
-              )}
-              <div
-                onMouseEnter={() => setCursor(i)}
-                onClick={() => onPick(row.tabId, row.blockId)}
-                className={`flex cursor-default items-start gap-2 rounded-md px-3 py-1.5 ${
-                  cursor === i ? "bg-panel-2" : ""
-                }`}
-                data-search-hit
-              >
-                <span
-                  className={`label mt-0.5 w-7 shrink-0 ${row.kind === "user" ? "text-accent" : row.kind === "tool" ? "text-muted-2" : "text-muted"}`}
-                >
-                  {t(`nav.search.kind.${row.kind}`)}
-                </span>
-                <span className="min-w-0 flex-1 text-[12.5px] text-fg">{row.snippet}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <div className="label flex justify-between border-t border-line px-4 py-2">
-          <span>{t("nav.search.navHint")}</span>
-          <span>{total > 0 ? t("nav.search.summary", { count: results.length, hits: total }) : ""}</span>
-        </div>
+    <Modal variant="palette" onClose={onClose} className="w-[640px] overflow-hidden" data-search-palette>
+      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+        <Icon name="search" size={14} className="text-muted" />
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("nav.search.placeholder")}
+          className="flex-1 bg-transparent outline-none placeholder:text-muted"
+          style={{ userSelect: "text" }}
+        />
+        {searching && (
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
+        )}
+        <kbd className="label">esc</kbd>
       </div>
-    </div>
+      <ul ref={listRef} className="max-h-[420px] overflow-y-auto p-2">
+        {rows.length === 0 && (
+          <li className="px-3 py-6 text-center text-muted">
+            {query.trim()
+              ? searching
+                ? t("nav.search.searching")
+                : t("nav.search.noMatch")
+              : t("nav.search.hint")}
+          </li>
+        )}
+        {rows.map((row, i) => (
+          <li key={`${row.tabId}:${row.blockId}`}>
+            {row.first && (
+              <div className="mt-2 flex items-baseline gap-2 px-3 pb-1 pt-1 first:mt-0">
+                <span className="truncate font-medium">{row.title}</span>
+                <span className="label shrink-0 text-muted">{row.workspaceName}</span>
+                {!row.open && <span className="label shrink-0 text-muted-2">{t("nav.search.closed")}</span>}
+              </div>
+            )}
+            <div
+              onMouseEnter={() => setCursor(i)}
+              onClick={() => onPick(row.tabId, row.blockId)}
+              className={`flex cursor-default items-start gap-2 rounded-md px-3 py-1.5 ${
+                cursor === i ? "bg-panel-2" : ""
+              }`}
+              data-search-hit
+            >
+              <span
+                className={`label mt-0.5 w-7 shrink-0 ${row.kind === "user" ? "text-accent" : row.kind === "tool" ? "text-muted-2" : "text-muted"}`}
+              >
+                {t(`nav.search.kind.${row.kind}`)}
+              </span>
+              <span className="min-w-0 flex-1 text-[12.5px] text-fg">{row.snippet}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="label flex justify-between border-t border-line px-4 py-2">
+        <span>{t("nav.search.navHint")}</span>
+        <span>{total > 0 ? t("nav.search.summary", { count: results.length, hits: total }) : ""}</span>
+      </div>
+    </Modal>
   );
 }

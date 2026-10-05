@@ -9,6 +9,7 @@ import { gitResultText, type GitChangesState } from "../hooks/useGitChanges";
 import { buildDiff, CodeTable, DiffTable, highlight } from "./FileViewer";
 import { Icon } from "./Icon";
 import { CheckMark, KindBadge } from "./CheckMark";
+import { Modal } from "./Modal";
 
 const KIND_CLASS: Record<GitChangeDto["kind"], string> = {
   added: "text-ok",
@@ -85,189 +86,184 @@ export function ChangeReview({
   const total = g.changes.reduce((n, c) => ({ a: n.a + c.added, d: n.d + c.deleted }), { a: 0, d: 0 });
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-overlay/60 p-5" onClick={onClose} data-change-review>
-      <div
-        className="flex h-full w-full max-w-[1280px] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 border-b border-line px-5 py-3">
-          <Icon name="branch" size={15} className="shrink-0 text-muted" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-semibold">{t("panel.review.title")}</div>
-            <div className="mono mt-0.5 text-[10.5px] text-muted">
-              {g.git?.name ?? cwd}
-              {g.git?.branch ? ` · ${g.git.branch}` : ""} · {t("panel.review.fileCount", { count: g.changes.length })} ·{" "}
-              <span className="text-ok">+{total.a}</span> <span className="text-err">−{total.d}</span>
-            </div>
+    <Modal variant="window" onClose={onClose} className="flex h-full w-full max-w-[1280px] flex-col overflow-hidden" data-change-review>
+      <div className="flex items-center gap-3 border-b border-line px-5 py-3">
+        <Icon name="branch" size={15} className="shrink-0 text-muted" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-semibold">{t("panel.review.title")}</div>
+          <div className="mono mt-0.5 text-[10.5px] text-muted">
+            {g.git?.name ?? cwd}
+            {g.git?.branch ? ` · ${g.git.branch}` : ""} · {t("panel.review.fileCount", { count: g.changes.length })} ·{" "}
+            <span className="text-ok">+{total.a}</span> <span className="text-err">−{total.d}</span>
           </div>
-          <button onClick={onClose} className="rounded-md border border-line p-1.5 text-muted hover:text-fg" title={t("panel.review.closeTitle")}>
-            <Icon name="x" size={14} />
-          </button>
         </div>
+        <button onClick={onClose} className="rounded-md border border-line p-1.5 text-muted hover:text-fg" title={t("panel.review.closeTitle")}>
+          <Icon name="x" size={14} />
+        </button>
+      </div>
 
-        <div className="flex min-h-0 flex-1">
-          {/* 파일 목록 */}
-          <div className="flex w-[300px] shrink-0 flex-col border-r border-line">
-            <div className="flex items-center justify-between px-3 py-2 text-[10.5px] text-muted">
-              <span>{t("panel.review.commitTargets", { count: g.selectedPaths.length })}</span>
-              <button
-                onClick={() => g.selectAll(g.selectedPaths.length !== g.changes.length)}
-                className="rounded px-1 hover:bg-panel-2 hover:text-fg"
-              >
-                {g.selectedPaths.length === g.changes.length ? t("panel.changes.deselectAll") : t("panel.changes.selectAll")}
-              </button>
-            </div>
-            <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-review-list>
-              {g.changes.length === 0 && <li className="px-2 py-6 text-center text-muted">{t("panel.changes.none")}</li>}
-              {g.changes.map((c) => {
-                const label = t(`panel.changes.kind.${c.kind}`);
-                const cls = KIND_CLASS[c.kind];
-                const active = c.path === current;
-                return (
-                  <li key={c.path} data-review-file={c.path}>
-                    <div
-                      onClick={() => setCurrent(c.path)}
-                      className={`group flex cursor-default items-start gap-2 rounded-md px-2 py-1.5 ${
-                        active ? "bg-panel-2" : "hover:bg-panel-2/60"
-                      }`}
+      <div className="flex min-h-0 flex-1">
+        {/* 파일 목록 */}
+        <div className="flex w-[300px] shrink-0 flex-col border-r border-line">
+          <div className="flex items-center justify-between px-3 py-2 text-[10.5px] text-muted">
+            <span>{t("panel.review.commitTargets", { count: g.selectedPaths.length })}</span>
+            <button
+              onClick={() => g.selectAll(g.selectedPaths.length !== g.changes.length)}
+              className="rounded px-1 hover:bg-panel-2 hover:text-fg"
+            >
+              {g.selectedPaths.length === g.changes.length ? t("panel.changes.deselectAll") : t("panel.changes.selectAll")}
+            </button>
+          </div>
+          <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-review-list>
+            {g.changes.length === 0 && <li className="px-2 py-6 text-center text-muted">{t("panel.changes.none")}</li>}
+            {g.changes.map((c) => {
+              const label = t(`panel.changes.kind.${c.kind}`);
+              const cls = KIND_CLASS[c.kind];
+              const active = c.path === current;
+              return (
+                <li key={c.path} data-review-file={c.path}>
+                  <div
+                    onClick={() => setCurrent(c.path)}
+                    className={`group flex cursor-default items-start gap-2 rounded-md px-2 py-1.5 ${
+                      active ? "bg-panel-2" : "hover:bg-panel-2/60"
+                    }`}
+                  >
+                    <CheckMark
+                      checked={g.selected.has(c.path)}
+                      onToggle={() => g.toggle(c.path)}
+                      label={t("panel.changes.includeInCommit", { path: c.path })}
+                      className="mt-[1px]"
+                    />
+                    <KindBadge kind={c.kind} />
+                    <span className={`min-w-0 flex-1 ${g.selected.has(c.path) ? "" : "opacity-55"}`}>
+                      <span className="mono block truncate text-[11.5px] text-fg" title={c.path}>
+                        {c.path}
+                      </span>
+                      <span className="mono text-[10px] tabular-nums">
+                        <span className={cls}>{label}</span>
+                        {c.added > 0 && <span className="ml-1.5 text-ok">+{c.added}</span>}
+                        {c.deleted > 0 && <span className="ml-1 text-err">−{c.deleted}</span>}
+                      </span>
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmRevert(c.path);
+                      }}
+                      disabled={!canCommit || g.busy !== null}
+                      className="rounded p-1 text-muted opacity-0 hover:bg-err-bg hover:text-err group-hover:opacity-100 disabled:opacity-0"
+                      title={t("panel.review.revertTitle")}
+                      data-review-revert
                     >
-                      <CheckMark
-                        checked={g.selected.has(c.path)}
-                        onToggle={() => g.toggle(c.path)}
-                        label={t("panel.changes.includeInCommit", { path: c.path })}
-                        className="mt-[1px]"
-                      />
-                      <KindBadge kind={c.kind} />
-                      <span className={`min-w-0 flex-1 ${g.selected.has(c.path) ? "" : "opacity-55"}`}>
-                        <span className="mono block truncate text-[11.5px] text-fg" title={c.path}>
-                          {c.path}
-                        </span>
-                        <span className="mono text-[10px] tabular-nums">
-                          <span className={cls}>{label}</span>
-                          {c.added > 0 && <span className="ml-1.5 text-ok">+{c.added}</span>}
-                          {c.deleted > 0 && <span className="ml-1 text-err">−{c.deleted}</span>}
-                        </span>
+                      <Icon name="refresh" size={12} />
+                    </button>
+                  </div>
+                  {confirmRevert === c.path && (
+                    <div className="mx-1 mb-1 flex items-center gap-2 rounded-md border border-err/40 bg-err-bg px-2 py-1.5 text-[11px] text-err" data-review-confirm>
+                      <span className="min-w-0 flex-1">
+                        {c.kind === "added" ? t("panel.review.confirmDelete") : t("panel.review.confirmDiscard")}
                       </span>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmRevert(c.path);
+                        onClick={() => {
+                          setConfirmRevert(null);
+                          void g.revert(c.path);
                         }}
-                        disabled={!canCommit || g.busy !== null}
-                        className="rounded p-1 text-muted opacity-0 hover:bg-err-bg hover:text-err group-hover:opacity-100 disabled:opacity-0"
-                        title={t("panel.review.revertTitle")}
-                        data-review-revert
+                        className="rounded bg-err px-2 py-0.5 font-medium text-white hover:opacity-90"
+                        data-review-confirm-yes
                       >
-                        <Icon name="refresh" size={12} />
+                        {t("panel.review.discard")}
+                      </button>
+                      <button onClick={() => setConfirmRevert(null)} className="rounded px-1.5 py-0.5 hover:bg-err/10">
+                        {t("common.cancel")}
                       </button>
                     </div>
-                    {confirmRevert === c.path && (
-                      <div className="mx-1 mb-1 flex items-center gap-2 rounded-md border border-err/40 bg-err-bg px-2 py-1.5 text-[11px] text-err" data-review-confirm>
-                        <span className="min-w-0 flex-1">
-                          {c.kind === "added" ? t("panel.review.confirmDelete") : t("panel.review.confirmDiscard")}
-                        </span>
-                        <button
-                          onClick={() => {
-                            setConfirmRevert(null);
-                            void g.revert(c.path);
-                          }}
-                          className="rounded bg-err px-2 py-0.5 font-medium text-white hover:opacity-90"
-                          data-review-confirm-yes
-                        >
-                          {t("panel.review.discard")}
-                        </button>
-                        <button onClick={() => setConfirmRevert(null)} className="rounded px-1.5 py-0.5 hover:bg-err/10">
-                          {t("common.cancel")}
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* diff */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            {currentChange && (
-              <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-[11px] text-muted">
-                <span className="mono truncate text-fg">{currentChange.path}</span>
-                {currentChange.oldPath && <span className="mono truncate">← {currentChange.oldPath}</span>}
-                <span className={`label ml-auto shrink-0 ${KIND_CLASS[currentChange.kind]}`}>
-                  {t(`panel.changes.kind.${currentChange.kind}`)}
-                </span>
-              </div>
-            )}
-            <div className="min-h-0 flex-1 overflow-auto bg-inset">
-              {!current && <Empty>{t("panel.review.pickFile")}</Empty>}
-              {current && fileError && <Empty>{t("panel.review.readFailed", { error: fileError })}</Empty>}
-              {current && !fileError && !file && <Empty>{t("common.loading")}</Empty>}
-              {file && file.binary && <Empty>{t("panel.review.binary")}</Empty>}
-              {file && file.tooLarge && <Empty>{t("panel.review.tooLarge")}</Empty>}
-              {file && !file.binary && !file.tooLarge && (diff ? (
-                diff.added + diff.deleted === 0 ? <Empty>{t("panel.review.metaOnly")}</Empty> : <DiffTable rows={diff.rows} />
-              ) : shown ? (
-                <>
-                  <div className="border-b border-line px-4 py-2 text-[11px] text-muted">
-                    {file.missing ? t("panel.review.deletedFile") : t("panel.review.newFile")}
-                  </div>
-                  <CodeTable html={html} lines={shown.split("\n").length} />
-                </>
-              ) : (
-                <Empty>{t("panel.review.emptyFile")}</Empty>
-              ))}
-            </div>
-          </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
-        {/* 커밋 바 */}
-        <div className="flex items-start gap-2 border-t border-line px-4 py-3" data-review-commit>
-          <textarea
-            value={g.message}
-            onChange={(e) => g.setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && e.metaKey) {
-                e.preventDefault();
-                void g.commit();
-              }
-            }}
-            rows={g.message.includes("\n") ? 4 : 2}
-            placeholder={t("panel.changes.commitPlaceholder")}
-            disabled={g.busy !== null}
-            className="mono min-w-0 flex-1 resize-none rounded-md border border-line bg-inset px-2.5 py-1.5 text-[12px] leading-5 text-fg outline-none placeholder:text-muted focus:border-accent/50 disabled:opacity-60"
-            style={{ userSelect: "text" }}
-          />
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => void g.draft()}
-                disabled={g.busy !== null || g.selectedPaths.length === 0}
-                className="flex items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-40"
-                title={t("panel.changes.draftTitle")}
-              >
-                <Icon name="sparkles" size={11} />
-                {g.busy === "draft" ? t("panel.changes.drafting") : t("panel.changes.draft")}
-              </button>
-              <button
-                onClick={() => void g.commit()}
-                disabled={g.busy !== null || !canCommit || g.selectedPaths.length === 0 || !g.message.trim()}
-                className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
-                title={!canCommit ? t("panel.changes.commitBlocked") : t("panel.review.commitTitle")}
-                data-review-commit-button
-              >
-                <Icon name="check" size={11} />
-                {g.busy === "commit" ? t("panel.changes.committing") : t("panel.changes.commitButton", { n: g.selectedPaths.length })}
-              </button>
-            </div>
-            {g.result && (
-              <span className={`mono text-[10.5px] ${g.result.ok ? "text-ok" : "text-err"}`} data-review-result>
-                {gitResultText(t, g.result)}
+        {/* diff */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {currentChange && (
+            <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-[11px] text-muted">
+              <span className="mono truncate text-fg">{currentChange.path}</span>
+              {currentChange.oldPath && <span className="mono truncate">← {currentChange.oldPath}</span>}
+              <span className={`label ml-auto shrink-0 ${KIND_CLASS[currentChange.kind]}`}>
+                {t(`panel.changes.kind.${currentChange.kind}`)}
               </span>
-            )}
+            </div>
+          )}
+          <div className="min-h-0 flex-1 overflow-auto bg-inset">
+            {!current && <Empty>{t("panel.review.pickFile")}</Empty>}
+            {current && fileError && <Empty>{t("panel.review.readFailed", { error: fileError })}</Empty>}
+            {current && !fileError && !file && <Empty>{t("common.loading")}</Empty>}
+            {file && file.binary && <Empty>{t("panel.review.binary")}</Empty>}
+            {file && file.tooLarge && <Empty>{t("panel.review.tooLarge")}</Empty>}
+            {file && !file.binary && !file.tooLarge && (diff ? (
+              diff.added + diff.deleted === 0 ? <Empty>{t("panel.review.metaOnly")}</Empty> : <DiffTable rows={diff.rows} />
+            ) : shown ? (
+              <>
+                <div className="border-b border-line px-4 py-2 text-[11px] text-muted">
+                  {file.missing ? t("panel.review.deletedFile") : t("panel.review.newFile")}
+                </div>
+                <CodeTable html={html} lines={shown.split("\n").length} />
+              </>
+            ) : (
+              <Empty>{t("panel.review.emptyFile")}</Empty>
+            ))}
           </div>
         </div>
       </div>
-    </div>,
+
+      {/* 커밋 바 */}
+      <div className="flex items-start gap-2 border-t border-line px-4 py-3" data-review-commit>
+        <textarea
+          value={g.message}
+          onChange={(e) => g.setMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && e.metaKey) {
+              e.preventDefault();
+              void g.commit();
+            }
+          }}
+          rows={g.message.includes("\n") ? 4 : 2}
+          placeholder={t("panel.changes.commitPlaceholder")}
+          disabled={g.busy !== null}
+          className="mono min-w-0 flex-1 resize-none rounded-md border border-line bg-inset px-2.5 py-1.5 text-[12px] leading-5 text-fg outline-none placeholder:text-muted focus:border-accent/50 disabled:opacity-60"
+          style={{ userSelect: "text" }}
+        />
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => void g.draft()}
+              disabled={g.busy !== null || g.selectedPaths.length === 0}
+              className="flex items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+              title={t("panel.changes.draftTitle")}
+            >
+              <Icon name="sparkles" size={11} />
+              {g.busy === "draft" ? t("panel.changes.drafting") : t("panel.changes.draft")}
+            </button>
+            <button
+              onClick={() => void g.commit()}
+              disabled={g.busy !== null || !canCommit || g.selectedPaths.length === 0 || !g.message.trim()}
+              className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+              title={!canCommit ? t("panel.changes.commitBlocked") : t("panel.review.commitTitle")}
+              data-review-commit-button
+            >
+              <Icon name="check" size={11} />
+              {g.busy === "commit" ? t("panel.changes.committing") : t("panel.changes.commitButton", { n: g.selectedPaths.length })}
+            </button>
+          </div>
+          {g.result && (
+            <span className={`mono text-[10.5px] ${g.result.ok ? "text-ok" : "text-err"}`} data-review-result>
+              {gitResultText(t, g.result)}
+            </span>
+          )}
+        </div>
+      </div>
+    </Modal>,
     document.body,
   );
 }
