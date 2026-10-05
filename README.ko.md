@@ -245,6 +245,7 @@ Sudal 자체는 아무 데도 보내지 않아요. 모델과의 통신은 Claude
 ## 라이선스
 
 [MIT](LICENSE)예요. 저작권 표시와 라이선스 문구만 남기면 자유롭게 쓰고, 고치고, 다시 배포할 수 있어요.
+Sudal 이름과 로고, 수대리 캐릭터(이름과 그림)는 MIT에 포함되지 않아요.
 앱에 함께 들어 있는 의존성은 각자의 라이선스를 따라요. 특히 Claude Agent SDK는 [Anthropic 이용 약관](https://www.anthropic.com/legal/commercial-terms)을 따라요.
 
 ## 더 보기
