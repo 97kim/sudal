@@ -64,9 +64,9 @@ export const settings: DeepPartial<typeof ko> = {
     },
   },
   otter: {
-    title: "Floating otter",
-    description: "Shows an otter in a corner of your screen with your agents' status. It waves when an approval is waiting and lets you know when work is done. Click it to jump to that tab.",
-    toggle: "Show the otter",
+    title: "Show Sudari",
+    description: "Shows Sudari, our otter, in a corner of your screen with your agents' status. Sudari waves when an approval is waiting and lets you know when work is done. Click it to jump to that tab.",
+    toggle: "Show Sudari",
     hint: "Drag to move it. Right-click to hide it for a while or turn it off.",
   },
   newTabPolicy: {

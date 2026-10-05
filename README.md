@@ -147,12 +147,12 @@ Put the screen you're building next to the chat and switch it to phone or tablet
 <tr>
 <td width="42%" valign="middle">
 
-### An otter keeps you posted
+### Sudari keeps you posted
 
-While you work in other apps, an otter in the corner of your screen shows what your agents are doing. It taps a shell while they work, raises a paw when an approval or answer is waiting, and shows off the shell when the work is done. Click it to jump to that tab. Turn it on in Settings → General → Floating otter.
+While you work in other apps, Sudari, our otter, sits in the corner of your screen and shows what your agents are doing. Sudari taps a shell while they work, raises a paw when an approval or answer is waiting, and shows off the shell when the work is done. Click Sudari to jump to that tab. Turn it on in Settings → General → Show Sudari.
 
 </td>
-<td width="58%"><img src="docs/images/en/otter.png" alt="An otter in the corner of the desktop raising a paw with the bubble 'Waiting for you · login bug', and its six moods: idle, working, waiting, done, error, and limit" width="100%" /></td>
+<td width="58%"><img src="docs/images/en/otter.png" alt="Sudari the otter in the corner of the desktop raising a paw with the bubble 'Waiting for you · login bug', and its six moods: idle, working, waiting, done, error, and limit" width="100%" /></td>
 </tr>
 </table>
 

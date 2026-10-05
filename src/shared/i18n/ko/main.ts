@@ -15,7 +15,7 @@ export const main = {
     },
     menu: {
       snooze: "1시간 동안 숨기기",
-      hide: "수달 끄기",
+      hide: "수대리 끄기",
       settings: "설정 열기",
     },
   },

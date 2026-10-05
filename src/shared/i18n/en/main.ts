@@ -15,7 +15,7 @@ export const main: DeepPartial<typeof ko> = {
     },
     menu: {
       snooze: "Hide for 1 hour",
-      hide: "Turn off the otter",
+      hide: "Turn off Sudari",
       settings: "Open settings",
     },
   },
