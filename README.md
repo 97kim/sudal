@@ -245,7 +245,7 @@ For now, only Apple Silicon is supported.
 ## License
 
 [MIT](LICENSE). Keep the copyright notice and license text, and you're free to use, modify, and redistribute it.
-The Sudari character (name and artwork) is not covered by the MIT License.
+The Sudari character is not covered by the MIT License.
 Dependencies bundled with the app follow their own licenses. In particular, the Claude Agent SDK is subject to [Anthropic's Commercial Terms](https://www.anthropic.com/legal/commercial-terms).
 
 ## Learn more
