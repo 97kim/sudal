@@ -63,6 +63,16 @@ export const settings: DeepPartial<typeof ko> = {
       off: { label: "Off", hint: "No notification when a response finishes. Approval requests still notify you." },
     },
   },
+  newTabPolicy: {
+    title: "Default permission for new tabs",
+    description: "Choose which permission new tabs, and the first tab of a new workspace, start with. You can change it per tab in the right panel.",
+    options: {
+      inherit: { label: "Same as the current tab", hint: "Uses the permission of the tab you were looking at when you opened the new one." },
+      ask: { label: "Ask before changes", hint: "Asks when a file change or command needs approval." },
+      auto_edit: { label: "Auto-approve edits", hint: "Allows file edits automatically and asks for commands that need extra approval." },
+      full: { label: "Fully automatic (caution)", hint: "Changes files and runs commands without approval. Use it only for work you trust." },
+    },
+  },
   link: {
     title: "How links open",
     description: "Choose where web links in chats open. ⌘-click opens the default browser and ⌥-click opens the in-app browser. ⇧-click lets you choose again.",

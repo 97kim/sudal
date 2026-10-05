@@ -114,6 +114,8 @@ export interface AppSettingsDto {
   maxConcurrent: number;
   /** 응답이 끝났을 때 macOS 알림: always = 항상, unfocused = 창이 포커스 밖이거나 다른 탭을 볼 때, off = 안 함. */
   notifyOnDone: NotifyOnDone;
+  /** 새 탭의 권한. inherit = 새 탭을 열 때 보고 있던 탭과 같게. */
+  newTabPolicy: NewTabPolicy;
   /**
    * 인앱 브라우저의 로그인을 앱을 껐다 켜도 유지한다. 로그인 세션은 대개 만료 없는 세션 쿠키라
    * Chromium 이 종료할 때 버린다 — 끌 때 받아 적고 켤 때 되돌려 놓는다(크롬의 "이전 세션 계속하기").
@@ -129,6 +131,12 @@ export interface AppSettingsDto {
   worktreeDirCustom: boolean;
   /** 앱 데이터(워크스페이스·채팅 기록·설정) 폴더. 읽기 전용 표시용. */
   dataDir: string;
+}
+
+export type NewTabPolicy = "inherit" | PermissionPolicy;
+export const NEW_TAB_POLICIES: readonly NewTabPolicy[] = ["inherit", "ask", "auto_edit", "full"];
+export function isNewTabPolicy(v: unknown): v is NewTabPolicy {
+  return NEW_TAB_POLICIES.includes(v as NewTabPolicy);
 }
 
 export type NotifyOnDone = "always" | "unfocused" | "off";

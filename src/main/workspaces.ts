@@ -30,6 +30,7 @@ import {
 } from "@shared/workspace-model";
 import type { Store } from "./persistence";
 import type { SessionConfig, SessionManager } from "./session-manager";
+import type { NewTabPolicy } from "@shared/ipc";
 
 export class WorkspaceService {
   private model: WorkspaceModel;
@@ -54,6 +55,13 @@ export class WorkspaceService {
 
   /** 응답 필요 표시(AttentionTracker)를 상태에 함께 싣는다. attach 순서 때문에 getter 로 받는다. */
   attentionSource: (() => WorkspaceStateDto["attention"]) | null = null;
+  /** 설정의 "새 탭 권한". inherit 면 새 탭을 열 때 보고 있던 탭을 따른다. */
+  newTabPolicy: () => NewTabPolicy = () => "inherit";
+  private fixedNewTabPolicy(): PermissionPolicy | undefined {
+    const p = this.newTabPolicy();
+    return p === "inherit" ? undefined : p;
+  }
+
   /** 탭을 봤다(활성화) / 탭이 사라졌다 → AttentionTracker 에 알린다. */
   attentionHooks: { viewed(tabId: string): void; forget(tabId: string): void } | null = null;
 
@@ -124,7 +132,7 @@ export class WorkspaceService {
       this.commit(activateTab(model, open.id));
       return { workspaceId: workspace.id, tabId: open.id };
     }
-    const created = createTab(model, workspace.id, now, randomUUID());
+    const created = createTab(model, workspace.id, now, randomUUID(), { policy: this.fixedNewTabPolicy() });
     this.commit(created.model);
     return { workspaceId: workspace.id, tabId: created.tab.id };
   }
@@ -133,7 +141,7 @@ export class WorkspaceService {
   createWorkspace(name: string, builtin?: Workspace["builtin"]): { workspaceId: string; tabId: string } {
     const now = Date.now();
     const { model, workspace } = createWorkspace(this.model, name, now, randomUUID(), builtin);
-    const created = createTab(model, workspace.id, now, randomUUID());
+    const created = createTab(model, workspace.id, now, randomUUID(), { policy: this.fixedNewTabPolicy() });
     this.commit(created.model);
     return { workspaceId: workspace.id, tabId: created.tab.id };
   }
@@ -163,13 +171,14 @@ export class WorkspaceService {
       ? this.model.workspaces.find((w) => w.id === workspaceId)
       : activeWorkspace(this.model);
     if (!ws) return null;
-    // 새 탭은 활성 탭의 provider/정책을 이어받는다. 작업 경로는 inheritedCwd 가 정한다(다른 워크스페이스면 그쪽 최근 경로).
+    // 새 탭은 활성 탭의 provider/모델을 이어받는다. 정책은 설정이 정해 두었으면 그것, 아니면 활성 탭을 따른다.
+    // 작업 경로는 inheritedCwd 가 정한다(다른 워크스페이스면 그쪽 최근 경로).
     const active = this.model.tabs.find((t) => t.id === this.model.activeTabId);
     const now = Date.now();
     const { model, tab } = createTab(this.model, ws.id, now, randomUUID(), {
       provider: active?.provider,
       model: active?.model,
-      policy: active?.policy,
+      policy: this.fixedNewTabPolicy() ?? active?.policy,
       cwd: extra?.cwd ?? inheritedCwd(this.model, ws.id, this.model.activeTabId),
     });
     // 격리 세션이면 worktree 정보와 브랜치 이름 제목을 함께 저장한다.

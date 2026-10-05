@@ -5,6 +5,7 @@ import { intlLocale, LANGUAGE_SETTINGS, type Locale } from "@shared/i18n/locale"
 import {
   MAX_CONCURRENT_MAX,
   MAX_CONCURRENT_MIN,
+  NEW_TAB_POLICIES,
   PROVIDERS,
   SESSION_IDLE_MINUTES_MAX,
   SESSION_IDLE_MINUTES_MIN,
@@ -617,6 +618,25 @@ function GeneralSection() {
               <span>
                 <span className="block font-medium">{t(`settings.notify.options.${v}.label`)}</span>
                 <span className="block text-[12px] leading-5 text-muted">{t(`settings.notify.options.${v}.hint`)}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="new-tab-policy">
+        <div className="mb-1 flex items-center gap-2 font-medium">
+          <Icon name="check" size={14} className="text-accent" />
+          {t("settings.newTabPolicy.title")}
+        </div>
+        <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.newTabPolicy.description")}</p>
+        <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+          {NEW_TAB_POLICIES.map((v) => (
+            <label key={v} className={radioCls(settings?.newTabPolicy === v)}>
+              <input type="radio" name="newTabPolicy" value={v} checked={settings?.newTabPolicy === v} disabled={!settings} onChange={() => void save({ newTabPolicy: v })} className="mt-0.5" />
+              <span>
+                <span className="block font-medium">{t(`settings.newTabPolicy.options.${v}.label`)}</span>
+                <span className="block text-[12px] leading-5 text-muted">{t(`settings.newTabPolicy.options.${v}.hint`)}</span>
               </span>
             </label>
           ))}

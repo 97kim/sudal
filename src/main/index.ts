@@ -24,7 +24,7 @@ import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT,
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
 import { legacyWorktreeDir, migrateUserData, removeLegacyInstall, type UserDataMigration } from "./legacy-name";
 import { msgText, type Msg, type MsgKey } from "@shared/i18n/msg";
-import { NOTIFY_ON_DONE_DEFAULT, isNotifyOnDone, shouldNotifyDone, PROVIDERS, IPC, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, MAX_CONCURRENT_MIN, SESSION_IDLE_MINUTES_DEFAULT, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_MIN, type AppSettingsDto, type AppInfoDto, type UpdateCheckDto, type UpdateRunResult, type UpdateStatusDto, type ChatEventEnvelope, type ChatSendDto, type ChatSendResult, type CompactResult, type ControlOpenDto, type InstallStatusDto, type CliCandidateDto, type CliDiagnosticsDto, type CliStatusDto, type OverrideSetResultDto, type Provider, type RendererErrorDto, type SessionConfigDto, type ShortcutName, type SwitchProviderDto, type UsageSettingsDto, type VerifyStartResult, type FanoutStartDto, type FanoutStartResult, type FanoutCompareDto, type FanoutAdoptResult, type RateLimitWindowDto, type UsageStatusDto, type WorkspaceStateDto, type ManagedWorktreeDto, SearchResultDto } from "@shared/ipc";
+import { NOTIFY_ON_DONE_DEFAULT, isNewTabPolicy, isNotifyOnDone, shouldNotifyDone, PROVIDERS, IPC, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, MAX_CONCURRENT_MIN, SESSION_IDLE_MINUTES_DEFAULT, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_MIN, type AppSettingsDto, type AppInfoDto, type UpdateCheckDto, type UpdateRunResult, type UpdateStatusDto, type ChatEventEnvelope, type ChatSendDto, type ChatSendResult, type CompactResult, type ControlOpenDto, type InstallStatusDto, type CliCandidateDto, type CliDiagnosticsDto, type CliStatusDto, type OverrideSetResultDto, type Provider, type RendererErrorDto, type SessionConfigDto, type ShortcutName, type SwitchProviderDto, type UsageSettingsDto, type VerifyStartResult, type FanoutStartDto, type FanoutStartResult, type FanoutCompareDto, type FanoutAdoptResult, type RateLimitWindowDto, type UsageStatusDto, type WorkspaceStateDto, type ManagedWorktreeDto, SearchResultDto } from "@shared/ipc";
 import {
   DEFAULT_PRICING,
   periodRange,
@@ -1214,6 +1214,7 @@ function appSettings(): AppSettingsDto {
     // 환경변수는 설정 파일에 값이 없을 때의 기본값으로만 쓴다.
     maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.SUDAL_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
+    newTabPolicy: isNewTabPolicy(raw.newTabPolicy) ? raw.newTabPolicy : "inherit",
     keepBrowserLogin: raw.keepBrowserLogin !== false,
     worktreeDir: worktreeRootDir(),
     worktreeDirCustom: typeof raw.worktreeDir === "string" && isAbsolute(raw.worktreeDir),
@@ -1321,6 +1322,7 @@ function bootstrap() {
   });
   attention.restore(store.loadAttention());
   workspaces.attentionSource = () => attention.snapshot();
+  workspaces.newTabPolicy = () => appSettings().newTabPolicy;
   workspaces.attentionHooks = {
     viewed: (tabId) => attention.viewed(tabId),
     forget: (tabId) => attention.forget(tabId),
@@ -1804,6 +1806,10 @@ function registerIpc() {
     if (patch.notifyOnDone !== undefined) {
       if (!isNotifyOnDone(patch.notifyOnDone)) throw new Error(mt("main.error.badNotifySetting"));
       next.notifyOnDone = patch.notifyOnDone;
+    }
+    if (patch.newTabPolicy !== undefined) {
+      if (!isNewTabPolicy(patch.newTabPolicy)) throw new Error(mt("main.error.badPolicy"));
+      next.newTabPolicy = patch.newTabPolicy;
     }
     // 경로를 고르는 건 main 의 선택 창(app:pick-worktree-dir)만 한다 — 여기서는 기본값으로 되돌리기만 받는다
     if (patch.worktreeDirCustom === false) delete next.worktreeDir;
