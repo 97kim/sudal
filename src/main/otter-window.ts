@@ -106,6 +106,9 @@ export class OtterWindow {
       skipTaskbar: true,
       // 눌러도 다른 앱의 포커스를 빼앗지 않는다(입력하던 곳에 그대로 남는다).
       focusable: false,
+      // macOS: 누르는 순간 Sudal 앱이 앞으로 나오지 않게 한다(non-activating 패널). focusable 만으로는 앱 활성화를
+      // 막지 못해, 끌어 옮기려고 누르기만 해도 Sudal 창이 튀어나왔다. 앞으로 가져오는 건 클릭으로 판정됐을 때 main 이 한다.
+      ...(process.platform === "darwin" ? { type: "panel" } : {}),
       alwaysOnTop: true,
       show: false,
       webPreferences: {
