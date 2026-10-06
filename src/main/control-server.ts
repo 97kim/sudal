@@ -396,7 +396,9 @@ export class ControlServer {
       }
       case "tab.new": {
         const st = this.deps.state();
-        const ws = params.workspace !== undefined ? this.resolveWorkspace(this.requireString(params, "workspace")) : (st.model.workspaces.find((w) => w.id === st.model.tabs.find((t) => t.id === st.model.activeTabId)?.workspaceId) ?? st.model.workspaces[0]);
+        // --ws 가 없으면 부른 탭(caller)의 워크스페이스, 탭 밖에서 불렀으면 화면에 보이는 탭의 워크스페이스
+        const wsOf = (tabId: unknown) => st.model.workspaces.find((w) => w.id === st.model.tabs.find((t) => t.id === tabId)?.workspaceId);
+        const ws = params.workspace !== undefined ? this.resolveWorkspace(this.requireString(params, "workspace")) : (wsOf(params.caller) ?? wsOf(st.model.activeTabId) ?? st.model.workspaces[0]);
         if (!ws) throw new ControlError(mt("cli.control.noWorkspace"));
         // 탭을 만들기 전에 인자를 전부 검증한다 — 잘못된 호출이 빈 탭을 남기지 않게
         const cwd = params.cwd !== undefined ? this.requireString(params, "cwd") : undefined;

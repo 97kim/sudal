@@ -391,8 +391,8 @@ async function main() {
   else if (group === "browser" && cmd === "fill") { method = "browser.fill"; params = { tab: flags.tab, selector: flags.selector, value: flags.value }; }
   else return fail(t("unknownCommand", { cmd: [group, cmd].filter(Boolean).join(" ") }), "unknown_command");
 
-  // 자기 탭을 기다리면 영영 끝나지 않는다 — 서버가 막을 수 있게 부른 탭을 알려 준다
-  if (selfTab && (method === "tab.wait" || method === "tab.send")) params.caller = selfTab;
+  // 부른 탭을 서버에 알려 준다 — 자기 탭을 기다리는 일을 막고, 새 탭은 부른 탭의 워크스페이스에 만든다
+  if (selfTab && (method === "tab.wait" || method === "tab.send" || method === "tab.new")) params.caller = selfTab;
   for (const k of Object.keys(params)) if (params[k] === undefined) delete params[k];
   // --tab 을 안 주면 서버가 active 로 본다(선택자 규칙은 서버에)
   // 데드라인: 기다리는 명령은 서버 대기 시간(기본 10분) + 15초, 나머지는 30초
