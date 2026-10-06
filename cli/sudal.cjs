@@ -55,7 +55,7 @@ const MESSAGES = {
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
   sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
-                  [--model <id>] [--title <text>] [--prompt <text>] [--activate]
+                  [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # --ws 생략 = 이 명령을 부른 탭(self)의 워크스페이스, 탭 밖이면 화면에서 보고 있는 탭의 워크스페이스
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
   sudal tab wait --tab <sel> [--timeout-ms N]
@@ -117,7 +117,7 @@ const MESSAGES = {
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
   sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
-                  [--model <id>] [--title <text>] [--prompt <text>] [--activate]
+                  [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # no --ws = the workspace of the tab running this command (self); outside a tab, the tab shown in the app
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
   sudal tab wait --tab <sel> [--timeout-ms N]

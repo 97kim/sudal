@@ -218,6 +218,11 @@ test("ControlServer: 값 없는 --tab 거절, 중복 워크스페이스 이름�
   assert.equal(calls.filter((c) => c.startsWith("createTab")).at(-1), "createTab w2");
   await d("tab.new", { caller: "없는-탭" });
   assert.equal(calls.filter((c) => c.startsWith("createTab")).at(-1), "createTab w1", "부른 탭을 못 찾으면 화면의 탭 기준");
+  await d("tab.new", { workspace: "w3", caller: "t5" });
+  assert.equal(calls.filter((c) => c.startsWith("createTab")).at(-1), "createTab w3", "--ws 가 부른 탭보다 먼저");
+  model.activeTabId = null;
+  await d("tab.new", {});
+  assert.equal(calls.filter((c) => c.startsWith("createTab")).at(-1), "createTab w1", "둘 다 없으면 첫 워크스페이스");
 });
 
 test("ControlServer: wait 는 남은 일(pending·limitWait)까지 보고, send --wait 는 그 메시지의 turn_result 를 기다린다", async () => {
