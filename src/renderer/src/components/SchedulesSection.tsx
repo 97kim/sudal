@@ -376,7 +376,15 @@ export function SchedulesSection({ defaultCwd }: { defaultCwd: string | null }) 
           <button
             onClick={() => {
               setError(null);
-              setDraft({ ...blankDraft(), cwd: defaultCwd ?? "", cwdAuto: Boolean(defaultCwd) });
+              const base = { ...blankDraft(), cwd: defaultCwd ?? "", cwdAuto: Boolean(defaultCwd) };
+              setDraft(base);
+              // 권한은 설정의 새 탭 기본값을 따른다. "현재 탭 따르기" 는 예약에 따를 탭이 없어 물어보기로 둔다.
+              window.sudal.app
+                .getSettings()
+                .then(({ newTabPolicy: policy }) => {
+                  if (policy !== "inherit") setDraft((d) => (d === base ? { ...d, policy } : d));
+                })
+                .catch(() => {});
             }}
             className="shrink-0 rounded-md border border-line px-2.5 py-1.5 text-[12.5px] hover:bg-panel-2"
             data-new-schedule
