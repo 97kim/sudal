@@ -18,11 +18,13 @@ function makeDeps(opts: { maxConcurrent?: number; failCreate?: string } = {}) {
   const changed: string[] = [];
   const coordTabs: string[] = [];
   const configured: string[] = [];
+  const createdFor: (string | undefined)[] = [];
   const deps: OrchestratorDeps = {
     dir: mkdtempSync(join(tmpdir(), "orch-")),
     cliCommand: () => "sudal",
     createWorkerTab: async (o) => {
       if (opts.failCreate) return { ok: false, error: opts.failCreate, stage: "creating_tab" };
+      createdFor.push(o.coordinatorTabId);
       const id = `tab${++n}`;
       tabs.set(id, { status: "idle", events: [], prompts: [] });
       return { ok: true, tabId: id, cwd: o.cwd, ...(o.worktree ? { worktree: { repo: o.cwd, path: o.cwd + "/wt", branch: "sudal/w", base: "main" } } : {}) };
@@ -53,7 +55,7 @@ function makeDeps(opts: { maxConcurrent?: number; failCreate?: string } = {}) {
     setCoordinatorTabs: (ids) => { coordTabs.length = 0; coordTabs.push(...ids); },
     onChanged: (_r, _s, e) => changed.push(e.type),
   };
-  return { deps, tabs, changed, coordTabs, configured };
+  return { deps, tabs, changed, coordTabs, configured, createdFor };
 }
 
 const turnEnd = (t: FakeTab) => {
@@ -126,11 +128,12 @@ test("사람 코디네이터: run → worker-start(preamble) → 질문/답 → 
 });
 
 test("fencing: 잘못된 capability 는 consumer_fenced, 인수 뒤 옛 코디네이터 키도 fenced, 자기 보고 뒤 후속 지시 불가", async () => {
-  const { deps } = makeDeps();
+  const { deps, createdFor } = makeDeps();
   const o = new Orchestrator(deps);
   const { run, coordinatorKey } = o.runCreate({ objective: "x", coordinatorTabId: "coord" });
   const coord = { kind: "tab" as const, tabId: "coord" };
   const w = await o.workerStart({ runId: run.id, actor: coord, key: coordinatorKey, spec: "일", provider: "codex", worktree: false, cwd: "/repo" });
+  assert.deepEqual(createdFor, ["coord"], "일꾼 탭은 코디네이터 탭의 워크스페이스에 만들도록 코디네이터를 알려 준다");
   assert.throws(() => o.send({ runId: run.id, actor: { kind: "dispatch", dispatchId: w.dispatch.id }, dispatchId: w.dispatch.id, capability: "wrong", type: "escalation", body: "x" }), (e: unknown) => e instanceof OrchError && e.code === "consumer_fenced");
   // 후속 지시를 안 읽고 보고하면 followup_pending
   o.send({ runId: run.id, actor: coord, key: coordinatorKey, type: "followup", to: `dispatch:${w.dispatch.id}`, body: "문서도 고쳐" });

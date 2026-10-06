@@ -2002,7 +2002,9 @@ function registerIpc() {
           return p;
         }
       };
-      const ws = model.workspaces.find((w) => w.path && norm(w.path) === norm(o.cwd)) ?? model.workspaces.find((w) => w.id === model.tabs.find((t) => t.id === model.activeTabId)?.workspaceId) ?? model.workspaces[0];
+      // 코디네이터 탭과 같은 워크스페이스가 먼저다. 사람이 코디네이터면 cwd 가 같은 워크스페이스, 화면의 탭 순
+      const wsOf = (tabId: string | null | undefined) => model.workspaces.find((w) => w.id === model.tabs.find((t) => t.id === tabId)?.workspaceId);
+      const ws = wsOf(o.coordinatorTabId) ?? model.workspaces.find((w) => w.path && norm(w.path) === norm(o.cwd)) ?? wsOf(model.activeTabId) ?? model.workspaces[0];
       if (!ws) return { ok: false, error: mt("main.error.noWorkspace"), stage: "creating_tab" };
       const prevActive = model.activeTabId;
       const env = await cliDiscovery().buildEnv();

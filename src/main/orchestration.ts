@@ -62,8 +62,8 @@ export interface OrchestratorDeps {
   cliCommand(): string;
   now?(): number;
   log?(line: string): void;
-  /** 워커 탭을 만든다(워크스페이스는 코디네이터 탭의 것 또는 지정). worktree=true 면 격리. */
-  createWorkerTab(o: { title: string; provider: Provider; model?: string; policy: PermissionPolicy; cwd: string; worktree: boolean; workspaceId?: string }): Promise<
+  /** 워커 탭을 만든다(워크스페이스는 코디네이터 탭의 것, 사람이 코디네이터면 cwd·화면 기준). worktree=true 면 격리. */
+  createWorkerTab(o: { title: string; provider: Provider; model?: string; policy: PermissionPolicy; cwd: string; worktree: boolean; coordinatorTabId?: string }): Promise<
     { ok: true; tabId: string; cwd: string; worktree?: WorktreeMeta } | { ok: false; error: string; stage: "creating_workspace" | "creating_tab" }
   >;
   send(tabId: string, text: string): Promise<ChatSendResult>;
@@ -461,7 +461,7 @@ export class Orchestrator {
     if (reuse) this.deps.configureTab(o.terminalTabId!, { policy, model: reuse.model });
     const made = reuse
       ? ({ ok: true, tabId: o.terminalTabId!, cwd: reuse.cwd, worktree: reuse.worktree } as const)
-      : await this.deps.createWorkerTab({ title, provider: o.provider, model: o.model, policy, cwd, worktree: o.worktree });
+      : await this.deps.createWorkerTab({ title, provider: o.provider, model: o.model, policy, cwd, worktree: o.worktree, coordinatorTabId: s.run.coordinator.kind === "tab" ? s.run.coordinator.tabId : undefined });
     // await 사이에 abandon·Run 종료·인수가 있었을 수 있다 — 시작 중이 아니면 되살리지 않는다
     const stillStarting = () => {
       const cur = this.get(s.run.id);
