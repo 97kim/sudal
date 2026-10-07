@@ -68,6 +68,12 @@ export const panel: DeepPartial<typeof ko> = {
         help: "File edits are allowed automatically. Commands that need more approval are confirmed before they run.",
         codexHelp: "Allows file changes and network access within the working directory. If Codex asks for more permissions, you'll be asked to approve.",
       },
+      auto_review: {
+        label: "AI decides approvals",
+        codexLabel: "Edits allowed · AI reviews approvals",
+        help: "For actions that need approval, an AI judges the risk and allows or denies them. It may not be available on every account.",
+        codexHelp: "Allows file changes and network access in the working directory. Codex's review agent decides on requests for more permissions.",
+      },
       full: {
         label: "Fully automatic (caution)",
         codexLabel: "Full access (caution)",

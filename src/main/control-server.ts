@@ -6,7 +6,7 @@
 // 앱 UI 와 같은 권한을 가진다(경로 승인·full 정책 포함). 다른 사용자·원격은 파일 권한이 막는다.
 import { createServer, type Server, type Socket } from "node:net";
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
-import type { ChatEvent, PermissionPolicy, SessionStatus } from "@shared/chat-events";
+import { isPermissionPolicy, type ChatEvent, type PermissionPolicy, type SessionStatus } from "@shared/chat-events";
 import { parseCron } from "@shared/cron";
 import type { Run, Schedule } from "@shared/schedules";
 import type { ChatSendResult, FanoutStartDto, FanoutStartResult, Provider, WorkspaceStateDto } from "@shared/ipc";
@@ -317,7 +317,7 @@ export class ControlServer {
         if (!parseCron(cron)) throw new ControlError(mt("cli.control.cronInvalidFormat"));
         // --policy 를 안 주면 비워 두고 저장하는 쪽이 설정의 "새 탭 기본 권한" 으로 채운다(화면과 같게).
         const policy = params.policy !== undefined ? this.requireString(params, "policy") : undefined;
-        if (policy !== undefined && !["ask", "auto_edit", "full"].includes(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
+        if (policy !== undefined && !isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
         const provider = params.provider !== undefined ? this.requireString(params, "provider") : "claude";
         if (provider !== "claude" && provider !== "codex") throw new ControlError(mt("cli.control.providerInvalid"));
         // --cwd 를 안 주면 워크스페이스 기본 경로로 돈다. 이름만으로 만든 워크스페이스에는 그 값이 없어
@@ -413,7 +413,7 @@ export class ControlServer {
         }
         const policy = params.policy !== undefined ? this.requireString(params, "policy") : undefined;
         if (policy) {
-          if (!["ask", "auto_edit", "full"].includes(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
+          if (!isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
           patch.policy = policy as PermissionPolicy;
         }
         const model = params.model !== undefined ? this.requireString(params, "model") : undefined;
@@ -619,7 +619,7 @@ export class ControlServer {
         const provider = str(p.agent) ?? str(p.provider) ?? "claude";
         if (provider !== "claude" && provider !== "codex") throw new ControlError(mt("cli.control.agentInvalid"));
         const policy = str(p.policy);
-        if (policy !== undefined && policy !== "ask" && policy !== "auto_edit" && policy !== "full") throw new ControlError(mt("cli.control.agentPolicyInvalid"));
+        if (policy !== undefined && !isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.agentPolicyInvalid"));
         const wt = p.worktree;
         const worktree = wt === true || wt === "true" || wt === "new";
         const terminal = str(p.terminal);

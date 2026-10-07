@@ -157,7 +157,7 @@ export const main: DeepPartial<typeof ko> = {
       badProvider: "Choose Claude Code or Codex as the CLI for each session. Received: {{value}}",
       tooFew: "Add at least {{min}} sessions.",
       tooMany: "You can add up to {{max}} sessions.",
-      badPolicy: "Choose the permission level again. Allowed values: ask · auto_edit · full",
+      badPolicy: "Choose the permission level again. Allowed values: ask · auto_edit · auto_review · full",
     },
     worktreeFailed: "Couldn't create the worktree for session {{label}}: {{detail}}",
     tabCreateFailed: "Couldn't create the tab for the fan-out session.",

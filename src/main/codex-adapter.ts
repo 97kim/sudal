@@ -42,17 +42,23 @@ export interface CodexTurnRequest {
   log?(line: string): void;
 }
 
-/** app-server 의 정책 매핑: ask 는 신뢰되지 않은 명령·쓰기마다 묻고, auto_edit 은 작업 디렉토리 밖의 쓰기처럼 추가 권한이 필요할 때만 묻고(네트워크는 허용), full 은 묻지 않는다. */
-const POLICY_TO_APPSERVER: Record<PermissionPolicy, { approvalPolicy: string; sandbox: string; sandboxPolicy: Record<string, unknown> }> = {
-  ask: { approvalPolicy: "untrusted", sandbox: "read-only", sandboxPolicy: { type: "readOnly" } },
-  auto_edit: { approvalPolicy: "on-request", sandbox: "workspace-write", sandboxPolicy: { type: "workspaceWrite", networkAccess: true } },
-  full: { approvalPolicy: "never", sandbox: "danger-full-access", sandboxPolicy: { type: "dangerFullAccess" } },
+/**
+ * app-server 의 정책 매핑: ask 는 신뢰되지 않은 명령·쓰기마다 묻고, auto_edit 은 작업 디렉토리 밖의 쓰기처럼 추가 권한이 필요할 때만 묻고(네트워크는 허용), full 은 묻지 않는다.
+ * auto_review 는 auto_edit 과 같은 샌드박스에서, 묻는 대신 Codex 의 검토 에이전트가 판단한다. 나머지는 approvalsReviewer 를 user 로 못박는다 —
+ * 스레드·턴에 준 값이 다음 턴까지 이어지므로, 안 넘기면 auto_review 에서 돌아왔을 때 검토 에이전트가 남는다.
+ */
+const POLICY_TO_APPSERVER: Record<PermissionPolicy, { approvalPolicy: string; sandbox: string; sandboxPolicy: Record<string, unknown>; approvalsReviewer: "user" | "auto_review" }> = {
+  ask: { approvalPolicy: "untrusted", sandbox: "read-only", sandboxPolicy: { type: "readOnly" }, approvalsReviewer: "user" },
+  auto_edit: { approvalPolicy: "on-request", sandbox: "workspace-write", sandboxPolicy: { type: "workspaceWrite", networkAccess: true }, approvalsReviewer: "user" },
+  auto_review: { approvalPolicy: "on-request", sandbox: "workspace-write", sandboxPolicy: { type: "workspaceWrite", networkAccess: true }, approvalsReviewer: "auto_review" },
+  full: { approvalPolicy: "never", sandbox: "danger-full-access", sandboxPolicy: { type: "dangerFullAccess" }, approvalsReviewer: "user" },
 };
 
 /** exec 폴백의 정책 매핑(승인을 물을 수 없다). */
 const POLICY_TO_THREAD: Record<PermissionPolicy, Pick<ThreadOptions, "sandboxMode" | "networkAccessEnabled">> = {
   ask: { sandboxMode: "read-only" },
   auto_edit: { sandboxMode: "workspace-write", networkAccessEnabled: true },
+  auto_review: { sandboxMode: "workspace-write", networkAccessEnabled: true },
   full: { sandboxMode: "danger-full-access", networkAccessEnabled: true },
 };
 
@@ -297,7 +303,7 @@ async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey"
   const map = POLICY_TO_APPSERVER[req.policy];
   // developerInstructions 는 설정의 developer_instructions 를 대신한다(덧붙지 않는다) — 사용자가 정해 둔 것이 있으면 싣지 않는다.
   const ownInstructions = codexHasDeveloperInstructions(process.env, homedir(), req.cwd);
-  const base = { cwd: req.cwd, model: req.model ?? null, approvalPolicy: map.approvalPolicy, sandbox: map.sandbox, ...(ownInstructions ? {} : { developerInstructions: mt("prompt.codex.instructions") }) };
+  const base = { cwd: req.cwd, model: req.model ?? null, approvalPolicy: map.approvalPolicy, approvalsReviewer: map.approvalsReviewer, sandbox: map.sandbox, ...(ownInstructions ? {} : { developerInstructions: mt("prompt.codex.instructions") }) };
   if (req.sessionId) {
     try {
       // 기록은 앱이 갖고 있으니 지난 턴 내용은 받지 않는다(전체 히스토리 하이드레이션은 deprecated).
@@ -407,6 +413,7 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
       cwd: req.cwd,
       model: req.model ?? null,
       approvalPolicy: map.approvalPolicy,
+      approvalsReviewer: map.approvalsReviewer,
       sandboxPolicy: map.sandboxPolicy,
     });
     turn.turnId = r.turn?.id ?? null;
@@ -442,7 +449,7 @@ export async function forkCodexThread(
     const map = POLICY_TO_APPSERVER[req.policy];
     const r = await server.request<{ thread?: { id?: string } }>(
       "thread/fork",
-      { threadId: req.threadId, lastTurnId: req.lastTurnId, cwd: req.cwd, model: req.model ?? null, approvalPolicy: map.approvalPolicy, sandbox: map.sandbox, excludeTurns: true },
+      { threadId: req.threadId, lastTurnId: req.lastTurnId, cwd: req.cwd, model: req.model ?? null, approvalPolicy: map.approvalPolicy, approvalsReviewer: map.approvalsReviewer, sandbox: map.sandbox, excludeTurns: true },
       30_000,
     );
     const id = r.thread?.id;
@@ -507,8 +514,9 @@ export async function runCodexTurnExec(runtime: CodexRuntime, req: CodexTurnRequ
 export function applyCodexPolicy(sessionKey: string, policy: PermissionPolicy): "applied" | "next-turn" | "none" {
   const s = live.get(sessionKey);
   if (!s || s.dead) return "none";
-  const rank: Record<PermissionPolicy, number> = { ask: 0, auto_edit: 1, full: 2 };
-  const loosening = rank[policy] >= rank[s.policy];
+  const rank: Record<PermissionPolicy, number> = { ask: 0, auto_edit: 1, auto_review: 2, full: 3 };
+  // 검토 에이전트는 턴 도중에 붙일 수 없다 — auto_review 로 바꾸면 이번 턴은 지금처럼 사람이 답하고 다음 턴부터 바뀐다.
+  const loosening = policy !== "auto_review" && rank[policy] >= rank[s.policy];
   s.policy = policy;
   return loosening ? "applied" : "next-turn";
 }

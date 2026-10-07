@@ -35,6 +35,7 @@ export const schedules = {
   policy: {
     ask: "물어보기",
     auto_edit: "편집은 자동",
+    auto_review: "AI가 판단",
     full: "전부 자동",
   },
   repeat: {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { PermissionPolicy } from "@shared/chat-events";
+import { PERMISSION_POLICIES, type PermissionPolicy } from "@shared/chat-events";
 import type { SessionSnapshotDto } from "@shared/ipc";
 import { gitResultText, useGitChanges } from "../hooks/useGitChanges";
 import { ChangeReview } from "./ChangeReview";
@@ -11,7 +11,7 @@ import { Icon } from "./Icon";
 import { shortenHome } from "@shared/path-display";
 import { useNow } from "../hooks/useNow";
 
-const POLICY_IDS: PermissionPolicy[] = ["ask", "auto_edit", "full"];
+const POLICY_IDS = PERMISSION_POLICIES;
 
 export function ContextPanel({
   state,

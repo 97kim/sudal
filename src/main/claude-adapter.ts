@@ -81,6 +81,8 @@ export type BackgroundTasksSource = "sdk" | "cleanup";
 const POLICY_TO_MODE: Record<PermissionPolicy, PermissionMode> = {
   ask: "default",
   auto_edit: "acceptEdits",
+  // 분류 모델이 승인 요청마다 허용·거절을 정한다. 계정에 따라 못 쓸 수 있다.
+  auto_review: "auto",
   full: "bypassPermissions",
 };
 

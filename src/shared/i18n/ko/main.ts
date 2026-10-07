@@ -157,7 +157,7 @@ export const main = {
       badProvider: "세션에 사용할 CLI는 Claude Code 또는 Codex를 선택하세요. 전달된 값: {{value}}",
       tooFew: "세션을 {{min}}개 이상 추가하세요.",
       tooMany: "세션은 최대 {{max}}개까지 추가할 수 있습니다.",
-      badPolicy: "작업 권한을 다시 선택해 주세요. 허용되는 값: ask · auto_edit · full",
+      badPolicy: "작업 권한을 다시 선택해 주세요. 허용되는 값: ask · auto_edit · auto_review · full",
     },
     worktreeFailed: "세션 {{label}}의 worktree를 만들지 못했습니다: {{detail}}",
     tabCreateFailed: "팬아웃 세션의 탭을 만들지 못했습니다.",

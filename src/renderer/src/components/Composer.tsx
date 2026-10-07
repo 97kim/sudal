@@ -38,6 +38,7 @@ const MAX_IMAGES = 4;
 const POLICY_TAG: Record<PermissionPolicy, string> = {
   ask: "ASK",
   auto_edit: "AUTO-EDIT",
+  auto_review: "AUTO-REVIEW",
   full: "FULL",
 };
 

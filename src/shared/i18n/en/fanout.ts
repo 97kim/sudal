@@ -17,6 +17,7 @@ export const fanout: DeepPartial<typeof ko> = {
     policy: {
       ask: { label: "Ask", description: "If the CLI asks for more permissions, you can approve them in each tab." },
       auto_edit: { label: "Auto-edit", description: "Allows editing files inside the working folder. Whether anything else needs approval depends on the selected CLI's permission rules." },
+      auto_review: { label: "AI review", description: "An AI decides whether to allow actions that need approval." },
       full: { label: "Full auto", description: "Changes files and runs commands without asking. Commands run on this Mac." },
     },
     creating: "Creating worktrees…",

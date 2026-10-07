@@ -7,7 +7,7 @@ Write everything the user reads in the user's language: follow their language se
 ## Model
 
 - **Workspace**: a name plus an optional default path. It groups tabs.
-- **Tab**: one chat session. It has a provider (claude|codex), a policy (ask|auto_edit|full), a cwd, and a status (idle|running|queued|waiting_permission|error).
+- **Tab**: one chat session. It has a provider (claude|codex), a policy (ask|auto_edit|auto_review|full), a cwd, and a status (idle|running|queued|waiting_permission|error).
 - **Selector `<sel>`**: `self` (the tab you are running in) · `active` (the tab the person is looking at in the app) · a tab id · an exact title · a unique title prefix. An ambiguous selector fails with `ambiguous` and lists the candidates. Omitting `--tab` means `active`.
 - **`self` is not `active`.** You often run in a tab that is not on screen (a worker, the other side of a split, a scheduled run). `self` comes from `SUDAL_TAB_ID`, which the app sets for the agents it runs. Outside an Sudal tab, `self` fails with `no_self_tab`.
 - **`tab new` without `--ws`** creates the tab in the workspace of `self`, not of `active`. Run outside an Sudal tab, it falls back to the workspace of `active`. Other commands still read an omitted `--tab` as `active`.

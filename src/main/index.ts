@@ -18,7 +18,7 @@ import {
   webContents,
   type MenuItemConstructorOptions,
 } from "electron";
-import type { PermissionAnswer, PermissionPolicy } from "@shared/chat-events";
+import { isPermissionPolicy, type PermissionAnswer, type PermissionPolicy } from "@shared/chat-events";
 import { isThemeMode } from "@shared/theme";
 import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT, LOCALES, type Locale } from "@shared/i18n/locale";
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
@@ -2204,7 +2204,7 @@ function registerIpc() {
         clean.provider = patch.provider;
       }
       if (patch.policy !== undefined) {
-        if (typeof patch.policy !== "string") throw new Error(mt("main.error.badPolicy"));
+        if (!isPermissionPolicy(patch.policy)) throw new Error(mt("main.error.badPolicy"));
         clean.policy = patch.policy;
       }
       if ("model" in patch) {

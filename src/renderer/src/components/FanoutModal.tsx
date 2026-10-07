@@ -2,7 +2,7 @@
 import { usePaneFocusRef } from "../pane-focus";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { PermissionPolicy } from "@shared/chat-events";
+import { PERMISSION_POLICIES, type PermissionPolicy } from "@shared/chat-events";
 import type { FanoutStartDto, Provider } from "@shared/ipc";
 import { FANOUT_MAX_VARIANTS, FANOUT_MIN_VARIANTS, PROVIDER_NAME, variantLabel } from "@shared/fanout";
 import { Icon } from "./Icon";
@@ -10,7 +10,7 @@ import { ProviderLogo } from "./ProviderLogo";
 import { modelOptions, useModels } from "../models";
 import { Modal } from "./Modal";
 
-const POLICIES: PermissionPolicy[] = ["ask", "auto_edit", "full"];
+const POLICIES = PERMISSION_POLICIES;
 
 /** 세션 한 줄의 모델 셀렉트 — provider 의 실제 모델 목록(CLI 조회)을 쓴다. */
 function VariantModelSelect({ provider, value, onChange }: { provider: Provider; value: string; onChange: (model: string) => void }) {

@@ -54,7 +54,7 @@ const MESSAGES = {
   sudal ws list
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
-  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
+  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|auto_review|full]
                   [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # --ws 생략 = 이 명령을 부른 탭(self)의 워크스페이스, 탭 밖이면 화면에서 보고 있는 탭의 워크스페이스
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
@@ -65,7 +65,7 @@ const MESSAGES = {
   sudal tab abort --tab <sel>
   sudal tab verify --tab <sel> [--cmd <명령>]... [--wait] [--timeout-ms N]   # 저장한 검증 명령(또는 --cmd) 실행 → 카드
   sudal tab verify-abort --tab <sel>
-  sudal tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|full] [--wait] [--timeout-ms N]
+  sudal tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|auto_review|full] [--wait] [--timeout-ms N]
                                        # 지시 하나를 격리 세션(worktree) N개에 동시에 → 원래 탭에 팬아웃 카드
   sudal file open --path /abs/file [--line N] [--tab <sel>]
   sudal browser open --url https://… [--tab <sel>]
@@ -74,7 +74,7 @@ const MESSAGES = {
   sudal browser fill --selector <css> --value <값> [--tab <sel>]
   sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # 오케스트레이션 Run (코디네이터 = 사람 또는 탭)
   sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
-                            [--policy ask|auto_edit|full] [--cwd /abs] [--worktree] [--request-id <id>]
+                            [--policy ask|auto_edit|auto_review|full] [--cwd /abs] [--worktree] [--request-id <id>]
   sudal orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
   sudal orch reply --run <id> [--key <k>] --id <question> --body <text>
   sudal orch send --run <id> ... --type followup --to dispatch:<id>|@all|@claude|@codex|@idle --body <text>   # 코디네이터 → 워커(그룹 가능)
@@ -116,7 +116,7 @@ const MESSAGES = {
   sudal ws list
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
-  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|full]
+  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|auto_review|full]
                   [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # no --ws = the workspace of the tab running this command (self); outside a tab, the tab shown in the app
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
@@ -127,7 +127,7 @@ const MESSAGES = {
   sudal tab abort --tab <sel>
   sudal tab verify --tab <sel> [--cmd <command>]... [--wait] [--timeout-ms N]   # run the saved verify commands (or --cmd) -> card
   sudal tab verify-abort --tab <sel>
-  sudal tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|full] [--wait] [--timeout-ms N]
+  sudal tab fanout --tab <sel> --prompt <text> --provider claude --provider codex [--policy ask|auto_edit|auto_review|full] [--wait] [--timeout-ms N]
                                        # one prompt to N isolated sessions (worktrees) at once -> fan-out card on the original tab
   sudal file open --path /abs/file [--line N] [--tab <sel>]
   sudal browser open --url https://… [--tab <sel>]
@@ -136,7 +136,7 @@ const MESSAGES = {
   sudal browser fill --selector <css> --value <value> [--tab <sel>]
   sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # orchestration Run (the coordinator is a person or a tab)
   sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
-                            [--policy ask|auto_edit|full] [--cwd /abs] [--worktree] [--request-id <id>]
+                            [--policy ask|auto_edit|auto_review|full] [--cwd /abs] [--worktree] [--request-id <id>]
   sudal orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
   sudal orch reply --run <id> [--key <k>] --id <question> --body <text>
   sudal orch send --run <id> ... --type followup --to dispatch:<id>|@all|@claude|@codex|@idle --body <text>   # coordinator -> worker (groups allowed)

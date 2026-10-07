@@ -15,6 +15,7 @@ export const fanout = {
     policy: {
       ask: { label: "묻기", description: "CLI가 추가 권한을 요청하면 각 탭에서 승인할 수 있습니다." },
       auto_edit: { label: "편집 자동", description: "작업 경로 안의 파일 편집을 허용합니다. 추가 승인 여부는 선택한 CLI의 권한 규칙에 따릅니다." },
+      auto_review: { label: "AI 판단", description: "승인이 필요한 작업은 AI가 판단해 허용하거나 거절합니다." },
       full: { label: "전부 자동", description: "파일 변경과 명령 실행을 승인 없이 진행합니다. 명령은 이 Mac에서 실행됩니다." },
     },
     creating: "worktree 만드는 중…",

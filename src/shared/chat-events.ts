@@ -7,8 +7,15 @@ import type { Provider } from "./ipc";
 
 export type SessionStatus = "idle" | "queued" | "running" | "waiting_permission" | "error";
 
-/** Claude permissionMode / Codex sandbox 정책을 3단으로 통일. */
-export type PermissionPolicy = "ask" | "auto_edit" | "full";
+/**
+ * Claude permissionMode / Codex sandbox·승인 정책을 한 줄로 통일. 느슨해지는 순서다.
+ * auto_review 는 사람 대신 AI 가 승인 요청을 판단한다(Claude auto 모드 · Codex approvalsReviewer auto_review).
+ */
+export type PermissionPolicy = "ask" | "auto_edit" | "auto_review" | "full";
+export const PERMISSION_POLICIES: readonly PermissionPolicy[] = ["ask", "auto_edit", "auto_review", "full"];
+export function isPermissionPolicy(v: unknown): v is PermissionPolicy {
+  return PERMISSION_POLICIES.includes(v as PermissionPolicy);
+}
 
 export interface TokenUsage {
   input: number;

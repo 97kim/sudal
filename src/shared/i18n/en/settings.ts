@@ -82,6 +82,7 @@ export const settings: DeepPartial<typeof ko> = {
       inherit: { label: "Same as the current tab", hint: "Uses the permission of the tab you were looking at when you opened the new one." },
       ask: { label: "Ask before changes", hint: "Asks when a file change or command needs approval." },
       auto_edit: { label: "Auto-approve edits", hint: "Allows file edits automatically and asks for commands that need extra approval." },
+      auto_review: { label: "AI decides approvals", hint: "An AI judges the risk of actions that need approval, instead of asking you." },
       full: { label: "Fully automatic (caution)", hint: "Changes files and runs commands without approval. Use it only for work you trust." },
     },
   },

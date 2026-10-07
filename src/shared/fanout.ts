@@ -1,6 +1,6 @@
 // 팬아웃(지시 하나 → 격리 세션 N개)의 순수 부분 — 세션 이름·제목·요약·비교용 파일 합집합. 실행은 main/index.ts startFanout.
 import type { TFunction } from "i18next";
-import type { FanoutVariant } from "./chat-events";
+import { isPermissionPolicy, type FanoutVariant, type PermissionPolicy } from "./chat-events";
 import type { GitChangeDto, Provider } from "./ipc";
 
 export const FANOUT_MAX_VARIANTS = 4;
@@ -56,7 +56,7 @@ export function allSettled(variants: FanoutVariant[]): boolean {
 }
 
 /** 시작 요청 검증 — 렌더러·CLI 입력 공통. */
-export function validateFanoutRequest(t: TFunction, o: { prompt: unknown; variants: unknown; policy?: unknown }): { ok: true; prompt: string; variants: { provider: Provider; model?: string }[]; policy: "ask" | "auto_edit" | "full" } | { ok: false; error: string } {
+export function validateFanoutRequest(t: TFunction, o: { prompt: unknown; variants: unknown; policy?: unknown }): { ok: true; prompt: string; variants: { provider: Provider; model?: string }[]; policy: PermissionPolicy } | { ok: false; error: string } {
   const prompt = typeof o.prompt === "string" ? o.prompt.trim() : "";
   if (!prompt) return { ok: false, error: t("main.fanout.validate.promptRequired") };
   if (!Array.isArray(o.variants)) return { ok: false, error: t("main.fanout.validate.variantsUnreadable") };
@@ -70,6 +70,6 @@ export function validateFanoutRequest(t: TFunction, o: { prompt: unknown; varian
   if (variants.length < FANOUT_MIN_VARIANTS) return { ok: false, error: t("main.fanout.validate.tooFew", { min: FANOUT_MIN_VARIANTS }) };
   if (variants.length > FANOUT_MAX_VARIANTS) return { ok: false, error: t("main.fanout.validate.tooMany", { max: FANOUT_MAX_VARIANTS }) };
   const policy = o.policy === undefined ? "auto_edit" : o.policy;
-  if (policy !== "ask" && policy !== "auto_edit" && policy !== "full") return { ok: false, error: t("main.fanout.validate.badPolicy") };
+  if (!isPermissionPolicy(policy)) return { ok: false, error: t("main.fanout.validate.badPolicy") };
   return { ok: true, prompt, variants, policy };
 }

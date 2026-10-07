@@ -10,7 +10,7 @@ import type { TFunction } from "i18next";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
 import { msgText } from "@shared/i18n/msg";
 import type { ScheduleListDto, Provider } from "@shared/ipc";
-import type { PermissionPolicy } from "@shared/chat-events";
+import { PERMISSION_POLICIES, type PermissionPolicy } from "@shared/chat-events";
 import { classify, nextOccurrence, parseCron, presetToCron } from "@shared/cron";
 import type { Run, RunStatus, Schedule } from "@shared/schedules";
 import { Icon } from "./Icon";
@@ -32,7 +32,7 @@ const STATUS_TONE: Record<RunStatus, string> = {
 // 문구는 값(키)만 들고 그릴 때 사전에서 가져온다.
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
-const POLICIES: PermissionPolicy[] = ["ask", "auto_edit", "full"];
+const POLICIES = PERMISSION_POLICIES;
 
 const REPEATS: Repeat[] = ["hourly", "daily", "weekdays", "weekly", "custom"];
 

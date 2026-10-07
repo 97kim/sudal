@@ -6,6 +6,7 @@ import type {
   PermissionPolicy,
   SessionStatus,
 } from "./chat-events";
+import { PERMISSION_POLICIES } from "./chat-events";
 import type { BackgroundJobDto } from "./background-jobs";
 import type { OtterMood, OtterMotion } from "./otter";
 import type { Run, Schedule } from "./schedules";
@@ -166,7 +167,7 @@ export interface OtterApi {
 }
 
 export type NewTabPolicy = "inherit" | PermissionPolicy;
-export const NEW_TAB_POLICIES: readonly NewTabPolicy[] = ["inherit", "ask", "auto_edit", "full"];
+export const NEW_TAB_POLICIES: readonly NewTabPolicy[] = ["inherit", ...PERMISSION_POLICIES];
 export function isNewTabPolicy(v: unknown): v is NewTabPolicy {
   return NEW_TAB_POLICIES.includes(v as NewTabPolicy);
 }

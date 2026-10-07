@@ -37,6 +37,7 @@ export const schedules: DeepPartial<typeof ko> = {
   policy: {
     ask: "Ask first",
     auto_edit: "Auto-edit",
+    auto_review: "AI decides",
     full: "Full auto",
   },
   repeat: {
