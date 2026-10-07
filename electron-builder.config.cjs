@@ -30,6 +30,10 @@ module.exports = {
     // x64 와 zip(electron-updater 는 zip 으로 받는다)을 다시 추가한다.
     target: [{ target: "dmg", arch: ["arm64"] }],
     category: "public.app-category.developer-tools",
+    // macOS 26 은 예전 방식 아이콘(icns)을 자기 모양에 맞춰 다시 그리며 레티나 크기(256px)를 흐리게 만든다.
+    // Icon Composer 형식(.icon)을 주면 Assets.car 로 컴파일해 크기마다 원본에서 그린다. 예전 macOS 는 위의 icns 를 쓴다.
+    // 컴파일에 Xcode 26 이상의 actool 이 필요하다. 수달 그림(Assets/mark.png)은 .sudal/logo/sudal-mark.svg 를 1024 캔버스에 놓은 것.
+    icon: "build/icon.icon",
     // Developer ID 인증서가 없어 ad-hoc 서명만 한다(afterPack). Gatekeeper 는 이걸 거부하므로
     // (spctl -a → rejected) 받는 쪽은 격리 속성을 직접 떼거나 시스템 설정에서 "그래도 열기" 를 눌러야 한다.
     // 예전의 우클릭 → 열기 우회는 macOS 15 Sequoia 에서 없어졌다. Homebrew cask 도 격리를 붙이므로
