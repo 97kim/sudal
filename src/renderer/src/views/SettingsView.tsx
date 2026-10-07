@@ -1474,7 +1474,8 @@ function RoamSliders({ settings, onSave }: { settings: AppSettingsDto; onSave: (
     return m === 0 ? t("settings.otter.roamEverySec", { s }) : s === 0 ? t("settings.otter.roamEveryMin", { m }) : t("settings.otter.roamEveryMinSec", { m, s });
   };
   return (
-    <div className="mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 pl-6 text-[12px]" data-otter-roam-sliders>
+    // 값 칸은 고정 폭이다 — 거리 값은 끌 때마다 글자 길이가 바뀌어, 늘어나는 칸이면 슬라이더가 줄었다 늘었다 한다.
+    <div className="mt-3 grid grid-cols-[auto_1fr_232px] items-center gap-x-3 gap-y-2 pl-6 text-[12px]" data-otter-roam-sliders>
       {(Object.keys(ROAM_KEYS) as (keyof OtterRoamTuning)[]).map((k) => {
         const r = OTTER_ROAM_RANGE[k];
         const v = value(k);
@@ -1494,7 +1495,7 @@ function RoamSliders({ settings, onSave }: { settings: AppSettingsDto; onSave: (
               className="w-full accent-accent"
               data-otter-roam-slider={k}
             />
-            <span className="min-w-[96px] text-right tabular-nums text-muted">{label(k, v)}</span>
+            <span className="truncate whitespace-nowrap text-right tabular-nums text-muted">{label(k, v)}</span>
           </label>
         );
       })}
