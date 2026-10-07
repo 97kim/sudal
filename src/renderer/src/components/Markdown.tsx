@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { Element, ElementContent, Root, Text } from "hast";
 import { findFileRefs, localFileHref, parseFileRef, type FileRef as FileRefInfo } from "@shared/file-refs";
 import { useLocateFile, useOpenFile } from "./FileViewer";
@@ -346,7 +346,9 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unkno
 const REMARK_PLUGINS: Options["remarkPlugins"] = [[remarkGfm, { singleTilde: false }]];
 const CHAT_REHYPE: Options["rehypePlugins"] = [rehypeHighlight, rehypeFileRefs];
 // 문서(README 등)는 HTML 도 그린다 — <p align>·<img width>·배지. 정리(sanitize)는 하이라이트 전에 둬야 hljs 클래스가 남는다.
-const DOC_REHYPE: Options["rehypePlugins"] = [rehypeRaw, rehypeSanitize, rehypeHighlight, rehypeFileRefs];
+// 기본 정리는 href 의 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내므로 그 스킴만 더한다.
+const DOC_SANITIZE = { ...defaultSchema, protocols: { ...defaultSchema.protocols, href: [...(defaultSchema.protocols?.href ?? []), "file"] } };
+const DOC_REHYPE: Options["rehypePlugins"] = [rehypeRaw, [rehypeSanitize, DOC_SANITIZE], rehypeHighlight, rehypeFileRefs];
 const CHAT_COMPONENTS: Options["components"] = { a: MdLink, span: MdSpan, code: MdCode, pre: MdPre };
 const DOC_COMPONENTS: Options["components"] = { ...CHAT_COMPONENTS, img: MdImg };
 

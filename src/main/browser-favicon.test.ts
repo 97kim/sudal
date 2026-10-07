@@ -18,3 +18,11 @@ test("상한은 아이콘에 맞는 크기다", () => {
   // 파비콘이 128KB 를 넘으면 아이콘이 아니다 — 화면에 그대로 실어 나르는 값이라 상한을 둔다.
   assert.equal(FAVICON_MAX_BYTES, 128 * 1024);
 });
+
+test("문서 이미지는 이 PC·사설망 주소를 받지 않는다", async () => {
+  const { isPrivateHost } = await import("./browser-favicon");
+  for (const h of ["localhost", "a.localhost", "127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.1", "192.168.0.10", "169.254.169.254", "0.0.0.0", "100.64.0.1", "[::1]", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "intranet", "printer.local"])
+    assert.equal(isPrivateHost(h), true, h);
+  for (const h of ["img.shields.io", "raw.githubusercontent.com", "172.32.0.1", "8.8.8.8", "[2606:4700::1111]"])
+    assert.equal(isPrivateHost(h), false, h);
+});

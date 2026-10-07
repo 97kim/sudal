@@ -53,10 +53,14 @@ export function codexLangHookArgs(): string[] {
   } catch {
     return [];
   }
-  // 앱 데이터 경로에 공백이 있다("Application Support") — 셸 명령으로 넘기니 따옴표로 감싼다.
-  const cmd = JSON.stringify(`/bin/sh '${script}'`);
+  // 앱 데이터 경로에 공백이 있다("Application Support") — 셸 명령으로 넘기니 작은따옴표로 감싸고, 경로 속 ' 는 '\'' 로 바꾼다.
+  const cmd = JSON.stringify(`/bin/sh ${shellQuote(script)}`);
   const handler = `{type="command",command=${cmd},timeout=5}`;
   return ["-c", `hooks.UserPromptSubmit=[{hooks=[${handler}]}]`, "-c", `hooks.PostToolUse=[{matcher="*",hooks=[${handler}]}]`];
+}
+
+export function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 /** 다음 도구 결과 뒤에 리마인더를 넣게 한다(훅이 한 번 쓰고 지운다). */
@@ -88,21 +92,37 @@ interface HookMeta {
  * (-c 로 같이 넘겨도 안 된다). 우리 훅이 승인 전이면 터미널 Codex 에서 승인할 때와 같은 항목을 써 넣는다.
  * 사용자가 허락한 동작이다(2026-10-07). 다른 훅·설정은 건드리지 않는다.
  */
-export async function trustCodexLangHooks(server: CodexAppServer, cwd: string, log?: (line: string) => void): Promise<boolean> {
-  if (!dir) return false;
+export function trustCodexLangHooks(server: CodexAppServer, cwd: string, log?: (line: string) => void): Promise<boolean> {
+  if (!dir || trusted) return Promise.resolve(false);
+  // 탭 여러 개가 한꺼번에 Codex 를 띄우면 config.toml 쓰기가 겹쳐 사용자 설정 변경이 사라질 수 있다 — 한 번에 하나씩.
+  const run = trustQueue.then(() => (trusted ? false : trustNow(server, cwd, log)));
+  trustQueue = run.catch(() => false);
+  return run;
+}
+
+/** 이번 실행에서 우리 훅이 신뢰된 것을 확인했다. 등록 내용은 실행 중에 바뀌지 않으니 다시 보지 않는다. */
+let trusted = false;
+let trustQueue: Promise<unknown> = Promise.resolve();
+
+async function trustNow(server: CodexAppServer, cwd: string, log?: (line: string) => void): Promise<boolean> {
   try {
     const r = await server.request<{ data?: { hooks?: HookMeta[] }[] }>("hooks/list", { cwds: [cwd] }, 10_000);
     const ours = (r.data ?? [])
       .flatMap((e) => e.hooks ?? [])
-      .filter((h) => h.source === "sessionFlags" && h.command?.includes("lang-reminder.sh") && h.trustStatus !== "trusted" && h.trustStatus !== "managed");
-    if (ours.length === 0) return false;
+      .filter((h) => h.source === "sessionFlags" && h.command?.includes("lang-reminder.sh"));
+    const untrusted = ours.filter((h) => h.trustStatus !== "trusted" && h.trustStatus !== "managed");
+    if (untrusted.length === 0) {
+      trusted = ours.length > 0;
+      return false;
+    }
     // 키에 "." 이 있어(".../config.toml:post_tool_use:0:0") keyPath 로 못 쓴다 — hooks.state 표에 합친다.
     await server.request(
       "config/value/write",
-      { keyPath: "hooks.state", mergeStrategy: "upsert", value: Object.fromEntries(ours.map((h) => [h.key, { trusted_hash: h.currentHash }])) },
+      { keyPath: "hooks.state", mergeStrategy: "upsert", value: Object.fromEntries(untrusted.map((h) => [h.key, { trusted_hash: h.currentHash }])) },
       10_000,
     );
-    log?.(`[codex] 언어 리마인더 훅 신뢰 ${ours.length}개 기록`);
+    trusted = true;
+    log?.(`[codex] 언어 리마인더 훅 신뢰 ${untrusted.length}개 기록`);
     return true;
   } catch (e) {
     log?.(`[codex] 언어 리마인더 훅 확인 실패: ${(e as Error).message}`);

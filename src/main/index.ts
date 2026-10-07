@@ -53,7 +53,7 @@ import { lastReplyText } from "@shared/session-state";
 import { parseCron } from "@shared/cron";
 import { PreviewServer } from "./preview-server";
 import { browserNetFailures, clearBrowserNetFailures, watchBrowserNetwork } from "./browser-net";
-import { DOC_IMAGE_MAX_BYTES, fetchFavicon, fetchRemoteImage } from "./browser-favicon";
+import { fetchDocImage, fetchFavicon } from "./browser-favicon";
 import { forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
 import { BROWSER_PARTITION } from "./browser-net";
 import { BackgroundJobWatcher } from "./background-jobs";
@@ -2412,7 +2412,7 @@ function registerIpc() {
     return listDirectory(dir);
   });
   ipcMain.handle(IPC.fileRemoteImage, (_e, url: unknown) =>
-    typeof url === "string" ? fetchRemoteImage(url, DOC_IMAGE_MAX_BYTES) : null,
+    typeof url === "string" ? fetchDocImage(url) : null,
   );
   ipcMain.handle(IPC.fileLocate, async (_e, cwd: string, ref: string) => {
     if (typeof cwd !== "string" || typeof ref !== "string" || ref.length > 1024) return [];
