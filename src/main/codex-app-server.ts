@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { appMsg, mt } from "./i18n";
+import { aiReviewNotice } from "./ai-review";
 import type { ChatEvent, ModelUsageEntry, TokenUsage } from "@shared/chat-events";
 
 type Json = Record<string, unknown>;
@@ -209,6 +210,9 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
       return itemStarted(params.item as Item, ts);
     case "item/completed":
       return itemCompleted(params.item as Item, ts);
+    case "item/autoApprovalReview/started":
+    case "item/autoApprovalReview/completed":
+      return autoApprovalReview(params, ts);
     case "thread/tokenUsage/updated": {
       const tu = params.tokenUsage as { last?: unknown } | undefined;
       if (tu?.last) ctx.lastUsage = appServerUsage(tu.last);
@@ -262,6 +266,46 @@ export function normalizeFileChanges(raw: unknown): FileChangeDto[] {
   const list = (Array.isArray(raw) ? raw : []) as { path?: string; kind?: { type?: string } | string; diff?: string }[];
   const kindOf = (k: unknown) => (typeof k === "string" ? k : ((k as { type?: string })?.type ?? "update"));
   return list.map((c) => ({ path: str(c.path), kind: kindOf(c.kind), diff: str(c.diff) }));
+}
+
+/**
+ * 검토 에이전트(approvalsReviewer auto_review)의 판단. 스키마에 [UNSTABLE] 이라 모양이 바뀔 수 있다 — 모르는 값은 버린다.
+ * 대상 도구가 없는 검토(네트워크 접근 등)도 있고, 이유가 비어 올 수도 있다.
+ */
+function autoApprovalReview(params: Json, ts: number): ChatEvent[] {
+  const review = (params.review ?? {}) as { status?: string; rationale?: string | null };
+  const reviewId = str(params.reviewId);
+  const target = typeof params.targetItemId === "string" ? params.targetItemId : null;
+  switch (review.status) {
+    case "inProgress":
+    case "approved":
+      return target ? [{ type: "tool_review", ts, toolUseId: target, status: review.status === "approved" ? "approved" : "in_progress" }] : [];
+    case "denied":
+    case "timedOut":
+    case "aborted":
+      if (!reviewId) return [];
+      return [aiReviewNotice({ key: reviewId, ts, outcome: review.status, action: reviewActionText(params.action), reason: review.rationale })];
+    default:
+      return [];
+  }
+}
+
+/** 검토 대상 작업을 한 줄로. */
+function reviewActionText(raw: unknown): string {
+  const a = (raw ?? {}) as Record<string, unknown>;
+  switch (a.type) {
+    case "command":
+      return str(a.command);
+    case "execve":
+      return [str(a.program), ...(Array.isArray(a.argv) ? a.argv.slice(1).map(String) : [])].join(" ");
+    case "mcpToolCall":
+      return [str(a.server), str(a.tool)].filter(Boolean).join(":") || "MCP";
+    default: {
+      // applyPatch·networkAccess·requestPermissions 등 — 경로·호스트가 있으면 붙인다
+      const detail = [a.host, a.url, a.path, Array.isArray(a.files) ? a.files.join(", ") : undefined].find((v) => typeof v === "string" && v);
+      return [str(a.type), detail].filter(Boolean).join(" ");
+    }
+  }
 }
 
 function itemStarted(item: Item, ts: number): ChatEvent[] {

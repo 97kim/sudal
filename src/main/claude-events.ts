@@ -7,6 +7,7 @@
 import type { ChatEvent } from "@shared/chat-events";
 import type { Msg, MsgKey } from "@shared/i18n/msg";
 import { appMsg } from "./i18n";
+import { aiReviewNotice } from "./ai-review";
 import type { ProviderRateLimitDto, RateLimitWindowDto } from "@shared/ipc";
 
 type SDKMessage = import("@anthropic-ai/claude-agent-sdk").SDKMessage;
@@ -90,6 +91,14 @@ export class ClaudeEventMapper {
           const level = m.level === "notice" || m.level === "suggestion" || m.level === "warning" ? m.level : null;
           if (!text || !level) return [];
           return [{ type: "notice", ts, message: text, level, ...(typeof m.tool_use_id === "string" ? { key: m.tool_use_id } : {}) }];
+        }
+        // auto 모드(권한 "AI 판단으로 승인")에서 분류기가 거절했다. 규칙·모드로 거절된 것은 도구 결과에 이미 나오므로
+        // 분류기가 정한 것만 "AI 가 거절" 로 보여 준다. 하위 에이전트 안의 거절도 같다(그 도구 카드는 없지만 이유는 알 만하다).
+        if (msg.subtype === "permission_denied") {
+          const m = msg as { tool_name?: unknown; tool_use_id?: unknown; decision_reason_type?: unknown; decision_reason?: unknown; message?: unknown };
+          if (m.decision_reason_type !== "classifier" || typeof m.tool_use_id !== "string") return [];
+          const reason = typeof m.decision_reason === "string" ? m.decision_reason : typeof m.message === "string" ? m.message : null;
+          return [aiReviewNotice({ key: m.tool_use_id, ts, outcome: "denied", action: typeof m.tool_name === "string" ? m.tool_name : "?", reason })];
         }
         return [];
       case "stream_event":

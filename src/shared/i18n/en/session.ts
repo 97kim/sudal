@@ -91,6 +91,12 @@ export const session: DeepPartial<typeof ko> = {
     mcp: "Show MCP server status (handled by the app)",
   },
   msg: {
+    aiReview: {
+      denied: "AI review denied this action: {{action}}",
+      deniedReason: "AI review denied this action: {{action}} — {{reason}}",
+      timedOut: "AI review didn't finish in time, so this action didn't run: {{action}}",
+      aborted: "AI review was stopped, so this action didn't run: {{action}}",
+    },
     approval: {
       runCommand: "Allow this command to run?",
       fileChanges_one: "Allow {{count}} file change?",

@@ -89,6 +89,12 @@ export const session = {
     mcp: "MCP 서버 상태를 본다 (앱에서 처리)",
   },
   msg: {
+    aiReview: {
+      denied: "AI가 이 작업을 거절했어요: {{action}}",
+      deniedReason: "AI가 이 작업을 거절했어요: {{action}} — {{reason}}",
+      timedOut: "AI 검토가 시간 안에 끝나지 않아 실행하지 않았어요: {{action}}",
+      aborted: "AI 검토가 중단돼 실행하지 않았어요: {{action}}",
+    },
     approval: {
       runCommand: "명령 실행을 허용할까요?",
       fileChanges_one: "파일 {{count}}개 변경을 허용할까요?",

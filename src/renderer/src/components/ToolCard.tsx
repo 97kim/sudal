@@ -208,6 +208,15 @@ export function ToolCard({ block }: { block: ToolBlock }) {
             <Icon name="terminal" size={11} />
           </span>
         )}
+        {block.aiReview && (
+          <span
+            className="shrink-0 rounded bg-accent-tint px-1 text-[10px] text-accent"
+            title={block.aiReview === "approved" ? t("toolCard.aiApprovedHint") : undefined}
+            data-ai-review={block.aiReview}
+          >
+            {t(block.aiReview === "approved" ? "toolCard.aiApproved" : "toolCard.aiReviewing")}
+          </span>
+        )}
         <span className={`label flex shrink-0 items-center gap-1.5 ${tone}`}>
           <span
             className={active ? "shimmer" : ""}

@@ -45,6 +45,8 @@ export interface ToolBlock {
   /** outputMsg: 앱이 대신 채운 결과 문구(도구가 결과 없이 끝났을 때). 그릴 때 번역한다. */
   result?: { output: string; isError: boolean; outputMsg?: Msg };
   permission?: "pending" | "allowed" | "denied";
+  /** AI 가 승인 요청을 검토하는 중이거나 허용했다(권한 auto_review). */
+  aiReview?: "in_progress" | "approved";
   /** Skill·Agent 가 띄운 하위 에이전트의 활동(화면 전용, 재생하면 없다). */
   subagent?: SubagentProgress;
 }
@@ -341,6 +343,8 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           result: b?.result,
           permission: b?.permission,
           subagent: b?.subagent,
+          // Codex 는 명령이 끝날 때 tool_use 를 다시 보낸다 — 그 사이 붙은 AI 검토 표시를 지우지 않게.
+          aiReview: b?.aiReview,
         })),
       };
 
@@ -374,6 +378,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           partial: false,
           permission: b?.permission,
           subagent: b?.subagent,
+          aiReview: b?.aiReview,
           result: { output: event.output, isError: event.isError, ...(event.outputMsg ? { outputMsg: event.outputMsg } : {}) },
         })),
       };
@@ -393,6 +398,8 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           partial: false,
           result: b?.result,
           permission: "pending",
+          subagent: b?.subagent,
+          aiReview: b?.aiReview,
         })),
       };
 
@@ -542,6 +549,15 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
     case "session_reset":
       // 새 provider 세션: 다음 턴이 들고 갈 컨텍스트는 요약 한 덩어리뿐이라 게이지를 비운다.
       return { ...state, lastTurn: null };
+
+    case "tool_review": {
+      // 카드가 없으면(네트워크 검토처럼 대상 도구가 없는 경우) 아무것도 안 한다 — 허용은 조용히 지나가도 된다.
+      if (!state.blocks.some((b) => b.kind === "tool" && b.id === event.toolUseId)) return state;
+      return {
+        ...state,
+        blocks: state.blocks.map((b) => (b.kind === "tool" && b.id === event.toolUseId && b.aiReview !== "approved" ? { ...b, aiReview: event.status } : b)),
+      };
+    }
 
     case "notice": {
       const id = event.key ? `notice-${event.key}` : `notice-${event.ts}-${state.eventCount}`;

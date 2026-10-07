@@ -323,6 +323,13 @@ export interface NoticeEvent extends Base {
   key?: string;
 }
 
+/** 승인 요청을 AI 가 검토하는 중이거나 허용했다(권한 auto_review). 해당 도구 카드에 표시만 붙인다. 거절은 notice 로 온다. */
+export interface ToolReviewEvent extends Base {
+  type: "tool_review";
+  toolUseId: string;
+  status: "in_progress" | "approved";
+}
+
 export type ChatEvent =
   | UserMessageEvent
   | StatusEvent
@@ -343,6 +350,7 @@ export type ChatEvent =
   | FanoutEvent
   | OrchestrationEvent
   | NoticeEvent
+  | ToolReviewEvent
   | ErrorEvent;
 
 /** renderer → main 권한 응답. */
