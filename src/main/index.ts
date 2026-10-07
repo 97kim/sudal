@@ -46,6 +46,7 @@ import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
 import { forkCodexThread, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { setCodexHookDir } from "./codex-lang-hooks";
 import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
 import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/handoff";
 import { lastReplyText } from "@shared/session-state";
@@ -132,6 +133,8 @@ const logger: FileLogger = createFileLogger(
   join(app.getPath("userData"), "logs"),
 );
 logger.patchConsole();
+// Codex 탭의 언어 리마인더 훅 스크립트가 사는 곳(codex-lang-hooks).
+setCodexHookDir(join(app.getPath("userData"), "codex-hooks"));
 console.log(
   `[app] sudal ${app.getVersion()} start (electron ${process.versions.electron}, ${process.platform}/${process.arch}${app.isPackaged ? "" : ", dev"})`,
 );

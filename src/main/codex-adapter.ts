@@ -10,8 +10,12 @@ import { mapCodexEvent } from "./codex-events";
 import { AppServerError, CodexAppServer, classifyResumeFailure, mapAppServerNotification, normalizeFileChanges, resumeConflictMessage, type AppServerTurnContext, type FileChangeDto } from "./codex-app-server";
 import { Codex } from "@openai/codex-sdk";
 import { codexHasDeveloperInstructions } from "./cli-defaults";
-import { appMsg, MsgError, mt } from "./i18n";
+import { appMsg, mainI18n, MsgError, mt } from "./i18n";
 import type { Msg } from "@shared/i18n/msg";
+import { clearCodexLangReminder, codexLangHookArgs, queueCodexLangReminder, trustCodexLangHooks } from "./codex-lang-hooks";
+import { isOffLanguage } from "@shared/language-drift";
+import type { Locale } from "@shared/i18n";
+
 
 type ThreadOptions = import("@openai/codex-sdk").ThreadOptions;
 
@@ -91,8 +95,16 @@ interface LiveCodex {
   fileChanges: Map<string, FileChangeDto[]>;
   dead: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** 이번 턴의 진행 설명이 앱 언어를 벗어났다. 다음 도구 결과 뒤에 언어 리마인더를 넣는다(codex-lang-hooks). */
+  langDrift: boolean;
+  /** 마지막 언어 리마인더 뒤로 끝난 도구 수. */
+  toolsSinceReminder: number;
   log?(line: string): void;
 }
+
+/** 언어가 새지 않아도 도구가 이만큼 끝나면 리마인더를 다시 넣는다(Claude 와 같은 값). */
+const REMIND_EVERY_TOOLS = 6;
+const TOOL_ITEMS = new Set(["commandExecution", "fileChange", "mcpToolCall", "webSearch"]);
 
 const live = new Map<string, LiveCodex>();
 const opening = new Map<string, Promise<LiveCodex>>();
@@ -136,7 +148,7 @@ function openSession(runtime: CodexRuntime, key: string, cwd: string, log?: (lin
 }
 
 async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, log?: (line: string) => void): Promise<LiveCodex> {
-  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, log };
+  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
   const server = new CodexAppServer({
     log,
     onNotification: (method, params) => handleNotification(s, method, params),
@@ -150,7 +162,8 @@ async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, l
     },
   });
   s.server = server;
-  await server.start(runtime.codexPath, runtime.env, cwd);
+  await server.start(runtime.codexPath, runtime.env, cwd, codexLangHookArgs());
+  await trustCodexLangHooks(server, cwd, log);
   live.set(key, s);
   return s;
 }
@@ -167,11 +180,28 @@ function handleNotification(s: LiveCodex, method: string, params: Record<string,
   if (params.threadId && s.threadId && params.threadId !== s.threadId) return;
   if (t.turnId && params.turnId && params.turnId !== t.turnId) return;
   trackFileChanges(s, method, params);
+  trackLanguage(s, method, params);
   for (const e of mapAppServerNotification(method, params, Date.now(), t.ctx)) t.req.onEvent(e);
   if (method === "turn/completed") {
     s.turn = null;
     t.resolve();
   }
+}
+
+/**
+ * 한 턴에 도구를 여러 번 부르면 영어 도구 출력이 쌓여 답이 영어로 넘어간다. 넘어간 것이 보이거나 도구가 몇 번 끝나면
+ * 다음 도구 결과 뒤에 언어 리마인더를 넣게 한다(Claude 어댑터의 PostToolBatch 와 같은 규칙).
+ */
+function trackLanguage(s: LiveCodex, method: string, params: Record<string, unknown>) {
+  if (method !== "item/completed" || !s.threadId) return;
+  const item = params.item as { type?: string; text?: unknown } | undefined;
+  if (item?.type === "agentMessage" && typeof item.text === "string" && isOffLanguage(item.text, mainI18n().language as Locale)) s.langDrift = true;
+  else if (item?.type && TOOL_ITEMS.has(item.type)) s.toolsSinceReminder++;
+  else return;
+  if (!s.langDrift && s.toolsSinceReminder < REMIND_EVERY_TOOLS) return;
+  s.langDrift = false;
+  s.toolsSinceReminder = 0;
+  queueCodexLangReminder(s.threadId);
 }
 
 /** fileChange 아이템의 변경 내용을 아이템이 사는 동안 기억한다(item/started → patchUpdated → item/completed). */
@@ -349,6 +379,10 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
   // 여는 동안에는 살아 있는 세션이 없어 applyCodexPolicy 가 바꾼 권한을 받을 곳이 없다 — 여기서 다시 읽는다
   const policy = req.currentPolicy?.() ?? req.policy;
   s.policy = policy;
+  // 사용자 메시지마다 UserPromptSubmit 훅이 리마인더를 넣으므로 여기서 다시 센다.
+  s.langDrift = false;
+  s.toolsSinceReminder = 0;
+  clearCodexLangReminder(s.threadId);
   const done = new Promise<void>((resolve, reject) => {
     s.turn = { req, turnId: null, ctx: { model, startedAt: Date.now(), lastUsage: null }, resolve, reject, permissionSeq: 0 };
   });
