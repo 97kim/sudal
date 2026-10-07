@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -318,6 +319,45 @@ export function Composer({
     }
   };
 
+  // ===== 끌어다 놓기: 이미지는 첨부, 그 밖의 파일·폴더는 경로를 커서 자리에 넣는다 =====
+  const [dropping, setDropping] = useState(false);
+  const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (disabled || !hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropping(true);
+  };
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    // 안쪽 요소로 옮겨 갈 때도 leave 가 온다. 영역 밖으로 나갈 때만 끈다.
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+  };
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    setDropping(false);
+    if (disabled || !hasFiles(e)) return;
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    addFiles(files);
+    // 경로가 없는 것(웹 페이지에서 끈 이미지 등)은 위 addFiles 로만 다룬다.
+    const paths = files
+      .filter((f) => !IMAGE_MIMES.has(f.type))
+      .map((f) => window.sudal.files.pathFor(f))
+      .filter(Boolean);
+    if (paths.length === 0) return;
+    const el = ref.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const before = text.slice(0, start);
+    const after = text.slice(end);
+    const insert = (before && !/\s$/.test(before) ? " " : "") + paths.join(" ") + (after && !/^\s/.test(after) ? " " : "");
+    setText(before + insert + after);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = before.length + insert.length;
+    });
+  };
+
   const canSend = !disabled && (text.trim().length > 0 || images.length > 0);
 
   return (
@@ -401,7 +441,17 @@ export function Composer({
           )}
         </div>
       )}
-      <div className="rounded-xl border border-line bg-panel shadow-pop focus-within:border-accent/50">
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        className={`relative rounded-xl border bg-panel shadow-pop focus-within:border-accent/50 ${dropping ? "border-accent" : "border-line"}`}
+      >
+        {dropping && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-panel/95 text-[12px] text-accent">
+            {t("chat.composer.dropHint")}
+          </div>
+        )}
         {images.length > 0 && (
           <div className="flex gap-2 px-4 pt-3">
             {images.map((img, i) => (

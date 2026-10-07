@@ -983,6 +983,8 @@ export interface SudalApi {
     list(dir: string): Promise<DirEntryDto[]>;
     /** 답변에 적힌 파일 참조("Foo.kt", "src/a.ts")에 맞는 실제 파일들(절대 경로). cwd 기준 상대 경로 → 저장소 안 뒤쪽 경로 일치 순. 없으면 []. */
     locate(cwd: string, ref: string): Promise<string[]>;
+    /** 끌어다 놓은 File 의 디스크 경로. 디스크에 없는 것(브라우저에서 끈 이미지 등)은 "". */
+    pathFor(file: File): string;
   };
   mcp: {
     /** cwd 기준으로 Claude CLI 를 잠깐 띄워 MCP 서버 상태를 받는다. 연결 대기 때문에 최대 10초쯤 걸릴 수 있다. */

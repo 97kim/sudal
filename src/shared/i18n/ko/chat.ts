@@ -198,6 +198,7 @@ export const chat = {
     placeholderQueue: "다음 요청을 보내 두면 현재 작업이 끝난 뒤 자동으로 전달합니다…",
     placeholder: "무엇이든 조사하거나, 고치거나, 실행하게 하세요…",
     attachImage: "이미지 첨부",
+    dropHint: "놓으면 이미지는 첨부하고, 다른 파일은 경로를 넣어요",
     attach: "첨부",
     saveSnippetHint: "현재 입력을 스니펫으로 저장해 다음에 / 로 꺼내 씁니다",
     saveSnippet: "스니펫",

@@ -200,6 +200,7 @@ export const chat: DeepPartial<typeof ko> = {
     placeholderQueue: "Send your next request now and it will be delivered automatically after the current task finishes…",
     placeholder: "Ask me to investigate, fix, or run anything…",
     attachImage: "Attach image",
+    dropHint: "Drop to attach images, or insert the path of other files",
     attach: "Attach",
     saveSnippetHint: "Save the current input as a snippet and use it next time with /",
     saveSnippet: "Snippet",
