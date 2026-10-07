@@ -315,8 +315,9 @@ export class ControlServer {
         const api = this.requireSchedules();
         const cron = this.requireString(params, "cron");
         if (!parseCron(cron)) throw new ControlError(mt("cli.control.cronInvalidFormat"));
-        const policy = params.policy !== undefined ? this.requireString(params, "policy") : "ask";
-        if (!["ask", "auto_edit", "full"].includes(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
+        // --policy 를 안 주면 비워 두고 저장하는 쪽이 설정의 "새 탭 기본 권한" 으로 채운다(화면과 같게).
+        const policy = params.policy !== undefined ? this.requireString(params, "policy") : undefined;
+        if (policy !== undefined && !["ask", "auto_edit", "full"].includes(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
         const provider = params.provider !== undefined ? this.requireString(params, "provider") : "claude";
         if (provider !== "claude" && provider !== "codex") throw new ControlError(mt("cli.control.providerInvalid"));
         // --cwd 를 안 주면 워크스페이스 기본 경로로 돈다. 이름만으로 만든 워크스페이스에는 그 값이 없어
@@ -334,7 +335,7 @@ export class ControlServer {
           timezone: params.timezone !== undefined ? this.requireTimezone(params) : Intl.DateTimeFormat().resolvedOptions().timeZone,
           prompt: this.requireString(params, "prompt"),
           provider,
-          policy: policy as PermissionPolicy,
+          ...(policy !== undefined ? { policy: policy as PermissionPolicy } : {}),
           target,
           ...(params.precheck !== undefined
             ? { precheck: { command: this.requireString(params, "precheck"), timeoutMs: Number(params.precheckTimeout ?? 60000) } }

@@ -18,7 +18,7 @@ import {
   webContents,
   type MenuItemConstructorOptions,
 } from "electron";
-import type { PermissionAnswer } from "@shared/chat-events";
+import type { PermissionAnswer, PermissionPolicy } from "@shared/chat-events";
 import { isThemeMode } from "@shared/theme";
 import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT, LOCALES, type Locale } from "@shared/i18n/locale";
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
@@ -332,6 +332,12 @@ function cwdForTarget(target: ScheduleTarget): string | null {
 
 /** 예약 실행을 시작한다. 켜질 때 끝을 못 본 회차부터 정리한다. */
 /** 예약 API. CLI 와 화면이 같은 구현을 쓴다 — 둘이 어긋나면 사용자가 본 것과 실제가 달라진다. */
+/** 권한을 안 정한 새 예약은 설정의 "새 탭 기본 권한" 을 따른다. inherit 는 따를 탭이 없으니 ask. */
+function defaultSchedulePolicy(): PermissionPolicy {
+  const p = appSettings().newTabPolicy;
+  return p === "inherit" ? "ask" : p;
+}
+
 function schedulesApi() {
       const store = scheduleStore;
       const engine = scheduleEngine;
@@ -350,7 +356,7 @@ function schedulesApi() {
             prompt: input.prompt ?? existing?.prompt ?? "",
             provider: input.provider ?? existing?.provider ?? "claude",
             ...(input.model ?? existing?.model ? { model: input.model ?? existing?.model } : {}),
-            policy: input.policy ?? existing?.policy ?? "ask",
+            policy: input.policy ?? existing?.policy ?? defaultSchedulePolicy(),
             target: input.target ?? existing?.target ?? { kind: "fresh", worktree: false },
             ...(input.precheck ?? existing?.precheck ? { precheck: (input.precheck ?? existing?.precheck)! } : {}),
             enabled,
