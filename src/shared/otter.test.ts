@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OTTER_DONE_MS, otterState, type OtterTab } from "./otter";
+import { OTTER_DONE_MS, nextRoam, otterState, roamPauseMs, type OtterTab } from "./otter";
 
 const tab = (id: string, o: Partial<OtterTab> = {}): OtterTab => ({ id, title: id, status: "idle", ...o });
 
@@ -66,4 +66,27 @@ test("otterState: 승인 대기와 오류는 시간이 지나도 그대로다", 
   const late = 100 * OTTER_DONE_MS;
   assert.equal(otterState([tab("a", { attention: "permission" })], late).mood, "waiting");
   assert.equal(otterState([tab("a", { attention: "error" })], late).mood, "error");
+});
+
+const tuning = { pauseSec: 120, runPct: 10, distancePct: 100 };
+const seq = (...v: number[]) => () => v.shift() ?? 0;
+
+test("nextRoam: 자리가 넉넉하면 고른 쪽으로, 거리 설정만큼 간다", () => {
+  // 걷기(0.5 → 50% ≥ 10%), 거리 최댓값(→ 180), 오른쪽(0.9)
+  assert.deepEqual(nextRoam(500, 0, 2000, tuning, seq(0.5, 0.999999, 0.9)), { motion: "walk", toX: 680 });
+  // 뛰기(0.05 → 5% < 10%), 거리 최솟값(→ 200), 왼쪽 — 거리 200% 면 두 배
+  assert.deepEqual(nextRoam(900, 0, 2000, { ...tuning, distancePct: 200 }, seq(0.05, 0, 0.1)), { motion: "run", toX: 500 });
+  // 뛰기 0% 면 걷기만
+  assert.equal(nextRoam(500, 0, 2000, { ...tuning, runPct: 0 }, seq(0, 0.5, 0.5)).motion, "walk");
+});
+
+test("nextRoam: 가려는 쪽이 막혔으면 반대쪽으로, 양쪽 다 좁으면 갈 수 있는 만큼만", () => {
+  assert.ok(nextRoam(2000, 0, 2000, tuning, seq(0.5, 0.5, 0.9)).toX < 2000);
+  const r = nextRoam(50, 0, 100, tuning, seq(0.5, 0.999999, 0.9));
+  assert.ok(r.toX >= 0 && r.toX <= 100);
+});
+
+test("roamPauseMs: 평균의 0.5~1.5배", () => {
+  assert.equal(roamPauseMs(tuning, () => 0), 60_000);
+  assert.equal(roamPauseMs(tuning, () => 1), 180_000);
 });

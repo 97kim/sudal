@@ -67,6 +67,12 @@ export const settings: DeepPartial<typeof ko> = {
     title: "Show Sudari",
     description: "Shows Sudari, our otter, in a corner of your screen with your agents' status. Sudari waves when an approval is waiting and lets you know when work is done. Click it to jump to that tab.",
     toggle: "Show Sudari",
+    roam: "Walk or run around now and then while idle",
+    roamSlider: { pauseSec: "Rest between walks", runPct: "Running", distancePct: "Distance" },
+    roamDistanceValue: "Walk {{walk}} px · Run {{run}} px",
+    roamEverySec: "About {{s}} s",
+    roamEveryMin: "About {{m}} min",
+    roamEveryMinSec: "About {{m}} min {{s}} s",
     hint: "Drag to move it. Right-click to hide it for a while or turn it off.",
   },
   newTabPolicy: {

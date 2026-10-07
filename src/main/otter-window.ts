@@ -2,7 +2,7 @@
 // 수달이 없는 투명한 부분은 클릭이 아래 창으로 지나간다 — 화면이 마우스가 수달 위에 있을 때만 클릭을 받겠다고 알린다.
 import { BrowserWindow, Menu, ipcMain, screen } from "electron";
 import { join } from "node:path";
-import { OTTER_IPC, type OtterState } from "@shared/otter";
+import { OTTER_IPC, OTTER_ROAM, OTTER_ROAM_RANGE, nextRoam, roamPauseMs, type OtterMood, type OtterMotion, type OtterRoamTuning, type OtterState } from "@shared/otter";
 import type { OtterViewDto } from "@shared/ipc";
 
 const WIDTH = 240;
@@ -31,12 +31,27 @@ export class OtterWindow {
   private pending = false;
   /** 시간이 지나 저절로 바뀔 때(끝남 표시가 줄어드는 때) 다시 그리는 타이머. */
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 돌아다니기: 켰나, 마우스가 수달 위에 있나, 지금 기분, 다음 출발 타이머, 걷는 중이면 그 상태. */
+  private roam = false;
+  private tuning: OtterRoamTuning = { pauseSec: OTTER_ROAM_RANGE.pauseSec.default, runPct: OTTER_ROAM_RANGE.runPct.default, distancePct: OTTER_ROAM_RANGE.distancePct.default };
+  private hovering = false;
+  private mood: OtterMood = "idle";
+  private roamTimer: ReturnType<typeof setTimeout> | null = null;
+  private walking: { timer: ReturnType<typeof setInterval>; motion: OtterMotion; dir: 1 | -1; toX: number; x: number; y: number; at: number } | null = null;
 
   constructor(private readonly deps: OtterDeps) {
-    ipcMain.on(OTTER_IPC.interactive, (_e, on: boolean) => this.win?.setIgnoreMouseEvents(!on, { forward: true }));
+    ipcMain.on(OTTER_IPC.interactive, (_e, on: boolean) => {
+      this.win?.setIgnoreMouseEvents(!on, { forward: true });
+      // 마우스를 올리면 멈춰 선다 — 누르거나 끌려는데 도망가면 안 된다.
+      this.hovering = on;
+      if (on) this.stopWalk(true);
+      // 올리면 기다리던 출발도 취소하고, 빼면 처음부터 다시 쉰다
+      this.scheduleRoam();
+    });
     ipcMain.on(OTTER_IPC.click, () => this.deps.open(this.deps.state().tabId));
     ipcMain.on(OTTER_IPC.drag, (_e, dx: number, dy: number) => {
       if (!this.win) return;
+      this.stopWalk(false);
       const [x, y] = this.win.getPosition();
       this.win.setPosition(Math.round(x + dx), Math.round(y + dy));
     });
@@ -47,6 +62,17 @@ export class OtterWindow {
     });
     ipcMain.on(OTTER_IPC.menu, () => this.menu());
     ipcMain.on(OTTER_IPC.ready, () => this.push());
+    // 걷는 중에 모니터를 빼거나 배치를 바꾸면 옛 화면 기준으로 계속 걷는다 — 멈추고 화면 안으로 끌어넣는다.
+    const onDisplays = () => {
+      if (!this.walking || !this.win || this.win.isDestroyed()) return;
+      this.stopWalk(false);
+      const [x, y] = this.win.getPosition();
+      const p = onScreen({ x, y });
+      this.win.setPosition(p.x, p.y);
+      this.deps.savePosition(p);
+    };
+    screen.on("display-removed", onDisplays);
+    screen.on("display-metrics-changed", onDisplays);
   }
 
   /** 설정에 따라 띄우거나 내린다. */
@@ -59,11 +85,27 @@ export class OtterWindow {
       this.create();
     }
     else if (!on && this.win) {
+      this.stopWalk(false);
+      if (this.roamTimer) clearTimeout(this.roamTimer);
+      this.roamTimer = null;
       this.win.destroy();
       this.win = null;
       if (this.refreshTimer) clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+  }
+
+  /** 쉬는 동안 돌아다닐지, 얼마나 자주·빨리·멀리. 값이 바뀌면 기다리던 출발은 새 값으로 다시 잡는다. */
+  setRoam(on: boolean, tuning: OtterRoamTuning) {
+    const changed = tuning.pauseSec !== this.tuning.pauseSec;
+    this.roam = on;
+    this.tuning = tuning;
+    if (changed && this.roamTimer) {
+      clearTimeout(this.roamTimer);
+      this.roamTimer = null;
+    }
+    if (!on) this.stopWalk(true);
+    this.scheduleRoam();
   }
 
   /** 상태가 바뀌었다. 같은 틱의 여러 변화는 한 번에 보낸다. */
@@ -80,6 +122,7 @@ export class OtterWindow {
     if (!this.win || this.win.isDestroyed()) return;
     const snoozed = Date.now() < this.snoozedUntil;
     if (snoozed) {
+      this.stopWalk(true);
       if (this.win.isVisible()) this.win.hide();
       return;
     }
@@ -88,10 +131,75 @@ export class OtterWindow {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = s.refreshAt ? setTimeout(() => this.refresh(), Math.max(0, s.refreshAt - Date.now()) + 50) : null;
     const view: OtterViewDto = { mood: s.mood, count: s.count, bubble: this.deps.bubble(s), dim: this.deps.appFocused() };
+    // 할 일이 생기면(승인·끝남·오류·일하는 중) 그 자리에 멈춰서 알린다.
+    this.mood = s.mood;
+    if (s.mood !== "idle") this.stopWalk(true);
     this.win.webContents.send(OTTER_IPC.state, view);
+    this.scheduleRoam();
+  }
+
+  private canRoam() {
+    return this.roam && !!this.win && !this.win.isDestroyed() && this.win.isVisible() && this.mood === "idle" && !this.hovering && Date.now() >= this.snoozedUntil;
+  }
+
+  /** 걷는 중이 아니면 잠시 쉬었다가 출발하도록 걸어 둔다. 돌아다닐 수 없는 때면 걸어 둔 것도 푼다. */
+  private scheduleRoam() {
+    if (!this.canRoam()) {
+      if (this.roamTimer) clearTimeout(this.roamTimer);
+      this.roamTimer = null;
+      return;
+    }
+    if (this.walking || this.roamTimer) return;
+    this.roamTimer = setTimeout(() => {
+      this.roamTimer = null;
+      this.startWalk();
+    }, roamPauseMs(this.tuning));
+  }
+
+  /** 지금 있는 화면 안에서 옆으로 걷거나 뛴다. 높이는 그대로다 — 사람이 놓아 둔 자리를 따라 걷는다. */
+  private startWalk() {
+    const win = this.win;
+    if (!win || !this.canRoam()) return;
+    const [x, y] = win.getPosition();
+    const wa = screen.getDisplayNearestPoint({ x: Math.round(x + WIDTH / 2), y: Math.round(y + HEIGHT / 2) }).workArea;
+    const { motion, toX } = nextRoam(x, wa.x, wa.x + wa.width - WIDTH, this.tuning);
+    if (toX === x) return this.scheduleRoam();
+    const dir = toX > x ? 1 : -1;
+    win.webContents.send(OTTER_IPC.motion, { motion, facing: dir });
+    // 매 틱 경과 시간만큼 옮긴다 — 타이머가 밀려도 속도는 그대로다.
+    const timer = setInterval(() => {
+      const w = this.walking;
+      if (!w || !this.win || this.win.isDestroyed()) return this.stopWalk(false);
+      const now = Date.now();
+      // 절전에서 깨어나면 밀린 시간이 한 번에 들어와 목적지로 튄다 — 한 틱에 0.1초까지만 친다.
+      w.x += w.dir * OTTER_ROAM.speed[w.motion] * (Math.min(now - w.at, 100) / 1000);
+      w.at = now;
+      const arrived = w.dir > 0 ? w.x >= w.toX : w.x <= w.toX;
+      this.win.setPosition(Math.round(arrived ? w.toX : w.x), w.y);
+      if (arrived) this.stopWalk(true);
+    }, 33);
+    this.walking = { timer, motion, dir, toX, x, y, at: Date.now() };
+  }
+
+  /** 멈춰 선다. save 면 선 자리를 저장한다(다음에 켤 때 거기서 시작). */
+  private stopWalk(save: boolean) {
+    const w = this.walking;
+    if (!w) return;
+    clearInterval(w.timer);
+    this.walking = null;
+    if (this.win && !this.win.isDestroyed()) {
+      this.win.webContents.send(OTTER_IPC.motion, null);
+      if (save) {
+        const [x, y] = this.win.getPosition();
+        this.deps.savePosition({ x, y });
+      }
+    }
+    this.scheduleRoam();
   }
 
   private create() {
+    // 우클릭 메뉴로 끄면 pointerleave 없이 창이 사라진다 — 새 창은 마우스가 안 올라간 상태에서 시작한다.
+    this.hovering = false;
     const pos = this.deps.loadPosition() ?? defaultPosition();
     const win = new BrowserWindow({
       width: WIDTH,

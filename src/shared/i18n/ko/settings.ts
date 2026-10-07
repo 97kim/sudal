@@ -65,6 +65,12 @@ export const settings = {
     title: "수대리 띄우기",
     description: "화면 구석에 수달 캐릭터 수대리를 띄워 에이전트 상태를 보여 줍니다. 승인을 기다리면 손을 흔들고, 일이 끝나면 알려 줍니다. 누르면 그 탭으로 갑니다.",
     toggle: "수대리 띄우기",
+    roam: "쉬는 동안 가끔 걷거나 뛰어다니기",
+    roamSlider: { pauseSec: "쉬는 시간", runPct: "뛰는 비율", distancePct: "한 번에 가는 거리" },
+    roamDistanceValue: "걷기 {{walk}}px · 뛰기 {{run}}px",
+    roamEverySec: "평균 {{s}}초",
+    roamEveryMin: "평균 {{m}}분",
+    roamEveryMinSec: "평균 {{m}}분 {{s}}초",
     hint: "끌어서 옮길 수 있고, 우클릭하면 잠시 숨기거나 끌 수 있습니다.",
   },
   newTabPolicy: {

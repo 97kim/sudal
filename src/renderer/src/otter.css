@@ -40,6 +40,9 @@ body {
   /* 어두운 바탕화면에서도 윤곽이 보이게 옅은 그림자 */
   filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.22));
 }
+#sprite.flip {
+  transform: scaleX(-1);
+}
 #stage.dragging #otter {
   cursor: grabbing;
 }

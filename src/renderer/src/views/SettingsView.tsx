@@ -29,6 +29,7 @@ import { Icon } from "../components/Icon";
 import { SchedulesSection } from "../components/SchedulesSection";
 import { ProviderLogo } from "../components/ProviderLogo";
 import sudari from "../assets/otter/idle-0.png";
+import { OTTER_ROAM, OTTER_ROAM_RANGE, type OtterRoamTuning } from "@shared/otter";
 import { shortenHome } from "@shared/path-display";
 import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-open";
 import { useSnippets } from "../hooks/useSnippets";
@@ -644,6 +645,17 @@ function GeneralSection() {
               />
               <span>{t("settings.otter.toggle")}</span>
             </label>
+            <label className="mt-2 flex cursor-pointer items-center gap-2 pl-6 text-[12.5px] has-[:disabled]:cursor-default has-[:disabled]:opacity-50">
+              <input
+                type="checkbox"
+                checked={settings?.otterRoam ?? false}
+                disabled={!settings?.otter}
+                onChange={(e) => void save({ otterRoam: e.target.checked })}
+                data-otter-roam
+              />
+              <span>{t("settings.otter.roam")}</span>
+            </label>
+            {settings?.otter && settings.otterRoam && <RoamSliders settings={settings} onSave={save} />}
             <p className="mt-2 text-[12px] leading-5 text-muted-2">{t("settings.otter.hint")}</p>
           </div>
           <img src={sudari} alt="" className="h-20 w-20 shrink-0 select-none" draggable={false} data-otter-preview />
@@ -1434,6 +1446,58 @@ function WorktreeCleanup() {
         </ul>
       )}
       {msg && <div className={`mt-2 text-[11.5px] ${msg.ok ? "text-ok" : "text-err"}`}>{"text" in msg ? msg.text : t("settings.cleanup.removed", { path: msg.path })}</div>}
+    </div>
+  );
+}
+
+const ROAM_KEYS = { pauseSec: "otterRoamPauseSec", runPct: "otterRoamRunPct", distancePct: "otterRoamDistancePct" } as const;
+
+/** 돌아다니기 슬라이더. 끄는 동안은 화면 값만 바꾸고, 손을 떼면 저장한다(끌 때마다 저장하면 설정 파일을 수십 번 쓴다). */
+function RoamSliders({ settings, onSave }: { settings: AppSettingsDto; onSave: (patch: Partial<AppSettingsDto>) => Promise<void> }) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<Partial<OtterRoamTuning>>({});
+  const value = (k: keyof OtterRoamTuning) => draft[k] ?? settings[ROAM_KEYS[k]];
+  const commit = (k: keyof OtterRoamTuning) => {
+    const v = draft[k];
+    if (v === undefined) return;
+    setDraft((d) => ({ ...d, [k]: undefined }));
+    if (v !== settings[ROAM_KEYS[k]]) void onSave({ [ROAM_KEYS[k]]: v });
+  };
+  const label = (k: keyof OtterRoamTuning, v: number) => {
+    if (k === "runPct") return `${v}%`;
+    if (k === "distancePct") {
+      const px = ([lo, hi]: [number, number]) => `${Math.round((lo * v) / 100)}~${Math.round((hi * v) / 100)}`;
+      return t("settings.otter.roamDistanceValue", { walk: px(OTTER_ROAM.distance.walk), run: px(OTTER_ROAM.distance.run) });
+    }
+    const m = Math.floor(v / 60);
+    const s = v % 60;
+    return m === 0 ? t("settings.otter.roamEverySec", { s }) : s === 0 ? t("settings.otter.roamEveryMin", { m }) : t("settings.otter.roamEveryMinSec", { m, s });
+  };
+  return (
+    <div className="mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 pl-6 text-[12px]" data-otter-roam-sliders>
+      {(Object.keys(ROAM_KEYS) as (keyof OtterRoamTuning)[]).map((k) => {
+        const r = OTTER_ROAM_RANGE[k];
+        const v = value(k);
+        return (
+          <label key={k} className="contents">
+            <span className="text-muted">{t(`settings.otter.roamSlider.${k}`)}</span>
+            <input
+              type="range"
+              min={r.min}
+              max={r.max}
+              step={r.step}
+              value={v}
+              onChange={(e) => setDraft((d) => ({ ...d, [k]: Number(e.target.value) }))}
+              onPointerUp={() => commit(k)}
+              onKeyUp={() => commit(k)}
+              onBlur={() => commit(k)}
+              className="w-full accent-accent"
+              data-otter-roam-slider={k}
+            />
+            <span className="min-w-[96px] text-right tabular-nums text-muted">{label(k, v)}</span>
+          </label>
+        );
+      })}
     </div>
   );
 }

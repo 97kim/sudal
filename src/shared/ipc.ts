@@ -7,7 +7,7 @@ import type {
   SessionStatus,
 } from "./chat-events";
 import type { BackgroundJobDto } from "./background-jobs";
-import type { OtterMood } from "./otter";
+import type { OtterMood, OtterMotion } from "./otter";
 import type { Run, Schedule } from "./schedules";
 import type { NetFailure } from "./browser-diagnostics";
 import type { Handoff } from "./handoff";
@@ -119,6 +119,12 @@ export interface AppSettingsDto {
   newTabPolicy: NewTabPolicy;
   /** 화면에 수달을 띄워 에이전트 상태를 보여 준다. 처음엔 꺼져 있다. */
   otter: boolean;
+  /** 쉬는 동안 수달이 가끔 옆으로 걷거나 뛴다. 처음엔 꺼져 있다. */
+  otterRoam: boolean;
+  /** 돌아다니기 슬라이더 값(범위·기본값은 OTTER_ROAM_RANGE). */
+  otterRoamPauseSec: number;
+  otterRoamRunPct: number;
+  otterRoamDistancePct: number;
   /**
    * 인앱 브라우저의 로그인을 앱을 껐다 켜도 유지한다. 로그인 세션은 대개 만료 없는 세션 쿠키라
    * Chromium 이 종료할 때 버린다 — 끌 때 받아 적고 켤 때 되돌려 놓는다(크롬의 "이전 세션 계속하기").
@@ -148,6 +154,8 @@ export interface OtterViewDto {
 /** 수달 창(otter.html)의 window.otter. 수달이 하는 일만 연다. */
 export interface OtterApi {
   onState(listener: (v: OtterViewDto) => void): () => void;
+  /** 돌아다니기 시작·멈춤. facing -1 이면 왼쪽으로 간다(그림을 뒤집는다). */
+  onMotion(listener: (m: { motion: OtterMotion; facing: 1 | -1 } | null) => void): () => void;
   ready(): void;
   /** 마우스가 수달 위에 있을 때만 클릭을 받는다 — 나머지는 아래 창으로 지나간다. */
   setInteractive(on: boolean): void;

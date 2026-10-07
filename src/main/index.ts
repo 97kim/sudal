@@ -106,7 +106,7 @@ import { fetchUsageText } from "./claude-control";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
 import { WorkspaceService } from "./workspaces";
 import { OtterWindow } from "./otter-window";
-import { otterState, type OtterState } from "@shared/otter";
+import { OTTER_ROAM_RANGE, otterState, type OtterRoamTuning, type OtterState } from "@shared/otter";
 
 // ===== userData 이관: 앱 이름이 바뀌면(ai-workbench → Atelier → Sudal) 폴더도 바뀐다 =====
 // 세션 기록·설정·사용량 캐시를 옛 폴더에서 넘겨받는다(legacy-name.ts). userData 를 읽는 어떤 코드보다 먼저 한다.
@@ -1248,6 +1248,10 @@ function appSettings(): AppSettingsDto {
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
     newTabPolicy: isNewTabPolicy(raw.newTabPolicy) ? raw.newTabPolicy : "inherit",
     otter: raw.otter === true,
+    otterRoam: raw.otterRoam === true,
+    otterRoamPauseSec: roamValue(raw.otterRoamPauseSec, "pauseSec"),
+    otterRoamRunPct: roamValue(raw.otterRoamRunPct, "runPct"),
+    otterRoamDistancePct: roamValue(raw.otterRoamDistancePct, "distancePct"),
     keepBrowserLogin: raw.keepBrowserLogin !== false,
     worktreeDir: worktreeRootDir(),
     worktreeDirCustom: typeof raw.worktreeDir === "string" && isAbsolute(raw.worktreeDir),
@@ -1255,10 +1259,18 @@ function appSettings(): AppSettingsDto {
   };
 }
 
+/** 돌아다니기 슬라이더 값: 숫자가 아니면 기본값, 범위 밖이면 끝값, 눈금에 맞춰 반올림. */
+function roamValue(v: unknown, key: keyof OtterRoamTuning): number {
+  const r = OTTER_ROAM_RANGE[key];
+  const n = typeof v === "number" && Number.isFinite(v) ? v : r.default;
+  return Math.min(r.max, Math.max(r.min, Math.round(n / r.step) * r.step));
+}
+
 function applyAppSettings(s: AppSettingsDto) {
   // 네이티브 UI(다이얼로그·컨텍스트 메뉴·스크롤바)도 같은 테마로. 렌더러는 자기 설정값으로 따로 칠한다.
   nativeTheme.themeSource = s.theme;
   otter?.setEnabled(s.otter);
+  otter?.setRoam(s.otterRoam, { pauseSec: s.otterRoamPauseSec, runPct: s.otterRoamRunPct, distancePct: s.otterRoamDistancePct });
   otter?.refresh();
   const prevLanguage = mainI18n().language;
   setMainLocale(s.resolvedLocale);
@@ -1895,6 +1907,11 @@ function registerIpc() {
       next.notifyOnDone = patch.notifyOnDone;
     }
     if (patch.otter !== undefined) next.otter = patch.otter === true;
+    if (patch.otterRoam !== undefined) next.otterRoam = patch.otterRoam === true;
+    // 슬라이더 값이라 범위 밖이면 거절하지 않고 끝값으로 맞춘다
+    if (patch.otterRoamPauseSec !== undefined) next.otterRoamPauseSec = roamValue(patch.otterRoamPauseSec, "pauseSec");
+    if (patch.otterRoamRunPct !== undefined) next.otterRoamRunPct = roamValue(patch.otterRoamRunPct, "runPct");
+    if (patch.otterRoamDistancePct !== undefined) next.otterRoamDistancePct = roamValue(patch.otterRoamDistancePct, "distancePct");
     if (patch.newTabPolicy !== undefined) {
       if (!isNewTabPolicy(patch.newTabPolicy)) throw new Error(mt("main.error.badPolicy"));
       next.newTabPolicy = patch.newTabPolicy;

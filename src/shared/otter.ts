@@ -15,9 +15,57 @@ export const OTTER_IPC = {
   drag: "otter:drag",
   dragEnd: "otter:drag-end",
   menu: "otter:menu",
+  motion: "otter:motion",
 } as const;
 
 export type OtterMood = "idle" | "working" | "waiting" | "done" | "error" | "limit";
+
+/** 쉬는 동안 돌아다닐 때의 동작. 그림은 오른쪽을 보고 있어 왼쪽으로 갈 때는 화면이 뒤집는다. */
+export type OtterMotion = "walk" | "run";
+
+/**
+ * 돌아다니기. 속도는 그림(96px 표시) 기준으로 발이 미끄러져 보이지 않는 값이라 고정이다 — .sudal/otter-art/handdrawn/move-v1/README.md.
+ * 거리는 거리 설정 100% 일 때의 값이다.
+ */
+export const OTTER_ROAM = {
+  speed: { walk: 29, run: 78 } as Record<OtterMotion, number>,
+  distance: { walk: [80, 180], run: [200, 320] } as Record<OtterMotion, [number, number]>,
+};
+
+/** 설정에서 슬라이더로 고르는 값. 기본값은 일하는 화면에서 산만하지 않게 잡았다(평균 2분마다, 뛰기 10%). */
+export interface OtterRoamTuning {
+  /** 멈춘 뒤 다음 출발까지 평균 몇 초. 실제로는 그 0.5~1.5배 사이에서 무작위로 고른다. */
+  pauseSec: number;
+  /** 걷지 않고 뛸 확률(%). */
+  runPct: number;
+  /** 한 번에 가는 거리(%, 100 이 기본 거리). */
+  distancePct: number;
+}
+export const OTTER_ROAM_RANGE: Record<keyof OtterRoamTuning, { min: number; max: number; step: number; default: number }> = {
+  pauseSec: { min: 10, max: 600, step: 10, default: 120 },
+  runPct: { min: 0, max: 100, step: 5, default: 10 },
+  distancePct: { min: 50, max: 200, step: 10, default: 100 },
+};
+
+/** 다음 출발까지 기다릴 시간(ms). */
+export function roamPauseMs(t: OtterRoamTuning, rand: () => number = Math.random): number {
+  return t.pauseSec * 1000 * (0.5 + rand());
+}
+
+/**
+ * 다음에 어디로 갈지. 창의 x 가 [minX, maxX] 안에 있어야 한다.
+ * 가려는 쪽에 자리가 모자라면 반대쪽으로, 양쪽 다 모자라면 갈 수 있는 만큼만 간다.
+ */
+export function nextRoam(x: number, minX: number, maxX: number, t: OtterRoamTuning, rand: () => number = Math.random): { motion: OtterMotion; toX: number } {
+  const motion: OtterMotion = rand() * 100 < t.runPct ? "run" : "walk";
+  const [lo, hi] = OTTER_ROAM.distance[motion];
+  const want = (lo + (hi - lo) * rand()) * (t.distancePct / 100);
+  let dir = rand() < 0.5 ? -1 : 1;
+  const room = (d: number) => (d < 0 ? x - minX : maxX - x);
+  if (room(dir) < want && room(-dir) > room(dir)) dir = -dir;
+  const toX = Math.round(Math.min(maxX, Math.max(minX, x + dir * Math.min(want, room(dir)))));
+  return { motion, toX };
+}
 
 /**
  * 수달이 "끝났어요" 를 보여 주는 시간. 그 뒤에는 수달에서만 내린다 — 사이드바 점·Dock 배지의 안 본 표시는 그대로다.

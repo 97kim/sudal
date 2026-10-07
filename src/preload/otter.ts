@@ -9,6 +9,11 @@ const api: OtterApi = {
     ipcRenderer.on(OTTER_IPC.state, h);
     return () => ipcRenderer.removeListener(OTTER_IPC.state, h);
   },
+  onMotion(listener) {
+    const h = (_e: IpcRendererEvent, m: Parameters<typeof listener>[0]) => listener(m);
+    ipcRenderer.on(OTTER_IPC.motion, h);
+    return () => ipcRenderer.removeListener(OTTER_IPC.motion, h);
+  },
   ready: () => ipcRenderer.send(OTTER_IPC.ready),
   /** 마우스가 수달 위에 있을 때만 클릭을 받는다 — 나머지는 아래 창으로 지나간다. */
   setInteractive: (on: boolean) => ipcRenderer.send(OTTER_IPC.interactive, on),
