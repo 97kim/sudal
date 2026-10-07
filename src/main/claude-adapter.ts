@@ -16,7 +16,9 @@ import { ClaudeEventMapper, parseClaudeRateLimit } from "./claude-events";
 import { forkSession, query } from "@anthropic-ai/claude-agent-sdk";
 import { claudeProgressNotes } from "./cli-defaults";
 import { homedir } from "node:os";
-import { MsgError, mt } from "./i18n";
+import { MsgError, mainI18n, mt } from "./i18n";
+import { isOffLanguage } from "@shared/language-drift";
+import type { Locale } from "@shared/i18n";
 
 type SdkOptions = import("@anthropic-ai/claude-agent-sdk").Options;
 type SDKUserMessage = import("@anthropic-ai/claude-agent-sdk").SDKUserMessage;
@@ -181,12 +183,19 @@ interface LiveSession {
   closing: string | null;
   /** 후속 턴 때문에 유휴 종료를 한 번 미뤘다. 두 번은 미루지 않는다. */
   idleDeferred: boolean;
+  /** 이번 턴의 진행 설명이 앱 언어를 벗어났다. 다음 도구 결과 뒤에 언어 리마인더를 다시 넣는다. */
+  langDrift: boolean;
+  /** 마지막 언어 리마인더 뒤로 지나간 도구 묶음 수. */
+  toolBatchesSinceReminder: number;
   log?(line: string): void;
   /** 턴과 무관하게 오는 신호를 보낼 곳. 턴이 새로 시작하면 그 턴의 것으로 갱신한다. */
   onBackgroundTasks?(sessionId: string, tasks: LiveBackgroundTask[], source: BackgroundTasksSource): void;
   onTaskFinished?(note: TaskFinishedNote): void;
   onStreamEnded?(reason: string, expected: boolean): void;
 }
+
+/** 언어가 새지 않아도 이만큼 도구 묶음이 지나면 리마인더를 다시 넣는다. */
+const REMIND_EVERY_TOOL_BATCHES = 6;
 
 const live = new Map<string, LiveSession>();
 /** 여는 중인 세션 — 예열과 첫 턴이 거의 동시에 오면 프로세스를 하나만 띄운다. */
@@ -309,6 +318,8 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
     liveTaskCount: 0,
     closing: null,
     idleDeferred: false,
+    langDrift: false,
+    toolBatchesSinceReminder: 0,
     log: req.log,
     onBackgroundTasks: req.onBackgroundTasks,
     onTaskFinished: req.onTaskFinished,
@@ -344,6 +355,21 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
             async () => ({
               hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: mt("prompt.claude.languageReminder") },
             }),
+          ],
+        },
+      ],
+      // 한 턴에 도구를 여러 번 부르면 영어 도구 출력이 쌓여 사용자 메시지 때 넣은 리마인더가 멀어진다. 실제로 턴 중간에 영어로 넘어갔다.
+      // 넘어간 것이 보이거나 도구 묶음이 몇 번 쌓이면 도구 결과 바로 뒤에 다시 넣는다. 매번 넣지는 않는다(턴마다 토큰이 는다).
+      PostToolBatch: [
+        {
+          hooks: [
+            async () => {
+              s.toolBatchesSinceReminder++;
+              if (!s.langDrift && s.toolBatchesSinceReminder < REMIND_EVERY_TOOL_BATCHES) return {};
+              s.langDrift = false;
+              s.toolBatchesSinceReminder = 0;
+              return { hookSpecificOutput: { hookEventName: "PostToolBatch", additionalContext: mt("prompt.claude.languageReminder") } };
+            },
           ],
         },
       ],
@@ -415,6 +441,10 @@ async function pump(s: LiveSession) {
 
 function handleMessage(s: LiveSession, message: SDKMessage) {
   const t = s.turn;
+  if (message.type === "assistant" && !s.langDrift) {
+    const locale = mainI18n().language as Locale;
+    for (const b of message.message.content) if (b.type === "text" && isOffLanguage(b.text, locale)) s.langDrift = true;
+  }
   // 진단용: 무엇이 어떤 순서로 오는지. 회차 완료 판정처럼 "순서" 가 답인 문제는 이게 없으면 추측이 된다.
   // SUDAL_DEBUG_SDK 일 때만 찍는다.
   if (process.env.SUDAL_DEBUG_SDK) {
@@ -589,6 +619,9 @@ export async function runClaudeTurn(runtime: ClaudeRuntime, req: ClaudeTurnReque
   s.requestAmbientPermission = req.requestAmbientPermission;
   s.onStreamEnded = req.onStreamEnded;
   s.idleDeferred = false;
+  // 사용자 메시지마다 UserPromptSubmit 이 리마인더를 넣으므로 여기서 다시 센다.
+  s.langDrift = false;
+  s.toolBatchesSinceReminder = 0;
   const done = new Promise<void>((resolve, reject) => {
     s.turn = { req, mapper: new ClaudeEventMapper({ progressNotes: s.progressNotes }), resolve, reject, permissionSeq: 0 };
   });
