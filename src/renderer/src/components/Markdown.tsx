@@ -1,5 +1,5 @@
 import { Children, isValidElement, memo, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Options } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -297,12 +297,15 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
   );
 }
 
+const REMARK_PLUGINS: Options["remarkPlugins"] = [[remarkGfm, { singleTilde: false }]];
+
 /** variant "doc": 파일 미리보기처럼 문서 한 편을 읽는 화면. 채팅보다 큰 제목·넉넉한 간격·읽기 좋은 폭(styles.css .md-doc). */
 export const Markdown = memo(function Markdown({ text, variant }: { text: string; variant?: "doc" }) {
   return (
     <div className={variant === "doc" ? "md md-doc" : "md"}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        // 물결표 하나는 취소선으로 보지 않는다 — "80~180px · 200~320px" 처럼 범위를 두 번 쓰면 그 사이가 줄 그어졌다. ~~두 개~~ 는 그대로 취소선.
+        remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={[rehypeHighlight, rehypeFileRefs]}
         components={{ a: MdLink, span: MdSpan, code: MdCode, pre: MdPre }}
         // 기본 정리는 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내고 이동은 하지 않으므로 그 스킴만 남긴다.
