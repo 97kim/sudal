@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-// 확정 수달 캐릭터(손그림)의 프레임과 간격. 원본은 .sudal/otter-art/handdrawn/ 의 color-v3(기분)·move-v1(걷기·뛰기).
+// 확정 수달 캐릭터(손그림)의 프레임과 간격. 원본은 .sudal/otter-art/handdrawn/ 의 color-v3(기분)·move-v6(걷기·뛰기).
 // 192px 를 96 CSS px 로 그려 Retina 에서도 선명하다.
 import type { OtterMood, OtterMotion } from "@shared/otter";
 
@@ -13,8 +13,8 @@ const TIMING: Record<OtterMood | OtterMotion, number[]> = {
   done: [220, 180, 220, 550],
   error: [850, 280, 280, 700],
   limit: [1000, 400, 1000, 500],
-  walk: [140, 140, 140, 140],
-  run: [90, 90, 90, 90],
+  walk: [120, 120, 120, 120, 120, 120],
+  run: [100, 100, 100, 100, 100, 100],
 };
 
 export const OTTER_FRAMES: Record<OtterMood | OtterMotion, { src: string; ms: number }[]> = Object.fromEntries(

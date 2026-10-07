@@ -24,11 +24,11 @@ export type OtterMood = "idle" | "working" | "waiting" | "done" | "error" | "lim
 export type OtterMotion = "walk" | "run";
 
 /**
- * 돌아다니기. 속도는 그림(96px 표시) 기준으로 발이 미끄러져 보이지 않는 값이라 고정이다 — .sudal/otter-art/handdrawn/move-v1/README.md.
+ * 돌아다니기. 속도는 그림(96px 표시) 기준으로 발이 미끄러져 보이지 않는 값이라 고정이다 — .sudal/otter-art/handdrawn/move-v5/README.md(move-v6 은 v5 의 눈·주둥이만 고친 것).
  * 거리는 거리 설정 100% 일 때의 값이다.
  */
 export const OTTER_ROAM = {
-  speed: { walk: 29, run: 78 } as Record<OtterMotion, number>,
+  speed: { walk: 15, run: 35 } as Record<OtterMotion, number>,
   distance: { walk: [80, 180], run: [200, 320] } as Record<OtterMotion, [number, number]>,
 };
 
