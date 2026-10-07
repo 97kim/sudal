@@ -280,6 +280,7 @@ export const IPC = {
   fileDelete: "file:delete",
   fileList: "file:list",
   fileLocate: "file:locate",
+  fileRemoteImage: "file:remote-image",
   previewUrl: "preview:url",
   controlOpen: "control:open",
   controlInstallCli: "control:install-cli",
@@ -985,6 +986,8 @@ export interface SudalApi {
     locate(cwd: string, ref: string): Promise<string[]>;
     /** 끌어다 놓은 File 의 디스크 경로. 디스크에 없는 것(브라우저에서 끈 이미지 등)은 "". */
     pathFor(file: File): string;
+    /** 문서 미리보기 속 원격 이미지를 data URL 로(CSP 가 원격 img 를 막는다). 못 받으면 null. */
+    remoteImage(url: string): Promise<string | null>;
   };
   mcp: {
     /** cwd 기준으로 Claude CLI 를 잠깐 띄워 MCP 서버 상태를 받는다. 연결 대기 때문에 최대 10초쯤 걸릴 수 있다. */

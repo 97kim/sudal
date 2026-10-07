@@ -55,6 +55,8 @@ export function FileEditor({
   const [reloadKey, setReloadKey] = useState(0);
   // 마크다운은 미리보기로 열고, "편집" 으로 전환한다. 에디터는 숨겨 둘 뿐 내리지 않아 전환해도 커서·undo 가 남는다.
   const isMarkdown = /\.(md|markdown|mdx)$/i.test(path);
+  const filePath = file?.path;
+  const docBase = useMemo(() => (filePath ? { cwd, file: filePath } : undefined), [cwd, filePath]);
   const [mdView, setMdView] = useState<"preview" | "edit">("preview");
   // HTML(·SVG)은 인앱 브라우저 탭에서 렌더해 본다. 저장하면 열려 있는 미리보기 탭이 새로고침된다.
   const isHtml = /\.(html?|xhtml|svg)$/i.test(path);
@@ -327,7 +329,7 @@ export function FileEditor({
             )}
             {isMarkdown && mdView === "preview" && (
               <div className="min-h-0 flex-1 overflow-auto px-8 py-6" style={{ userSelect: "text" }} data-md-preview>
-                <Markdown text={text} variant="doc" />
+                <Markdown text={text} variant="doc" base={docBase} />
               </div>
             )}
             <div className={`min-h-0 flex-1 ${isMarkdown && mdView === "preview" ? "hidden" : ""}`}>

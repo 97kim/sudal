@@ -30,9 +30,18 @@ function imageMime(contentType: string | null): string | null {
   return t;
 }
 
-export async function fetchFavicon(url: string): Promise<string | null> {
+export function fetchFavicon(url: string): Promise<string | null> {
+  return fetchRemoteImage(url, FAVICON_MAX_BYTES);
+}
+
+/** 문서 미리보기 속 원격 이미지(README 배지·스크린샷) 하나의 상한. */
+export const DOC_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+/** 원격 이미지를 data URL 로. 상한을 넘거나 이미지가 아니면 null. */
+export async function fetchRemoteImage(url: string, maxBytes: number): Promise<string | null> {
   if (!isFetchableFavicon(url)) return null;
-  const hit = cache.get(url);
+  const key = `${maxBytes}\0${url}`;
+  const hit = cache.get(key);
   if (hit !== undefined) return hit;
 
   let out: string | null = null;
@@ -43,14 +52,16 @@ export async function fetchFavicon(url: string): Promise<string | null> {
       const mime = imageMime(res.headers.get("content-type"));
       if (mime) {
         const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.byteLength > 0 && buf.byteLength <= FAVICON_MAX_BYTES) out = `data:${mime};base64,${buf.toString("base64")}`;
+        if (buf.byteLength > 0 && buf.byteLength <= maxBytes) out = `data:${mime};base64,${buf.toString("base64")}`;
       }
     }
   } catch {
     out = null; // 못 받으면 화면은 지구본으로 돌아간다
   }
 
+  // 큰 이미지까지 담으면 200개 × 수 MB 가 된다. 파비콘 크기까지만 기억한다.
+  if (out && out.length > FAVICON_MAX_BYTES * 2) return out;
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string);
-  cache.set(url, out);
+  cache.set(key, out);
   return out;
 }

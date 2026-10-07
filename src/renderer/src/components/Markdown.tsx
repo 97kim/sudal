@@ -1,8 +1,10 @@
-import { Children, isValidElement, memo, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Children, createContext, isValidElement, memo, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Options } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import type { Element, ElementContent, Root, Text } from "hast";
 import { findFileRefs, localFileHref, parseFileRef, type FileRef as FileRefInfo } from "@shared/file-refs";
 import { useLocateFile, useOpenFile } from "./FileViewer";
@@ -297,22 +299,74 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
   );
 }
 
+/** 문서 미리보기가 보여 주는 파일. 그림의 상대 경로를 이 파일 기준으로 푼다. */
+interface DocBase {
+  cwd: string;
+  /** 마크다운 파일의 절대 경로. */
+  file: string;
+}
+const DocBaseContext = createContext<DocBase | null>(null);
+
+/** 그림 주소 → data URL. CSP 가 img-src 'self' data: 라 원격·로컬 그림 모두 main 이 받아 넘긴다. */
+async function loadDocImage(src: string, base: DocBase): Promise<string | null> {
+  if (/^https?:/i.test(src)) return window.sudal.files.remoteImage(src);
+  if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return null;
+  const clean = decodeURIComponent(src.replace(/[?#].*$/, ""));
+  // GitHub 처럼 "/" 로 시작하면 저장소(cwd) 기준, 아니면 문서가 있는 폴더 기준
+  const dir = clean.startsWith("/") ? base.cwd : base.file.slice(0, base.file.lastIndexOf("/"));
+  const parts: string[] = [];
+  for (const seg of `${dir}/${clean}`.split("/")) {
+    if (seg === "..") parts.pop();
+    else if (seg && seg !== ".") parts.push(seg);
+  }
+  const view = await window.sudal.files.read(base.cwd, "/" + parts.join("/"));
+  return view.image?.dataUrl ?? null;
+}
+
+function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
+  const { node: _node, src, ...rest } = props;
+  const base = useContext(DocBaseContext);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!base || typeof src !== "string" || !src) return;
+    let alive = true;
+    loadDocImage(src, base).then(
+      (u) => alive && setUrl(u),
+      () => alive && setUrl(null),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [base, src]);
+  // 못 받았거나 받는 중이면 대체 글만 — 깨진 그림 아이콘을 띄우지 않는다.
+  if (!url) return rest.alt ? <span className="text-muted">{rest.alt}</span> : null;
+  return <img src={url} {...rest} />;
+}
+
 const REMARK_PLUGINS: Options["remarkPlugins"] = [[remarkGfm, { singleTilde: false }]];
+const CHAT_REHYPE: Options["rehypePlugins"] = [rehypeHighlight, rehypeFileRefs];
+// 문서(README 등)는 HTML 도 그린다 — <p align>·<img width>·배지. 정리(sanitize)는 하이라이트 전에 둬야 hljs 클래스가 남는다.
+const DOC_REHYPE: Options["rehypePlugins"] = [rehypeRaw, rehypeSanitize, rehypeHighlight, rehypeFileRefs];
+const CHAT_COMPONENTS: Options["components"] = { a: MdLink, span: MdSpan, code: MdCode, pre: MdPre };
+const DOC_COMPONENTS: Options["components"] = { ...CHAT_COMPONENTS, img: MdImg };
 
 /** variant "doc": 파일 미리보기처럼 문서 한 편을 읽는 화면. 채팅보다 큰 제목·넉넉한 간격·읽기 좋은 폭(styles.css .md-doc). */
-export const Markdown = memo(function Markdown({ text, variant }: { text: string; variant?: "doc" }) {
+export const Markdown = memo(function Markdown({ text, variant, base }: { text: string; variant?: "doc"; base?: DocBase }) {
+  const doc = variant === "doc";
   return (
-    <div className={variant === "doc" ? "md md-doc" : "md"}>
+    <DocBaseContext.Provider value={base ?? null}>
+    <div className={doc ? "md md-doc" : "md"}>
       <ReactMarkdown
         // 물결표 하나는 취소선으로 보지 않는다 — "80~180px · 200~320px" 처럼 범위를 두 번 쓰면 그 사이가 줄 그어졌다. ~~두 개~~ 는 그대로 취소선.
         remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={[rehypeHighlight, rehypeFileRefs]}
-        components={{ a: MdLink, span: MdSpan, code: MdCode, pre: MdPre }}
+        rehypePlugins={doc ? DOC_REHYPE : CHAT_REHYPE}
+        components={doc ? DOC_COMPONENTS : CHAT_COMPONENTS}
         // 기본 정리는 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내고 이동은 하지 않으므로 그 스킴만 남긴다.
         urlTransform={(url) => (/^file:/i.test(url) ? url : defaultUrlTransform(url))}
       >
         {text}
       </ReactMarkdown>
     </div>
+    </DocBaseContext.Provider>
   );
 });
