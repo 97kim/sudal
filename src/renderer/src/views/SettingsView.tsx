@@ -28,6 +28,7 @@ import { applyThemeMode } from "../theme";
 import { Icon } from "../components/Icon";
 import { SchedulesSection } from "../components/SchedulesSection";
 import { ProviderLogo } from "../components/ProviderLogo";
+import sudari from "../assets/otter/idle-0.png";
 import { shortenHome } from "@shared/path-display";
 import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-open";
 import { useSnippets } from "../hooks/useSnippets";
@@ -630,18 +631,23 @@ function GeneralSection() {
           <Logo size={14} className="text-accent" />
           {t("settings.otter.title")}
         </div>
-        <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.otter.description")}</p>
-        <label className="flex cursor-pointer items-center gap-2 text-[12.5px]">
-          <input
-            type="checkbox"
-            checked={settings?.otter ?? false}
-            disabled={!settings}
-            onChange={(e) => void save({ otter: e.target.checked })}
-            data-otter-toggle
-          />
-          <span>{t("settings.otter.toggle")}</span>
-        </label>
-        <p className="mt-2 text-[12px] leading-5 text-muted-2">{t("settings.otter.hint")}</p>
+        <div className="flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.otter.description")}</p>
+            <label className="flex cursor-pointer items-center gap-2 text-[12.5px]">
+              <input
+                type="checkbox"
+                checked={settings?.otter ?? false}
+                disabled={!settings}
+                onChange={(e) => void save({ otter: e.target.checked })}
+                data-otter-toggle
+              />
+              <span>{t("settings.otter.toggle")}</span>
+            </label>
+            <p className="mt-2 text-[12px] leading-5 text-muted-2">{t("settings.otter.hint")}</p>
+          </div>
+          <img src={sudari} alt="" className="h-20 w-20 shrink-0 select-none" draggable={false} data-otter-preview />
+        </div>
       </div>
 
       <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="new-tab-policy">
