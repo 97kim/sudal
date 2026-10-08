@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   SessionManager,
+  claudeProjectDirName,
+  claudeProjectDirs,
   summarizeToolInput,
   type SessionSnapshot,
 } from "./session-manager";
@@ -635,4 +637,30 @@ test("지금 반영: 응답을 기다리는 동안 그 항목은 고치거나 �
   assert.equal(s.promptQueue.length, 0);
   const last = manager.events("t1").filter((e) => e.type === "user_message").at(-1);
   assert.equal(last?.type === "user_message" ? last.text : null, "A");
+});
+
+test("claudeProjectDirName: Claude Code 규칙 — 영숫자 외는 모두 -, 200자 넘으면 해시를 붙인다", () => {
+  assert.equal(claudeProjectDirName("/Users/a/ax/sudal"), "-Users-a-ax-sudal");
+  assert.equal(claudeProjectDirName("/Users/a/my app_v1.2"), "-Users-a-my-app-v1-2");
+  assert.equal(claudeProjectDirName("C:\\Users\\a\\proj"), "C--Users-a-proj");
+  assert.equal(claudeProjectDirName("/Users/a/수달"), "-Users-a---");
+  const long = `/${"a".repeat(250)}`;
+  const name = claudeProjectDirName(long);
+  assert.ok(name.startsWith(`-${"a".repeat(199)}-`));
+  assert.ok(name.length > 201);
+  assert.equal(name, claudeProjectDirName(long), "같은 경로는 같은 이름");
+});
+
+test("claudeProjectDirs: macOS 는 예전 규칙을 먼저 두고 다를 때만 실제 규칙을 더한다, Windows 는 실제 규칙만", () => {
+  const same = (p: string) => p;
+  assert.deepEqual(claudeProjectDirs("/h/.claude/projects", "/Users/a/ax/sudal", "darwin", same), ["/h/.claude/projects/-Users-a-ax-sudal"]);
+  assert.deepEqual(claudeProjectDirs("/h/.claude/projects", "/Users/a/my app", "darwin", same), [
+    "/h/.claude/projects/-Users-a-my app",
+    "/h/.claude/projects/-Users-a-my-app",
+  ]);
+  assert.deepEqual(claudeProjectDirs("/h/.claude/projects", "/tmp/x", "darwin", () => "/private/tmp/x"), [
+    "/h/.claude/projects/-tmp-x",
+    "/h/.claude/projects/-private-tmp-x",
+  ]);
+  assert.deepEqual(claudeProjectDirs("C:\\Users\\a\\.claude\\projects", "C:\\Users\\a\\proj", "win32", same), ["C:\\Users\\a\\.claude\\projects\\C--Users-a-proj"]);
 });

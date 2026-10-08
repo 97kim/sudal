@@ -16,7 +16,13 @@ function userDataDir() {
   return path.join(process.env.XDG_CONFIG_HOME || path.join(home, ".config"), "Sudal");
 }
 
-/** 소켓 위치: SUDAL_SOCKET → userData/control.json 의 socket(앱이 시작할 때 쓴다) → userData/control.sock */
+/** Windows 제어 파이프 이름. src/main/control-server.ts 의 controlPipeName 과 같아야 한다(테스트가 비교한다). */
+function controlPipeName(userData) {
+  const key = userData.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  return `\\\\.\\pipe\\sudal-${require("node:crypto").createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+}
+
+/** 소켓 위치: SUDAL_SOCKET → userData/control.json 의 socket(앱이 시작할 때 쓴다) → userData/control.sock(Windows 는 named pipe) */
 function socketPath() {
   if (process.env.SUDAL_SOCKET) return process.env.SUDAL_SOCKET;
   const ud = userDataDir();
@@ -26,7 +32,7 @@ function socketPath() {
   } catch {
     /* 앱이 안 떠 있거나 옛 버전 */
   }
-  return path.join(ud, "control.sock");
+  return process.platform === "win32" ? controlPipeName(ud) : path.join(ud, "control.sock");
 }
 
 // 사용자에게 보이는 문구 표. 의존성 0 을 지키려고 i18next 없이 이 파일 안에서 고른다.
@@ -418,4 +424,6 @@ function readVersion() {
   }
 }
 
-main().catch((e) => fail(e.message));
+// 테스트가 require 할 때는 실행하지 않는다(파이프 이름 계산을 앱 쪽과 비교한다)
+if (require.main === module) main().catch((e) => fail(e.message));
+else module.exports = { controlPipeName };

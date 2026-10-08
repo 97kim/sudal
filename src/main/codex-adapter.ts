@@ -10,6 +10,7 @@ import { mapCodexEvent } from "./codex-events";
 import { AppServerError, CodexAppServer, classifyResumeFailure, mapAppServerNotification, normalizeFileChanges, resumeConflictMessage, type AppServerTurnContext, type FileChangeDto } from "./codex-app-server";
 import { Codex } from "@openai/codex-sdk";
 import { codexHasDeveloperInstructions } from "./cli-defaults";
+import { launchSpec } from "./cli-launch";
 import { appMsg, mainI18n, MsgError, mt } from "./i18n";
 import type { Msg } from "@shared/i18n/msg";
 import { clearCodexLangReminder, codexLangHookArgs, queueCodexLangReminder, trustCodexLangHooks } from "./codex-lang-hooks";
@@ -475,7 +476,9 @@ export async function steerCodexTurn(sessionKey: string, text: string, images: {
 
 /** 폴백: SDK exec 경로. 한 턴 = runStreamed 한 번, thread.started 의 id 로 다음 턴 resumeThread. */
 export async function runCodexTurnExec(runtime: CodexRuntime, req: CodexTurnRequest): Promise<void> {
-  const codex = new Codex({ codexPathOverride: runtime.codexPath, env: runtime.env });
+  // SDK 는 실행 파일을 shell 없이 띄운다 — Windows 의 codex.cmd 가 .exe 를 가리키면 그것을 준다(.js 를 가리키면 방법이 없어 그대로)
+  const spec = launchSpec(runtime.codexPath, []);
+  const codex = new Codex({ codexPathOverride: !spec.shell && spec.args.length === 0 ? spec.command : runtime.codexPath, env: runtime.env });
   const threadOptions: ThreadOptions = {
     workingDirectory: req.cwd,
     skipGitRepoCheck: true,

@@ -91,6 +91,7 @@ export const main: DeepPartial<typeof ko> = {
     claudeCliMissing: "Couldn't find the Claude CLI.",
     codexCliMissing: "Couldn't find the Codex CLI.",
     cliLaunchFailed: "Couldn't start the CLI.",
+    claudeCmdUnsupported: "Couldn't find the program the Claude CLI wrapper ({{path}}) points to. Use the native Claude Code install (claude.exe) or pick the executable in Settings.",
     forkFailed: "Couldn't branch: {{detail}}",
     browserNotOpen: "No browser is open in this tab. Open one first with `sudal browser open --url …`.",
     browserClosed: "The browser tab was closed. Open it again.",

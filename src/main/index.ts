@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { isWithin } from "./path-within";
 import { existsSync, rmSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync } from "node:fs";
 import { createConnection } from "node:net";
@@ -42,6 +42,8 @@ import {
 } from "./chat-attachments";
 import { forkClaudeSession, setClaudeSessionIdleMs, type ClaudeRuntime } from "./claude-adapter";
 import { buildCliDiscovery, type CliDiscovery } from "./cli-discovery";
+import { claudeExecutableFor } from "./cli-launch";
+import { pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
 import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
@@ -67,7 +69,7 @@ import { runSettled, runSummary } from "@shared/orchestration";
 import { parseVerifyCommands } from "@shared/verify";
 import { FANOUT_PROMPT_EXCERPT, FANOUT_SUMMARY_EXCERPT, allSettled, changeStats, excerpt, fanoutTabTitle, validateFanoutRequest, variantLabel } from "@shared/fanout";
 import type { FanoutEvent, FanoutVariant } from "@shared/chat-events";
-import { ControlServer } from "./control-server";
+import { ControlServer, controlPipeName } from "./control-server";
 import { writeFileView, listDirectory, locateFiles, readFileView, createPath, renamePath, resolveDeletable, repoRoot } from "./files";
 import { gitChanges, gitCommit, gitDiffFor, gitInfo, gitRevert } from "./git";
 import {
@@ -199,9 +201,15 @@ async function sdkEnv(tabId?: string): Promise<Record<string, string>> {
   for (const k of Object.keys(env)) if (!(k in clean)) delete env[k];
   env.HOME = env.HOME || home;
   env.USERPROFILE = env.USERPROFILE || home;
-  env.SHELL = env.SHELL || process.env.SHELL || "/bin/zsh";
+  // Windows 에는 /bin/zsh 가 없다 — 넣으면 CLI 가 없는 셸을 띄우려 한다
+  if (process.platform !== "win32") env.SHELL = env.SHELL || process.env.SHELL || "/bin/zsh";
   // 탭 안에서 부르는 `sudal` CLI 가 이 인스턴스(이 userData)에 붙게 — 개발·테스트 인스턴스가 사용자 앱을 건드리지 않게
   env.SUDAL_USERDATA = app.getPath("userData");
+  // Windows 는 ~/.local/bin 같은 공통 자리가 없어서, 이 인스턴스 전용 shim 폴더를 PATH 앞에 두고 에이전트가 `sudal` 로 부르게 한다
+  if (process.platform === "win32") {
+    const bin = ensureWorkerShims();
+    if (bin) env.PATH = `${bin};${env.PATH ?? ""}`;
+  }
   // 탭의 에이전트가 자기 탭을 알 수 있게 — `active` 는 화면에서 고른 탭이지 호출한 에이전트의 탭이 아니다.
   // 탭 없이 띄우는 프로세스에는 남기지 않는다(앱이 다른 Sudal 탭의 셸에서 실행됐을 때 그 값이 새지 않게).
   if (tabId) env.SUDAL_TAB_ID = tabId;
@@ -215,7 +223,10 @@ async function claudeRuntime(tabId?: string): Promise<ClaudeRuntime> {
     throw new Error(cli.error || mt("main.error.claudeCliMissing"));
   const env = await sdkEnv(tabId);
   env.CLAUDE_AGENT_SDK_CLIENT_APP = `sudal/${app.getVersion()}`;
-  return { pathToClaudeCodeExecutable: cli.path, env };
+  // SDK 는 실행 파일을 shell 없이 띄워서 Windows 의 claude.cmd 는 못 받는다 — shim 이 가리키는 .exe·.js 를 넘긴다
+  const executable = claudeExecutableFor(cli.path);
+  if (!executable) throw new Error(mt("main.error.claudeCmdUnsupported", { path: cli.path }));
+  return { pathToClaudeCodeExecutable: executable, env };
 }
 
 async function codexRuntime(tabId?: string): Promise<CodexRuntime> {
@@ -227,19 +238,22 @@ async function codexRuntime(tabId?: string): Promise<CodexRuntime> {
 
 async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
   const env = await cliDiscovery().buildEnv();
-  const shellPathDirs = (env.PATH || "").split(":").filter(Boolean);
-  const appPathDirs = (process.env.PATH || "").split(":").filter(Boolean);
-  const appSet = new Set(appPathDirs);
+  const shellPathDirs = (env.PATH || "").split(delimiter).filter(Boolean);
+  const appPathDirs = (process.env.PATH || "").split(delimiter).filter(Boolean);
+  // Windows 경로는 대소문자를 가리지 않는다
+  const key = (d: string) => (process.platform === "win32" ? d.toLowerCase() : d);
+  const appSet = new Set(appPathDirs.map(key));
   const missingInApp: CliDiagnosticsDto["missingInApp"] = [];
   for (const provider of ["claude", "codex"] as const) {
     const status = await cliDiscovery().find(provider);
     if (!status.path) continue;
-    const dir = status.path.slice(0, status.path.lastIndexOf("/"));
-    if (!appSet.has(dir) && !missingInApp.some((m) => m.dir === dir))
+    const dir = dirname(status.path);
+    if (!appSet.has(key(dir)) && !missingInApp.some((m) => m.dir === dir))
       missingInApp.push({ dir, provider });
   }
   return {
-    loginShell: process.env.SHELL || "/bin/zsh",
+    // Windows 는 로그인 셸로 PATH 를 모으지 않는다
+    loginShell: process.platform === "win32" ? "" : process.env.SHELL || "/bin/zsh",
     shellPathDirs,
     appPathDirs,
     missingInApp,
@@ -679,7 +693,8 @@ async function startControlServer() {
   // 지난 실행이 비정상 종료해 남긴 tmp 소켓: control.json 이 가리키는 것이 소켓 파일이고 아무도 안 받으면 지운다.
   try {
     const old = JSON.parse(readFileSync(join(app.getPath("userData"), "control.json"), "utf8")) as { socket?: string };
-    if (old.socket && old.socket !== join(app.getPath("userData"), "control.sock") && existsSync(old.socket) && statSync(old.socket).isSocket()) {
+    // Windows 의 named pipe 는 파일이 아니라 남지 않는다
+    if (process.platform !== "win32" && old.socket && old.socket !== join(app.getPath("userData"), "control.sock") && existsSync(old.socket) && statSync(old.socket).isSocket()) {
       await new Promise<void>((done) => {
         const c = createConnection(old.socket!);
         c.once("connect", () => {
@@ -730,8 +745,8 @@ async function startControlServer() {
       },
       schedules: () => schedulesApi(),
     },
-    join(app.getPath("userData"), "control.sock"),
-    join(tmpdir(), `sudal-${process.pid}.sock`),
+    process.platform === "win32" ? controlPipeName(app.getPath("userData")) : join(app.getPath("userData"), "control.sock"),
+    process.platform === "win32" ? undefined : join(tmpdir(), `sudal-${process.pid}.sock`),
   );
   try {
     await server.start();
@@ -1047,6 +1062,7 @@ function deliverControlOpen(req: ControlOpenDto) {
 
 /** ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트. */
 async function installCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }> {
+  if (process.platform === "win32") return installWindowsCliShim();
   try {
     const dir = join(app.getPath("home"), ".local", "bin");
     mkdirSync(dir, { recursive: true });
@@ -1065,7 +1081,7 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
     chmodSync(target, 0o755);
     // 설치는 됐어도 로그인 셸 PATH 에 ~/.local/bin 이 없으면 터미널에서 못 찾는다 — 그 자리에서 알려 준다
     const shellPath = (await cliDiscovery().buildEnv()).PATH ?? "";
-    const onPath = shellPath.split(":").some((p) => p.replace(/\/+$/, "") === dir);
+    const onPath = pathListHas(shellPath, dir, process.platform);
     return {
       ok: true,
       path: target,
@@ -1075,6 +1091,49 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+function shimTarget() {
+  return { exe: process.execPath, cjs: join(cliDir(), "sudal.cjs"), userData: app.getPath("userData") };
+}
+
+/** dir 에 sudal.cmd(cmd·PowerShell)와 sudal(Git Bash)을 쓴다. 돌려주는 값은 sudal.cmd 경로. */
+function writeWindowsShims(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  const cmd = join(dir, "sudal.cmd");
+  writeFileSync(cmd, windowsCmdShim(shimTarget(), process.env));
+  writeFileSync(join(dir, "sudal"), windowsShShim(shimTarget()));
+  return cmd;
+}
+
+/** Windows: %LOCALAPPDATA%\Sudal\bin 에 설치. PATH 에 넣는 일은 하지 않고 onPath·hint 로 알린다. */
+async function installWindowsCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }> {
+  try {
+    const dir = windowsCliBinDir(process.env, app.getPath("home"));
+    const target = writeWindowsShims(dir);
+    const onPath = pathListHas((await cliDiscovery().buildEnv()).PATH ?? "", dir, "win32");
+    return { ok: true, path: target, onPath, ...(onPath ? {} : { hint: mt("main.cli.pathHint", { dir }) }) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+let workerShimDir: string | null | undefined;
+/**
+ * Windows: 오케스트레이션 워커·탭 안의 에이전트가 쓰는 이 인스턴스 전용 shim(userData\bin). 앱 실행마다 한 번 다시 쓴다 —
+ * 사용자가 설치한 shim 은 다른 인스턴스(개발 실행 등)를 가리킬 수 있어서 따로 둔다. 못 쓰면 null.
+ */
+function ensureWorkerShims(): string | null {
+  if (workerShimDir !== undefined) return workerShimDir;
+  const dir = join(app.getPath("userData"), "bin");
+  try {
+    writeWindowsShims(dir);
+    workerShimDir = dir;
+  } catch (e) {
+    console.error("[cli] 워커용 sudal shim 을 쓰지 못했습니다:", e);
+    workerShimDir = null;
+  }
+  return workerShimDir;
 }
 
 /**
@@ -1099,8 +1158,9 @@ function adoptLegacyInstall(): void {
 
 /** 설치 상태: 파일이 있는지, 셸 스크립트가 이 앱을 가리키는지, PATH 에 있는지, 스텁이 동봉본과 같은지. */
 async function installStatus(): Promise<InstallStatusDto> {
-  const dir = join(app.getPath("home"), ".local", "bin");
-  const cliPath = join(dir, "sudal");
+  const win = process.platform === "win32";
+  const dir = win ? windowsCliBinDir(process.env, app.getPath("home")) : join(app.getPath("home"), ".local", "bin");
+  const cliPath = join(dir, win ? "sudal.cmd" : "sudal");
 
   const read = (p: string) => {
     try {
@@ -1116,8 +1176,9 @@ async function installStatus(): Promise<InstallStatusDto> {
     cli: {
       path: cliPath,
       installed: cliText !== null,
-      current: cliText !== null && cliText.includes(shellQuote(process.execPath)) && cliText.includes(shellQuote(join(cliDir(), "sudal.cjs"))),
-      onPath: shellPath.split(":").some((p) => p.replace(/\/+$/, "") === dir),
+      // Windows 는 지금 만들 내용과 같으면 최신이다(앱 위치·userData 가 바뀌면 달라진다)
+      current: cliText !== null && (win ? cliText === windowsCmdShim(shimTarget(), process.env) : cliText.includes(shellQuote(process.execPath)) && cliText.includes(shellQuote(join(cliDir(), "sudal.cjs")))),
+      onPath: pathListHas(shellPath, dir, process.platform),
     },
     skills: skillTargets().map((t) => {
       const text = read(t.path);
@@ -1369,8 +1430,8 @@ function bootstrap() {
   // 예전(1.0 전)엔 worktree 를 앱 데이터 폴더 안에 만들었다 — 이미 만든 것도 계속 쓸 수 있게 옛 위치도 승인한다
   approveRoot(join(app.getPath("userData"), "worktrees"));
   approveRoot(worktreeRootDir());
-  // 검증·개발용: 콜론으로 구분한 추가 루트(선택 창 없이 스크립트로 탭 cwd 를 정할 때)
-  for (const r of (process.env.SUDAL_APPROVED_ROOTS ?? "").split(":")) if (r) approveRoot(r);
+  // 검증·개발용: PATH 처럼 구분한(macOS :, Windows ;) 추가 루트(선택 창 없이 스크립트로 탭 cwd 를 정할 때)
+  for (const r of (process.env.SUDAL_APPROVED_ROOTS ?? "").split(delimiter)) if (r) approveRoot(r);
   lsp = new LspManager({
     env: () => sdkEnv(),
     resolveRoot: async (cwd) => repoRoot(cwd, await cliDiscovery().buildEnv()),
@@ -2037,6 +2098,9 @@ function registerIpc() {
   orchestrator = new Orchestrator({
     dir: join(app.getPath("userData"), "orchestration"),
     cliCommand: () => {
+      // Windows: 워커 env 의 PATH 앞에 전용 shim 폴더가 있어(sdkEnv) cmd·PowerShell·Git Bash 어디서든 `sudal` 로 된다.
+      // 환경 변수를 앞에 붙이는 문법이 셸마다 달라 shim 없이 셸에 무관한 한 줄은 만들 수 없다 — shim 을 못 쓰면 로그에 남는다.
+      if (process.platform === "win32") return "sudal";
       const shim = join(app.getPath("home"), ".local", "bin", "sudal");
       return existsSync(shim) ? "sudal" : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(process.execPath)} ${shellQuote(join(cliDir(), "sudal.cjs"))}`;
     },

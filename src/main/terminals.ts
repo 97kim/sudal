@@ -7,6 +7,7 @@ import path from "node:path";
 import type { IPty } from "node-pty";
 import { TERMINAL_CLEAR_MARK } from "@shared/ipc";
 import { mt } from "./i18n";
+import { launchSpec } from "./cli-launch";
 
 export interface TerminalOpenResult {
   ok: boolean;
@@ -40,6 +41,24 @@ export function trimBacklog(s: string): string {
 }
 
 export type TerminalKind = "shell" | "command";
+
+/**
+ * 통합 터미널에 띄울 셸. macOS 는 사용자 로그인 셸(-l).
+ * Windows 는 SHELL 을 보지 않는다(Git Bash 등이 남긴 /usr/bin/bash 같은 값은 띄울 수 없다) — PATH 의 pwsh.exe(PowerShell 7) →
+ * 시스템 Windows PowerShell → COMSPEC(cmd.exe) 순. 로그인 셸 개념이 없어 인자는 없다.
+ */
+export function defaultShell(platform: NodeJS.Platform, env: Record<string, string | undefined>, exists: (p: string) => boolean): { file: string; args: string[] } {
+  if (platform !== "win32") return { file: env.SHELL || process.env.SHELL || "/bin/zsh", args: ["-l"] };
+  const w = path.win32;
+  for (const dir of (env.PATH ?? env.Path ?? "").split(";").filter(Boolean)) {
+    const p = w.join(dir, "pwsh.exe");
+    if (exists(p)) return { file: p, args: [] };
+  }
+  const root = env.SystemRoot || env.SYSTEMROOT || "C:\\Windows";
+  const ps = w.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  if (exists(ps)) return { file: ps, args: [] };
+  return { file: env.ComSpec || env.COMSPEC || w.join(root, "System32", "cmd.exe"), args: [] };
+}
 
 export interface TerminalManagerDeps {
   onData(tabId: string, data: string): void;
@@ -112,7 +131,7 @@ export class TerminalManager {
         backlog: cur.backlog,
       };
     }
-    const shell = env.SHELL || process.env.SHELL || "/bin/zsh";
+    const { file: shell, args: shellArgs } = defaultShell(process.platform, env, (p) => fs.existsSync(p));
     // node-pty 는 cwd 가 없어도 spawn 자체는 성공하고 셸이 바로 죽는다. 미리 걸러서 이유를 알려 준다.
     if (!fs.existsSync(cwd)) {
       return {
@@ -123,7 +142,7 @@ export class TerminalManager {
       };
     }
     try {
-      const pty = loadPty().spawn(shell, ["-l"], {
+      const pty = loadPty().spawn(shell, shellArgs, {
         name: "xterm-256color",
         cols: Math.max(2, cols || 80),
         rows: Math.max(1, rows || 24),
@@ -167,8 +186,11 @@ export class TerminalManager {
     rows = 30,
   ): TerminalOpenResult {
     this.close(tabId);
+    // Windows 의 claude.cmd·codex.cmd 는 shim 대상(.exe·node .js)으로 띄운다. 못 읽으면 .cmd 그대로 — pty 는 CreateProcess 라 배치 파일도 뜬다
+    const spec = launchSpec(file, args);
+    const [command, commandArgs] = spec.shell ? [file, args] : [spec.command, spec.args];
     try {
-      const pty = loadPty().spawn(file, args, {
+      const pty = loadPty().spawn(command, commandArgs, {
         name: "xterm-256color",
         cols: Math.max(2, cols),
         rows: Math.max(1, rows),

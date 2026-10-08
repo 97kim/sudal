@@ -4,8 +4,12 @@
 // 앱 상태를 건드리는 일은 전부 deps 로 위임한다 — 이 파일은 프로토콜·선택자·대기 로직만 알고, 테스트는 가짜 deps 로 돈다.
 // 신뢰 모델: 소켓에 붙을 수 있는 건 같은 사용자(UID)뿐이고, 그 사용자는 앱을 직접 조작할 수 있는 사람이다. 그래서 CLI 는
 // 앱 UI 와 같은 권한을 가진다(경로 승인·full 정책 포함). 다른 사용자·원격은 파일 권한이 막는다.
+// Windows 는 유닉스 소켓 파일 대신 named pipe(\\.\pipe\sudal-<userData 해시>)를 쓴다 — chmod 가 없어 파이프 기본 보안 설명자에 맡긴다.
 import { createServer, type Server, type Socket } from "node:net";
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
+import { samePath } from "@shared/any-path";
 import { isPermissionPolicy, type ChatEvent, type PermissionPolicy, type SessionStatus } from "@shared/chat-events";
 import { parseCron } from "@shared/cron";
 import type { Run, Schedule } from "@shared/schedules";
@@ -149,6 +153,20 @@ function compactBlock(b: Block): Json {
   }
 }
 
+/**
+ * Windows 제어 파이프 이름. userData 마다 달라서 개발·검증 인스턴스가 사용자 앱과 섞이지 않는다.
+ * cli/sudal.cjs 의 controlPipeName 과 글자 하나까지 같아야 한다(control-server.test.ts 가 비교한다).
+ */
+export function controlPipeName(userData: string): string {
+  const key = userData.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  return `\\\\.\\pipe\\sudal-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+}
+
+/** \\.\pipe\... 는 파일이 아니다 — 지우거나 chmod 하지 않는다. */
+export function isPipePath(p: string): boolean {
+  return /^\\\\[.?]\\pipe\\/i.test(p);
+}
+
 export class ControlServer {
   private server: Server | null = null;
   /** 실제로 연 소켓 경로(긴 userData 경로면 tmp 의 짧은 경로로 대체된다). start 뒤에 유효. */
@@ -177,13 +195,18 @@ export class ControlServer {
     return new Promise((resolve, reject) => {
       // 지난 실행이 남긴 소켓 파일은 지우고 새로 연다(단일 인스턴스라 다른 앱이 쓰고 있을 일은 없다)
       try {
-        if (existsSync(socketPath)) unlinkSync(socketPath);
+        if (!isPipePath(socketPath) && existsSync(socketPath)) unlinkSync(socketPath);
       } catch {
         /* 무시 */
       }
       const server = createServer((sock) => this.onConnection(sock));
       server.on("error", reject);
       server.listen(socketPath, () => {
+        if (isPipePath(socketPath)) {
+          this.server = server;
+          resolve();
+          return;
+        }
         try {
           // 같은 사용자만 붙을 수 있게. 못 좁히면 여는 것 자체를 포기한다(다른 사용자에게 열린 채 돌지 않게).
           chmodSync(socketPath, 0o600);
@@ -201,6 +224,7 @@ export class ControlServer {
   close(): void {
     this.server?.close();
     this.server = null;
+    if (isPipePath(this.socketPath)) return;
     try {
       unlinkSync(this.socketPath);
     } catch {
@@ -286,7 +310,7 @@ export class ControlServer {
       }
       case "ws.add": {
         const path = this.requireString(params, "path");
-        if (!path.startsWith("/")) throw new ControlError(mt("cli.control.pathAbsolute"));
+        if (!isAbsolute(path)) throw new ControlError(mt("cli.control.pathAbsolute"));
         this.deps.approveRoot(path);
         const r = this.deps.addWorkspace(path);
         return { workspaceId: r.workspaceId, tabId: r.tabId };
@@ -323,7 +347,7 @@ export class ControlServer {
         // --cwd 를 안 주면 워크스페이스 기본 경로로 돈다. 이름만으로 만든 워크스페이스에는 그 값이 없어
         // 저장이 막히므로, 그때는 --cwd 로 직접 준다(화면의 "폴더 고르기" 와 같은 값이다).
         const cwd = params.cwd !== undefined ? this.requireString(params, "cwd") : undefined;
-        if (cwd !== undefined && !cwd.startsWith("/")) throw new ControlError(mt("cli.control.cwdAbsolute"));
+        if (cwd !== undefined && !isAbsolute(cwd)) throw new ControlError(mt("cli.control.cwdAbsolute"));
         const target = {
           kind: "fresh",
           cwd,
@@ -403,7 +427,7 @@ export class ControlServer {
         if (!ws) throw new ControlError(mt("cli.control.noWorkspace"));
         // 탭을 만들기 전에 인자를 전부 검증한다 — 잘못된 호출이 빈 탭을 남기지 않게
         const cwd = params.cwd !== undefined ? this.requireString(params, "cwd") : undefined;
-        if (cwd && !cwd.startsWith("/")) throw new ControlError(mt("cli.control.cwdAbsolute"));
+        if (cwd && !isAbsolute(cwd)) throw new ControlError(mt("cli.control.cwdAbsolute"));
         const patch: Parameters<ControlDeps["configure"]>[1] = {};
         if (cwd) patch.cwd = cwd;
         const provider = params.provider !== undefined ? this.requireString(params, "provider") : undefined;
@@ -522,7 +546,7 @@ export class ControlServer {
       case "file.open": {
         const tab = this.resolveTab(params.tab);
         const path = this.requireString(params, "path");
-        if (!path.startsWith("/")) throw new ControlError(mt("cli.control.pathAbsolute"));
+        if (!isAbsolute(path)) throw new ControlError(mt("cli.control.pathAbsolute"));
         this.deps.openFile(tab.id, path, num(params.line));
         return { tab: tab.id, path };
       }
@@ -763,7 +787,8 @@ export class ControlServer {
     const st = this.deps.state();
     const byId = st.model.workspaces.find((x) => x.id === sel);
     if (byId) return byId;
-    const byPath = st.model.workspaces.find((x) => x.path && x.path === sel.replace(/\/+$/, ""));
+    // Windows 경로는 끝의 \ 나 대소문자가 달라도 같은 폴더다
+    const byPath = st.model.workspaces.find((x) => x.path && (process.platform === "win32" ? samePath(x.path, sel) : x.path === sel.replace(/\/+$/, "")));
     if (byPath) return byPath;
     const byName = st.model.workspaces.filter((x) => x.name.toLowerCase() === sel.toLowerCase());
     if (byName.length === 1) return byName[0];

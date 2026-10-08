@@ -4,7 +4,8 @@ import { createConnection } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ControlServer, type ControlDeps } from "./control-server";
+import { createRequire } from "node:module";
+import { ControlServer, controlPipeName, isPipePath, type ControlDeps } from "./control-server";
 import type { ChatEvent } from "@shared/chat-events";
 import type { WorkspaceStateDto } from "@shared/ipc";
 
@@ -286,4 +287,17 @@ test("자기 탭은 기다릴 수 없다: 부른 탭(caller)과 대상이 같으
   // 다른 탭을 기다리는 것, 자기 탭에 기다리지 않고 보내는 것은 그대로 된다
   assert.equal(((await d("tab.wait", { tab: "t1", caller: "t2" })).wait as { satisfied: boolean }).satisfied, true);
   assert.equal(((await d("tab.send", { tab: "t1", text: "y", caller: "t1" })).send as { ok: boolean }).ok, true);
+});
+
+test("controlPipeName: 앱과 cli/sudal.cjs 가 같은 이름을 만든다(표기 차이는 무시)", () => {
+  const cli = createRequire(import.meta.url)("../../cli/sudal.cjs") as { controlPipeName(u: string): string };
+  for (const ud of ["C:\\Users\\a\\AppData\\Roaming\\Sudal", "C:\\Users\\김수달\\AppData\\Roaming\\Sudal Dev", "/Users/a/Library/Application Support/Sudal"]) {
+    assert.equal(cli.controlPipeName(ud), controlPipeName(ud));
+  }
+  const name = controlPipeName("C:\\Users\\a\\AppData\\Roaming\\Sudal");
+  assert.match(name, /^\\\\\.\\pipe\\sudal-[0-9a-f]{16}$/);
+  assert.equal(controlPipeName("c:/users/a/appdata/roaming/sudal/"), name);
+  assert.notEqual(controlPipeName("C:\\Users\\a\\AppData\\Roaming\\Sudal Dev"), name);
+  assert.equal(isPipePath(name), true);
+  assert.equal(isPipePath("/Users/a/Library/Application Support/Sudal/control.sock"), false);
 });
