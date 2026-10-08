@@ -1,5 +1,5 @@
 // 앱 단축키 표. 메뉴 가속기(main)와 화면 문구(renderer)가 같은 값을 쓰도록 한곳에 둔다.
-// Windows 는 macOS 의 ⌘ 자리에 Ctrl 을 쓴다(Mod). 그러면 터미널의 셸 편집키(Ctrl+K·R·L·B·T)와 겹치는데,
+// Windows 는 macOS 의 ⌘ 자리에 Ctrl 을 쓴다(Mod). 그러면 터미널의 셸 편집키(Ctrl+R·L·B·T)와 겹치는데,
 // 터미널에 포커스가 있을 때만 그 키를 셸에 양보한다(TERMINAL_YIELD_KEYS). 다른 곳에서는 앱 단축키다.
 import { formatShortcut } from "./shortcut";
 
@@ -35,11 +35,12 @@ export const APP_SHORTCUTS = {
 
 /**
  * Windows 에서 터미널에 포커스가 있으면 앱 단축키 대신 셸로 보내는 Ctrl+글자(Shift·Alt 없이).
- * K 줄 끝까지 지우기 · R 기록 검색 · L 화면 지우기 · B 뒤로(tmux 접두키) · T 글자 바꾸기(fzf 파일 찾기).
- * W 는 macOS 의 ⌘W 처럼 터미널을 닫는다 — 기본 셸 PowerShell 은 Ctrl+W 를 쓰지 않는다(단어 지우기는 Ctrl+Backspace).
+ * R 기록 검색 · L 화면 지우기 · B 뒤로(tmux 접두키) · T 글자 바꾸기(fzf 파일 찾기). macOS 에도 터미널 전용 앱 동작이 없는 키다.
+ * W·K 는 macOS 의 ⌘W·⌘K 처럼 터미널을 닫고 지운다(지우기는 앱이 든 출력 기록까지 비운다).
+ * 기본 셸 PowerShell 은 두 키를 거의 쓰지 않고(단어 지우기는 Ctrl+Backspace), bash 의 단어·줄 지우기는 잃는다.
  * F(찾기)·J(터미널 패널)는 셸에서 거의 안 쓰고 터미널 안에서도 앱 동작이 쓸모 있어 앱에 둔다.
  */
-export const TERMINAL_YIELD_KEYS: ReadonlySet<string> = new Set(["K", "R", "L", "B", "T"]);
+export const TERMINAL_YIELD_KEYS: ReadonlySet<string> = new Set(["R", "L", "B", "T"]);
 
 const CODE_OF: Record<string, string> = { Up: "ArrowUp", Down: "ArrowDown", Tab: "Tab", ",": "Comma" };
 

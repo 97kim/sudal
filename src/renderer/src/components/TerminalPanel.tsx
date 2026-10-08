@@ -886,7 +886,7 @@ function TerminalView({
       cbs.current.onFocus?.();
       if (IS_WIN) window.sudal.terminal.setFocused(true);
     };
-    // Windows: 포커스가 있는 동안 main 이 셸 편집키(Ctrl+K 등)를 메뉴 대신 셸로 보낸다(shared/app-shortcuts TERMINAL_YIELD_KEYS)
+    // Windows: 포커스가 있는 동안 main 이 셸 편집키(Ctrl+R 등)를 메뉴 대신 셸로 보낸다(shared/app-shortcuts TERMINAL_YIELD_KEYS)
     const onFocusOut = () => IS_WIN && window.sudal.terminal.setFocused(false);
     term.textarea?.addEventListener("focus", onFocusIn);
     term.textarea?.addEventListener("blur", onFocusOut);
@@ -897,7 +897,7 @@ function TerminalView({
     // ⌘D 좌우 · ⌘⇧D 상하 분할. 보통의 터미널 앱과 같은 자리다. ⌘D 는 셸에 아무 뜻이 없어(EOF 는 ⌃D)
     // 가로채도 잃는 것이 없다. ⌘W·⌘K·⌘F 는 메뉴 가속기라 여기까지 오지 않고 App 이 패널에 넘긴다.
     // Windows 는 Ctrl+D 가 EOF 라 분할은 Ctrl+Shift+D(좌우)·Ctrl+Shift+Alt+D(상하)다(shared/app-shortcuts).
-    // Windows 의 Ctrl+K 등 셸 편집키는 main 이 셸로 보낸다 — 여기까지 오면 xterm 이 셸에 넘긴다.
+    // Windows 의 Ctrl+R 등 셸 편집키는 main 이 셸로 보낸다 — 여기까지 오면 xterm 이 셸에 넘긴다.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && isMod(e) && e.shiftKey && e.code === "KeyA") {
         cbs.current.onAttach?.();
@@ -907,7 +907,7 @@ function TerminalView({
         cbs.current.onSplit?.((IS_MAC ? e.shiftKey : e.altKey) ? "col" : "row");
         return false;
       }
-      // Windows: 앱 단축키(Ctrl+J·F·1~9 등)는 xterm 이 셸로 보내지 않게 넘겨 메뉴가 받게 한다. 셸 편집키(Ctrl+K 등)는 셸로 간다. Ctrl+W 는 앱이 받아 터미널을 닫는다.
+      // Windows: 앱 단축키(Ctrl+J·F·1~9 등)는 xterm 이 셸로 보내지 않게 넘겨 메뉴가 받게 한다. 셸 편집키(Ctrl+R 등)는 셸로 간다. Ctrl+W·K 는 앱이 받아 터미널을 닫고 지운다.
       if (IS_WIN && e.type === "keydown" && passesToAppMenu(e)) return false;
       // Windows: Ctrl+C 는 선택이 있을 때만 복사하고, 없으면 셸에 보낸다(SIGINT). Ctrl+Shift+C 는 늘 복사.
       // Ctrl+V·Ctrl+Shift+V 는 xterm 이 ^V 로 보내지 않게 넘겨 브라우저의 붙여넣기(paste 이벤트)로 들어가게 한다.
