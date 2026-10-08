@@ -1075,7 +1075,7 @@ function readTheme() {
     selection: v("--color-accent-tint", "#eef0ff"),
     accent: v("--color-accent", "#696fea"),
     accentTint: v("--color-accent-tint", "#eef0ff"),
-    fontMono: v("--font-mono", "Menlo, monospace"),
+    fontMono: v("--font-mono", "Menlo, Consolas, monospace"),
   };
 }
 

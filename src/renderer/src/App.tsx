@@ -27,7 +27,7 @@ import { IS_MAC, isMod } from "./platform";
 export function App() {
   const { t } = useTranslation();
   const [view, setView] = useState<View>("chat");
-  // 사이드바 접힘. 아주 없애지 않고 얇은 띠로 두는 이유는 macOS 신호등 버튼 자리를 지켜야 해서다.
+  // 사이드바 접힘. 아주 없애지 않고 얇은 띠로 두는 이유는 macOS 신호등 버튼 자리를 지켜야 해서다(Windows 도 같은 띠를 쓴다).
   const [railed, setRailed] = useState(() => kvGet("sidebar.railed") === "1");
   const toggleRail = useCallback(
     () => setRailed((v) => {

@@ -64,6 +64,8 @@ async function start() {
   window.sudal.app.onSettingsChanged((s) => applyLocale(s.resolvedLocale));
   hydrateKv(entries, (key, value) => window.sudal.state.set(key, value));
   migrateLegacyStorageKeys();
+  // 운영체제별 여백(macOS 신호등 자리)은 CSS 의 mac: 변형이 이 클래스를 본다
+  document.documentElement.classList.add(`platform-${window.sudal.platform}`);
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <App />

@@ -125,7 +125,7 @@ export function SettingsView({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="drag flex h-[84px] shrink-0 items-center px-6 pt-7">
+      <header className="drag flex h-14 shrink-0 items-center px-6 mac:h-[84px] mac:pt-7">
         <div>
           <div className="text-[15px] font-semibold">{t("settings.nav.title")}</div>
           <div className="text-[11px] text-muted">{t("settings.nav.description")}</div>

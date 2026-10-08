@@ -455,7 +455,7 @@ export function ChatView({
       <div className="relative flex h-full flex-col">
         {/* 타이틀바 줄: 세션 제목·경로·모델과 버튼. 제목 중심 56px = 사이드바 로고 줄. 탭 스트립은 이 아래. */}
         {/* 헤더 폭이 800px 보다 좁으면(분할 칸·좁은 창) 버튼 글자를 숨기고 아이콘만 남긴다 — 글자는 툴팁. 안 그러면 오른쪽 버튼이 잘린다. */}
-        <header className="@container/chathead drag flex h-[68px] shrink-0 items-center gap-3 overflow-hidden px-6 pt-4">
+        <header className="@container/chathead drag flex h-[52px] shrink-0 items-center gap-3 overflow-hidden px-6 mac:h-[68px] mac:pt-4">
           {/* 제목·경로는 버튼에 밀려 사라지면 안 된다 — 최소 폭을 확보한다(버튼은 shrink-0 이라 제목만 줄어든다) */}
           <div className="min-w-[140px] flex-1 @min-[800px]/chathead:min-w-[220px]">
             {editingTitle ? (

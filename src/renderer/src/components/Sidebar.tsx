@@ -354,7 +354,7 @@ export function Sidebar({
       <aside className="drag flex w-[52px] shrink-0 flex-col items-center bg-panel" data-sidebar="collapsed">
         <button
           onClick={onToggleRail}
-          className="no-drag mt-11 rounded-md p-1.5 text-muted hover:bg-panel-2 hover:text-fg"
+          className="no-drag mt-3 rounded-md p-1.5 text-muted hover:bg-panel-2 hover:text-fg mac:mt-11"
           title={t("nav.sidebar.expand")}
           data-sidebar-toggle
         >
@@ -402,7 +402,7 @@ export function Sidebar({
 
   return (
     <aside className="drag flex w-[248px] shrink-0 flex-col bg-panel" data-sidebar="expanded">
-      <div className="flex items-center gap-2.5 px-4 pb-3 pt-11">
+      <div className="flex items-center gap-2.5 px-4 pb-3 pt-4 mac:pt-11">
         <Logo size={22} className="text-fg" />
         <span className="text-[14px] font-semibold tracking-wide">Sudal</span>
         <button

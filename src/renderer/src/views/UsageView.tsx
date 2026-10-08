@@ -128,7 +128,7 @@ export function UsageView() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="drag flex h-[84px] shrink-0 items-center justify-between px-6 pt-7">
+      <header className="drag flex h-14 shrink-0 items-center justify-between px-6 mac:h-[84px] mac:pt-7">
         <div>
           <div className="text-[15px] font-semibold">{t("usage.title")}</div>
           <div className="text-[11px] text-muted">
