@@ -1063,7 +1063,8 @@ function deliverControlOpen(req: ControlOpenDto) {
 }
 
 
-type InstallCliResult = { ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string };
+/** hint: 설치는 됐지만 PATH 에 없어 할 일이 남았다. warning: 끝났지만 알아 둘 것(빨간 오류로 보이지 않는다). */
+type InstallCliResult = { ok: true; path: string; onPath: boolean; hint?: string; warning?: string; pathAdded?: boolean } | { ok: false; error: string };
 
 /**
  * ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트.
@@ -1132,9 +1133,12 @@ async function installWindowsCliShim(addToPath: boolean): Promise<InstallCliResu
       // 이 앱이 새로 여는 터미널·에이전트도 바로 찾게 한다(이미 열린 터미널은 다시 열어야 한다)
       process.env.PATH = appendPathEntry(process.env.PATH ?? "", dir);
       cliDiscovery().invalidate();
-      return { ok: true, path: target, onPath: true, ...(r.status === "added" ? { pathAdded: true, ...(r.notified ? {} : { hint: mt("main.cli.pathAddedRelogWin") }) } : {}) };
+      // 알림이 확실히 실패했을 때만 덧붙인다(null 은 알 수 없음 — 대부분 전달된다)
+      return { ok: true, path: target, onPath: true, ...(r.status === "added" ? { pathAdded: true, ...(r.notified === false ? { warning: mt("main.cli.pathNotNotifiedWin") } : {}) } : {}) };
     }
-    const reason = !r.ok ? r.error : mt(r.status === "tooLong" ? "main.cli.pathTooLongWin" : r.status === "unsupported" ? "main.cli.pathUnsupportedWin" : "main.cli.pathUnverifiedWin");
+    // 길이 초과는 손으로 더하라고 하면 막은 일을 그대로 하게 되므로 따로 안내한다
+    if (r.ok && r.status === "tooLong") return { ok: true, path: target, onPath: false, hint: mt("main.cli.pathTooLongWin", { path: target }) };
+    const reason = !r.ok ? r.error : mt(r.status === "unsupported" ? "main.cli.pathUnsupportedWin" : "main.cli.pathUnverifiedWin");
     return { ok: true, path: target, onPath: false, hint: mt("main.cli.pathAddFailedWin", { reason, dir }) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1152,12 +1156,15 @@ async function addToUserPath(dir: string): Promise<({ ok: true } & UserPathResul
       windowsHide: true,
     });
     const r = parseUserPathResult(stdout);
-    return r ? { ok: true, ...r } : { ok: false, error: stdout.trim().slice(-300) || "?" };
+    return r ? { ok: true, ...r } : { ok: false, error: stdout.trim().slice(0, 300) || "?" };
   } catch (e) {
     console.error("[cli] 사용자 Path 에 더하지 못했습니다:", e);
-    // 회사 정책으로 PowerShell 이 막혔을 때 stderr 에 이유가 남는다
-    const stderr = (e as { stderr?: string }).stderr?.trim();
-    return { ok: false, error: (stderr || (e instanceof Error ? e.message : String(e))).slice(-300) };
+    // 알림이 늦어 시간 초과로 끊겨도, 그 전에 낸 줄로 저장 여부를 안다
+    const out = e as { stdout?: string; stderr?: string };
+    const partial = out.stdout ? parseUserPathResult(out.stdout) : null;
+    if (partial) return { ok: true, ...partial };
+    // 회사 정책으로 PowerShell 이 막혔을 때 stderr 첫머리에 이유가 남는다
+    return { ok: false, error: (out.stderr?.trim() || (e instanceof Error ? e.message : String(e))).slice(0, 300) };
   }
 }
 

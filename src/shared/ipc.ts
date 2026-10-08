@@ -832,7 +832,7 @@ export interface SudalApi {
     onControlOpen(listener: (req: ControlOpenDto) => void): () => void;
     /** `sudal` 명령을 ~/.local/bin 에 설치한다(앱 동봉 스크립트를 앱의 node 로 실행하는 셸 스크립트). */
     /** pathAdded: Windows 에서 설치하며 사용자 환경 변수 Path 에 폴더를 더했다(새로 여는 터미널부터 보인다). */
-    installCli(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string }>;
+    installCli(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string; warning?: string; pathAdded?: boolean } | { ok: false; error: string }>;
     /** 스킬 스텁을 이 PC 에 있는 에이전트(Claude Code · Codex CLI)마다 설치한다. */
     installSkill(agent?: Provider): Promise<{ ok: true; paths: string[]; skipped: string[] } | { ok: false; error: string }>;
     /** 두 설치물의 현재 상태(있는지·이 앱을 가리키는지·PATH 에 있는지·스텁이 최신인지). */

@@ -68,8 +68,9 @@ test("사용자 Path 에 더하는 PowerShell 은 폴더를 명령에 넣지 않
   // 원래 값의 종류(REG_SZ·REG_EXPAND_SZ)를 그대로 쓴다
   assert.match(ADD_TO_USER_PATH_PS, /GetValueKind\('Path'\)/);
   assert.match(ADD_TO_USER_PATH_PS, /SetValue\('Path', \$next, \$kind\)/);
-  // 실제 사용자 변수를 지우지 않게 알림용 이름은 매번 새로 만든다
-  assert.match(ADD_TO_USER_PATH_PS, /NewGuid/);
+  // 알림은 실패를 알 수 있는 SendMessageTimeout 으로, 저장 결과는 그 전에 낸다
+  assert.match(ADD_TO_USER_PATH_PS, /SendMessageTimeout/);
+  assert.ok(ADD_TO_USER_PATH_PS.indexOf("status = 'added'") < ADD_TO_USER_PATH_PS.indexOf("SendMessageTimeout("));
   const encoded = encodePowerShell("Write-Output '수달'");
   assert.equal(Buffer.from(encoded, "base64").toString("utf16le"), "Write-Output '수달'");
 });
@@ -77,6 +78,11 @@ test("사용자 Path 에 더하는 PowerShell 은 폴더를 명령에 넣지 않
 test("Path 스크립트 결과는 마지막 JSON 줄을 읽는다", () => {
   assert.deepEqual(parseUserPathResult('경고 한 줄\r\n{"notified":true,"status":"added"}\r\n'), { status: "added", notified: true });
   assert.deepEqual(parseUserPathResult('{"status":"present","notified":false}'), { status: "present", notified: false });
+  // 저장 뒤 알림 결과는 다음 줄로 온다
+  assert.deepEqual(parseUserPathResult('{"status":"added"}\n{"notified":false}'), { status: "added", notified: false });
+  assert.deepEqual(parseUserPathResult('{"status":"added"}\n{"notified":null}'), { status: "added", notified: null });
+  // 알림 중 시간 초과로 끊겼다 — 저장은 됐고 알림은 실패로 본다
+  assert.deepEqual(parseUserPathResult('{"status":"added"}\n'), { status: "added", notified: false });
   assert.equal(parseUserPathResult('{"status":"weird"}'), null);
   assert.equal(parseUserPathResult(""), null);
 });
@@ -86,4 +92,6 @@ test("PATH 끝에 폴더를 더할 때 빈 값·중복·끝 구분자를 맞춘�
   assert.equal(appendPathEntry("", dir), dir);
   assert.equal(appendPathEntry("C:\\a;", dir), `C:\\a;${dir}`);
   assert.equal(appendPathEntry(`C:\\a;${dir.toLowerCase()}\\`, dir), `C:\\a;${dir.toLowerCase()}\\`);
+  // / 로 적힌 같은 폴더도 이미 있는 것으로 본다
+  assert.equal(appendPathEntry(dir.replace(/\\/g, "/"), dir), dir.replace(/\\/g, "/"));
 });
