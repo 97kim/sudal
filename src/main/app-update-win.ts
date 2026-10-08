@@ -2,7 +2,7 @@
 // 관리자 권한 없이 덮어쓸 수 있어 electron-updater 로 앱 안에서 받는다. 릴리즈의 latest.yml 을 읽는다(scripts/release.sh 가 올린다).
 // 서명이 없어 app-update.yml 에 publisherName 이 없고, 그러면 electron-updater 는 서명 검증을 건너뛴다.
 //
-// 저절로 받지는 않는다 — 사용자가 업데이트를 누를 때 받고, 다시 시작을 누르면 조용히 설치하고 새 버전을 띄운다.
+// 저절로 받지는 않는다 — 사용자가 업데이트를 누를 때 받고, 다시 시작을 누르면 설치하고 새 버전을 띄운다.
 // 받아 둔 채 그냥 끄면 끌 때 설치한다(autoInstallOnAppQuit 기본값).
 
 import type { AppUpdater } from "electron-updater";
@@ -59,9 +59,12 @@ export async function winDownloadUpdate(
   }
 }
 
-/** 받아 둔 업데이트가 있으면 조용히 설치하고 새 버전을 띄운다. 없으면 false — 그때는 그냥 다시 시작한다. */
+/** 받아 둔 업데이트가 있으면 설치하고 새 버전을 띄운다. 없으면 false — 그때는 그냥 다시 시작한다. */
 export async function winQuitAndInstall(): Promise<boolean> {
   if (!downloaded) return false;
-  (await getUpdater()).quitAndInstall(true, true);
+  // 설치에 몇 초에서 십수 초가 걸린다(압축 풀기 + 서명 없는 exe 라 Defender 검사). 조용히 설치하면 그동안 화면에 아무것도 없어
+  // 멈춘 것처럼 보이므로 설치 프로그램의 진행 창을 띄운다. 정상이면 oneClick 이라 진행 막대만 보인다.
+  // 앱 프로세스가 안 죽거나 파일 복사가 거듭 실패하면 조용한 설치는 알아서 취소하지만, 이때는 재시도/취소 창이 떠 클릭을 기다린다.
+  (await getUpdater()).quitAndInstall(false, true);
   return true;
 }
