@@ -217,6 +217,7 @@ export const settings = {
     otherApp: "다른 앱 위치를 가리킴",
     needsPath: "설치됨 · 셸 PATH에 ~/.local/bin을 추가해야 합니다",
     needsPathWin: "설치됨 · 사용자 환경 변수 Path에 설치 폴더를 추가해야 합니다",
+    pathNoteWin: "Windows에서는 CLI를 설치할 때 설치 폴더를 사용자 환경 변수 Path에도 추가합니다.",
     installed: "설치됨",
     notFound: "이 컴퓨터에서 찾지 못함",
     outdated: "구버전 — 업데이트 필요",
@@ -224,7 +225,7 @@ export const settings = {
     reinstall: "다시 설치",
     update: "업데이트",
     doneCli: "설치했습니다: {{path}}",
-    doneCliPathAdded: "설치했습니다: {{path}} · 사용자 환경 변수 Path에도 추가했습니다. 새로 여는 터미널부터 sudal 명령을 쓸 수 있습니다.",
+    doneCliPathAdded: "설치했습니다: {{path}} · 사용자 환경 변수 Path에도 추가했습니다. 터미널 앱을 완전히 종료했다가 다시 실행하면 sudal 명령을 쓸 수 있습니다.",
     doneSkill: "설치했습니다: {{paths}} — 새 세션부터 보입니다.",
   },
   browserLogin: {

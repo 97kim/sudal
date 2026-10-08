@@ -46,7 +46,7 @@ import {
 import { forkClaudeSession, setClaudeSessionIdleMs, type ClaudeRuntime } from "./claude-adapter";
 import { buildCliDiscovery, type CliDiscovery } from "./cli-discovery";
 import { claudeExecutableFor } from "./cli-launch";
-import { ADD_TO_USER_PATH_PS, encodePowerShell, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
+import { ADD_TO_USER_PATH_PS, appendPathEntry, encodePowerShell, parseUserPathResult, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim, type UserPathResult } from "./cli-shim";
 import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
@@ -1063,9 +1063,14 @@ function deliverControlOpen(req: ControlOpenDto) {
 }
 
 
-/** ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트. */
-async function installCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string }> {
-  if (process.platform === "win32") return installWindowsCliShim();
+type InstallCliResult = { ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string };
+
+/**
+ * ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트.
+ * userAction: 사용자가 설정에서 설치를 눌렀다. Windows 는 그때만 사용자 Path 를 고친다.
+ */
+async function installCliShim(userAction = false): Promise<InstallCliResult> {
+  if (process.platform === "win32") return installWindowsCliShim(userAction);
   try {
     const dir = join(app.getPath("home"), ".local", "bin");
     mkdirSync(dir, { recursive: true });
@@ -1110,30 +1115,49 @@ function writeWindowsShims(dir: string): string {
 }
 
 /**
- * Windows: %LOCALAPPDATA%\Sudal\bin 에 설치하고, PATH 에 없으면 사용자 환경 변수 Path 에 더한다.
- * Windows 사용자는 환경 변수를 손으로 고치는 데 익숙하지 않아 안내만으로는 설치가 끝나지 않았다. 못 더하면 hint 로 알린다.
+ * Windows: %LOCALAPPDATA%\Sudal\bin 에 설치한다. addToPath 면(사용자가 설정에서 설치를 눌렀을 때만) 사용자 환경 변수 Path 에도 더한다.
+ * Windows 사용자는 환경 변수를 손으로 고치는 데 익숙하지 않아 안내만으로는 설치가 끝나지 않았다. 못 더하면 hint 로 이유와 방법을 알린다.
+ * 앱을 켤 때 옛 이름 설치를 옮기며 부르는 경우는 shim 만 다시 쓰고 Path 는 건드리지 않는다.
  */
-async function installWindowsCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string }> {
+async function installWindowsCliShim(addToPath: boolean): Promise<InstallCliResult> {
   try {
     const dir = windowsCliBinDir(process.env, app.getPath("home"));
     const target = writeWindowsShims(dir);
-    if (pathListHas((await cliDiscovery().buildEnv()).PATH ?? "", dir, "win32")) return { ok: true, path: target, onPath: true };
-    try {
-      await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(ADD_TO_USER_PATH_PS)], {
-        env: { ...process.env, SUDAL_BIN_DIR: dir },
-        timeout: 20_000,
-        windowsHide: true,
-      });
-    } catch (e) {
-      console.error("[cli] 사용자 Path 에 더하지 못했습니다:", e);
-      return { ok: true, path: target, onPath: false, hint: mt("main.cli.pathHintWin", { dir }) };
+    if (!addToPath) {
+      const onPath = pathListHas((await cliDiscovery().buildEnv()).PATH ?? "", dir, "win32");
+      return { ok: true, path: target, onPath, ...(onPath ? {} : { hint: mt("main.cli.pathHintWin", { dir }) }) };
     }
-    // 이 앱이 새로 여는 터미널·에이전트도 바로 찾게 한다(이미 열린 터미널은 다시 열어야 한다)
-    process.env.PATH = `${process.env.PATH ?? ""};${dir}`;
-    cliDiscovery().invalidate();
-    return { ok: true, path: target, onPath: true, pathAdded: true };
+    const r = await (userPathQueue = userPathQueue.then(() => addToUserPath(dir), () => addToUserPath(dir)));
+    if (r.ok && (r.status === "present" || r.status === "added")) {
+      // 이 앱이 새로 여는 터미널·에이전트도 바로 찾게 한다(이미 열린 터미널은 다시 열어야 한다)
+      process.env.PATH = appendPathEntry(process.env.PATH ?? "", dir);
+      cliDiscovery().invalidate();
+      return { ok: true, path: target, onPath: true, ...(r.status === "added" ? { pathAdded: true, ...(r.notified ? {} : { hint: mt("main.cli.pathAddedRelogWin") }) } : {}) };
+    }
+    const reason = !r.ok ? r.error : mt(r.status === "tooLong" ? "main.cli.pathTooLongWin" : r.status === "unsupported" ? "main.cli.pathUnsupportedWin" : "main.cli.pathUnverifiedWin");
+    return { ok: true, path: target, onPath: false, hint: mt("main.cli.pathAddFailedWin", { reason, dir }) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 사용자 Path 고치기는 한 번에 하나씩(읽고-고쳐-쓰는 사이에 겹치면 한쪽이 덮인다). */
+let userPathQueue: Promise<unknown> = Promise.resolve();
+
+async function addToUserPath(dir: string): Promise<({ ok: true } & UserPathResult) | { ok: false; error: string }> {
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell(ADD_TO_USER_PATH_PS)], {
+      env: { ...process.env, SUDAL_BIN_DIR: dir },
+      timeout: 20_000,
+      windowsHide: true,
+    });
+    const r = parseUserPathResult(stdout);
+    return r ? { ok: true, ...r } : { ok: false, error: stdout.trim().slice(-300) || "?" };
+  } catch (e) {
+    console.error("[cli] 사용자 Path 에 더하지 못했습니다:", e);
+    // 회사 정책으로 PowerShell 이 막혔을 때 stderr 에 이유가 남는다
+    const stderr = (e as { stderr?: string }).stderr?.trim();
+    return { ok: false, error: (stderr || (e instanceof Error ? e.message : String(e))).slice(-300) };
   }
 }
 
@@ -2528,7 +2552,7 @@ function registerIpc() {
   });
 
   ipcMain.handle(IPC.pickDirectory, (e) => pickDirectory(e.sender));
-  ipcMain.handle(IPC.controlInstallCli, () => installCliShim());
+  ipcMain.handle(IPC.controlInstallCli, () => installCliShim(true));
   ipcMain.handle(IPC.controlInstallSkill, (_e, agent?: unknown) => installSkillStub(agent === "claude" || agent === "codex" ? agent : undefined));
   ipcMain.handle(IPC.controlInstallStatus, () => installStatus());
   ipcMain.handle(IPC.previewUrl, async (_e, cwd: string, path: string) => {

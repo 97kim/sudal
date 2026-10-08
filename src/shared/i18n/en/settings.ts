@@ -219,6 +219,7 @@ export const settings: DeepPartial<typeof ko> = {
     otherApp: "Points to a different app location",
     needsPath: "Installed · add ~/.local/bin to your shell PATH",
     needsPathWin: "Installed · add the install folder to your user Path environment variable",
+    pathNoteWin: "On Windows, installing the CLI also adds its folder to your user Path environment variable.",
     installed: "Installed",
     notFound: "Not found on this computer",
     outdated: "Out of date — update needed",
@@ -226,7 +227,7 @@ export const settings: DeepPartial<typeof ko> = {
     reinstall: "Reinstall",
     update: "Update",
     doneCli: "Installed: {{path}}",
-    doneCliPathAdded: "Installed: {{path}} · Also added to your user Path. Terminals you open from now on can run sudal.",
+    doneCliPathAdded: "Installed: {{path}} · Also added to your user Path. Fully quit and reopen your terminal app to run sudal.",
     doneSkill: "Installed: {{paths}} — available from the next new session.",
   },
   browserLogin: {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ADD_TO_USER_PATH_PS, cmdPathLiteral, encodePowerShell, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
+import { ADD_TO_USER_PATH_PS, appendPathEntry, cmdPathLiteral, encodePowerShell, parseUserPathResult, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
 
 const ENV = {
   LOCALAPPDATA: "C:\\Users\\김수달\\AppData\\Local",
@@ -65,7 +65,25 @@ test("사용자 Path 에 더하는 PowerShell 은 폴더를 명령에 넣지 않
   assert.match(ADD_TO_USER_PATH_PS, /\$env:SUDAL_BIN_DIR/);
   // 레지스트리 값의 %USERPROFILE% 같은 표기를 풀지 않고 이어 쓴다
   assert.match(ADD_TO_USER_PATH_PS, /DoNotExpandEnvironmentNames/);
-  assert.match(ADD_TO_USER_PATH_PS, /ExpandString/);
+  // 원래 값의 종류(REG_SZ·REG_EXPAND_SZ)를 그대로 쓴다
+  assert.match(ADD_TO_USER_PATH_PS, /GetValueKind\('Path'\)/);
+  assert.match(ADD_TO_USER_PATH_PS, /SetValue\('Path', \$next, \$kind\)/);
+  // 실제 사용자 변수를 지우지 않게 알림용 이름은 매번 새로 만든다
+  assert.match(ADD_TO_USER_PATH_PS, /NewGuid/);
   const encoded = encodePowerShell("Write-Output '수달'");
   assert.equal(Buffer.from(encoded, "base64").toString("utf16le"), "Write-Output '수달'");
+});
+
+test("Path 스크립트 결과는 마지막 JSON 줄을 읽는다", () => {
+  assert.deepEqual(parseUserPathResult('경고 한 줄\r\n{"notified":true,"status":"added"}\r\n'), { status: "added", notified: true });
+  assert.deepEqual(parseUserPathResult('{"status":"present","notified":false}'), { status: "present", notified: false });
+  assert.equal(parseUserPathResult('{"status":"weird"}'), null);
+  assert.equal(parseUserPathResult(""), null);
+});
+
+test("PATH 끝에 폴더를 더할 때 빈 값·중복·끝 구분자를 맞춘다", () => {
+  const dir = "C:\\Users\\김수달\\AppData\\Local\\Sudal\\bin";
+  assert.equal(appendPathEntry("", dir), dir);
+  assert.equal(appendPathEntry("C:\\a;", dir), `C:\\a;${dir}`);
+  assert.equal(appendPathEntry(`C:\\a;${dir.toLowerCase()}\\`, dir), `C:\\a;${dir.toLowerCase()}\\`);
 });

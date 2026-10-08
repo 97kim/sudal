@@ -127,6 +127,11 @@ export const main = {
     shimComment: "# Sudal CLI — 앱에 동봉된 cli/sudal.cjs 를 앱의 Electron(node 모드)으로 실행한다. 설정 > 일반에서 다시 설치하면 갱신된다.",
     pathHint: '터미널 PATH 에 {{dir}} 이 없습니다. ~/.zshrc 에 export PATH="$HOME/.local/bin:$PATH" 를 추가하고 새 터미널을 여세요.',
     pathHintWin: "터미널 PATH에 {{dir}} 폴더가 없습니다. Windows 검색에서 '계정의 환경 변수 편집'을 열어 사용자 변수 Path에 이 폴더를 추가하고 새 터미널을 여세요.",
+    pathAddFailedWin: "CLI는 설치했지만 사용자 환경 변수 Path에 추가하지 못했습니다({{reason}}). Windows 검색에서 '계정의 환경 변수 편집'을 열어 사용자 변수 Path에 {{dir}} 폴더를 추가하고, 터미널 앱을 완전히 종료했다가 다시 실행하세요.",
+    pathTooLongWin: "Path가 길어 더하면 명령 프롬프트가 Path를 무시하게 됩니다",
+    pathUnsupportedWin: "사용자 Path 값의 형식이 예상과 달라 건드리지 않았습니다",
+    pathUnverifiedWin: "저장한 뒤 다시 읽었을 때 폴더가 보이지 않았습니다",
+    pathAddedRelogWin: "CLI를 설치하고 사용자 환경 변수 Path에도 추가했지만, 실행 중인 프로그램에 알리지 못했습니다. 로그아웃했다가 다시 로그인하면 터미널에서 sudal 명령을 쓸 수 있습니다.",
     noAgents: "Claude Code(~/.claude)도 Codex(~/.codex)도 이 PC 에 없습니다.",
   },
   update: {

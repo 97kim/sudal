@@ -126,6 +126,11 @@ export const main: DeepPartial<typeof ko> = {
     shimComment: "# Sudal CLI — runs the app's bundled cli/sudal.cjs with the app's Electron (node mode). Reinstall from Settings > General to update it.",
     pathHint: 'The terminal PATH does not include {{dir}}. Add export PATH="$HOME/.local/bin:$PATH" to ~/.zshrc and open a new terminal.',
     pathHintWin: "The terminal PATH does not include {{dir}}. Open 'Edit environment variables for your account' from Windows search, add this folder to the user Path variable, and open a new terminal.",
+    pathAddFailedWin: "The CLI is installed, but it could not be added to your user Path ({{reason}}). Open 'Edit environment variables for your account' from Windows search, add {{dir}} to the user Path variable, then fully quit and reopen your terminal app.",
+    pathTooLongWin: "Path is long enough that adding to it would make Command Prompt ignore it",
+    pathUnsupportedWin: "your user Path value has an unexpected type, so it was left alone",
+    pathUnverifiedWin: "the folder was not there when Path was read back after saving",
+    pathAddedRelogWin: "The CLI is installed and added to your user Path, but running programs could not be notified. Sign out and back in, and terminals can run sudal.",
     noAgents: "Neither Claude Code (~/.claude) nor Codex (~/.codex) is installed on this computer.",
   },
   update: {

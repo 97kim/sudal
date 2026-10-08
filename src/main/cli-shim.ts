@@ -71,25 +71,65 @@ export function pathListHas(pathValue: string, dir: string, platform: NodeJS.Pla
 
 /**
  * 사용자 환경 변수 Path(HKCU\Environment)에 $env:SUDAL_BIN_DIR 를 더하는 PowerShell. 관리자 권한이 필요 없다.
- * [Environment]::GetEnvironmentVariable 은 %USERPROFILE% 같은 변수를 풀어서 돌려주므로(다시 쓰면 원래 표기가 사라진다)
- * 레지스트리를 풀지 않고 읽어 그대로 이어 쓴다. 폴더 경로는 명령에 넣지 않고 환경 변수로 넘긴다(한글 사용자 이름·따옴표).
- * 바꾼 뒤에는 WM_SETTINGCHANGE 를 보내야 탐색기에서 새로 여는 터미널이 바뀐 Path 를 받는다 —
- * 없는 사용자 변수를 지우는 SetEnvironmentVariable 호출이 그 알림만 보낸다.
+ * 마지막 줄에 결과 JSON 한 줄을 낸다: {"status":"present"|"added"|"tooLong"|"unsupported"|"unverified","notified":bool}.
+ *
+ * - [Environment]::GetEnvironmentVariable 은 %USERPROFILE% 같은 변수를 풀어서 돌려주므로(다시 쓰면 원래 표기가 사라진다)
+ *   레지스트리를 풀지 않고 읽어 그대로 이어 쓰고, 값의 종류(REG_SZ·REG_EXPAND_SZ)도 원래대로 둔다.
+ * - 이미 있는지는 이 앱 프로세스의 PATH 가 아니라 레지스트리(사용자·시스템)로 본다 — 프로세스 PATH 는 임시로 잡혔거나 오래됐을 수 있다.
+ *   비교할 때만 변수를 풀고 / 와 끝의 \ 를 맞춘다.
+ * - 더하면 cmd 가 무시하는 길이(8191자)를 넘을 것 같으면 바꾸지 않는다. 잘라서 저장하지 않는다.
+ * - 저장한 뒤 다시 읽어 확인한다. 그 뒤의 알림(WM_SETTINGCHANGE)이 실패해도 저장은 성공으로 본다.
+ *   알림은 없는 사용자 변수를 지우는 SetEnvironmentVariable 호출로 보낸다(이름은 매번 새로 만들어 실제 변수를 건드리지 않는다).
+ *   알림을 받아야 탐색기에서 새로 띄우는 터미널 앱이 바뀐 Path 를 받는다.
+ * 폴더 경로는 명령에 넣지 않고 환경 변수로 넘긴다(한글 사용자 이름·따옴표).
  */
 export const ADD_TO_USER_PATH_PS = [
   "$ErrorActionPreference = 'Stop'",
+  "function Out-Result($status, $notified) { [Console]::Out.WriteLine((@{ status = $status; notified = [bool]$notified } | ConvertTo-Json -Compress)) }",
+  "function Norm($p) { ([Environment]::ExpandEnvironmentVariables($p.Trim().Trim('\"'))).Replace('/', '\\').TrimEnd('\\').ToLowerInvariant() }",
+  "function Has($list, $dir) { $t = Norm $dir; @(([string]$list).Split(';') | Where-Object { $_.Trim() -and ((Norm $_) -eq $t) }).Count -gt 0 }",
   "$dir = $env:SUDAL_BIN_DIR",
+  "$machineKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')",
+  "$machine = if ($machineKey) { [string]$machineKey.GetValue('Path', '') } else { '' }",
   "$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')",
-  "$cur = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
-  "$norm = { param($p) $p.Trim().Trim('\"').TrimEnd('\\').ToLowerInvariant() }",
-  "$has = @($cur.Split(';') | Where-Object { $_.Trim() -and ((& $norm $_) -eq (& $norm $dir)) }).Count -gt 0",
-  "if (-not $has) {",
+  "try {",
+  "  $exists = $key.GetValueNames() -contains 'Path'",
+  "  $cur = if ($exists) { [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } else { '' }",
+  "  $kind = if ($exists) { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }",
+  "  if ((Has $cur $dir) -or (Has $machine $dir)) { Out-Result 'present' $false; return }",
+  "  if ($kind -ne [Microsoft.Win32.RegistryValueKind]::String -and $kind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { Out-Result 'unsupported' $false; return }",
   "  $next = if ($cur.Trim()) { $cur.TrimEnd(';') + ';' + $dir } else { $dir }",
-  "  $key.SetValue('Path', $next, [Microsoft.Win32.RegistryValueKind]::ExpandString)",
-  "  [Environment]::SetEnvironmentVariable('SUDAL_PATH_REFRESH', $null, 'User')",
-  "}",
-  "$key.Close()",
+  "  $userLen = if ($kind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) { [Environment]::ExpandEnvironmentVariables($next).Length } else { $next.Length }",
+  "  if ($machine.Length + 1 + $userLen -gt 8191) { Out-Result 'tooLong' $false; return }",
+  "  $key.SetValue('Path', $next, $kind)",
+  "  if (-not (Has ([string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)) $dir)) { Out-Result 'unverified' $false; return }",
+  "  $notified = $true",
+  "  try { [Environment]::SetEnvironmentVariable('SUDAL_PATH_REFRESH_' + [Guid]::NewGuid().ToString('N'), $null, 'User') } catch { $notified = $false }",
+  "  Out-Result 'added' $notified",
+  "} finally { $key.Close(); if ($machineKey) { $machineKey.Close() } }",
 ].join("\n");
+
+export type UserPathResult = { status: "present" | "added" | "tooLong" | "unsupported" | "unverified"; notified: boolean };
+
+/** 스크립트 출력의 마지막 JSON 줄. 알 수 없는 모양이면 null. */
+export function parseUserPathResult(stdout: string): UserPathResult | null {
+  const line = stdout.trim().split(/\r?\n/).pop() ?? "";
+  try {
+    const o = JSON.parse(line) as Record<string, unknown>;
+    const status = o.status;
+    if (status !== "present" && status !== "added" && status !== "tooLong" && status !== "unsupported" && status !== "unverified") return null;
+    return { status, notified: o.notified === true };
+  } catch {
+    return null;
+  }
+}
+
+/** PATH 값 끝에 dir 를 더한다. 이미 있으면 그대로, 비어 있으면 앞에 ; 를 붙이지 않는다. */
+export function appendPathEntry(pathValue: string, dir: string): string {
+  if (pathListHas(pathValue, dir, "win32")) return pathValue;
+  const trimmed = pathValue.replace(/;+$/, "");
+  return trimmed ? `${trimmed};${dir}` : dir;
+}
 
 /** powershell.exe -EncodedCommand 값(UTF-16LE base64). 따옴표·특수문자를 셸 규칙과 상관없이 넘긴다. */
 export function encodePowerShell(script: string): string {

@@ -690,6 +690,7 @@ function GeneralSection() {
         </div>
         <p className="mb-3 text-[12px] leading-5 text-muted">
           <Trans i18nKey="settings.install.description" components={{ code: <code /> }} />
+          {IS_WIN && <> {t("settings.install.pathNoteWin")}</>}
         </p>
         <div className="divide-y divide-line rounded-md border border-line" data-install-list>
           {installRows().map((row) => (
