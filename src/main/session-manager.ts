@@ -239,17 +239,33 @@ export interface SessionManagerDeps {
 
 const MAX_PROMPT_QUEUE = 20;
 
-/** Claude 가 cwd 에 대응시키는 projects/ 하위 디렉토리 이름: 경로의 / 와 . 을 - 로. 심링크·정규화 차이를 대비해 realpath 것도 함께 본다. */
-function claudeProjectDirs(root: string, cwd: string): string[] {
-  const key = (p: string) => path.join(root, p.replace(/[\/.]/g, "-"));
-  const out = [key(cwd)];
+/**
+ * Claude Code 가 cwd 에 대응시키는 projects/ 하위 디렉토리 이름(claude-agent-sdk 0.3.285 번들의 규칙):
+ * 영숫자가 아닌 글자를 모두 - 로("C:\a\b" → "C--a-b"), 200자를 넘으면 앞 200자 + "-" + 경로 해시(36진수).
+ */
+export function claudeProjectDirName(p: string): string {
+  const name = p.replace(/[^a-zA-Z0-9]/g, "-");
+  if (name.length <= 200) return name;
+  let h = 0;
+  for (let i = 0; i < p.length; i++) h = ((h << 5) - h + p.charCodeAt(i)) | 0;
+  return `${name.slice(0, 200)}-${Math.abs(h).toString(36)}`;
+}
+
+/**
+ * cwd 의 Claude 기록 디렉토리 후보. 심링크·정규화 차이를 대비해 realpath 것도 함께 본다.
+ * macOS 는 예전 규칙(/ 와 . 만 -)을 먼저 둔다 — 보통 경로는 두 규칙이 같고, 공백·한글 등이 든 경로만 실제 규칙 쪽이 더해진다.
+ */
+export function claudeProjectDirs(root: string, cwd: string, platform: NodeJS.Platform = process.platform, realpath: (p: string) => string = fs.realpathSync): string[] {
+  const p = platform === "win32" ? path.win32 : path.posix;
+  const keys = (x: string) => (platform === "win32" ? [claudeProjectDirName(x)] : [x.replace(/[\/.]/g, "-"), claudeProjectDirName(x)]);
+  const names = keys(cwd);
   try {
-    const real = fs.realpathSync(cwd);
-    if (real !== cwd) out.push(key(real));
+    const real = realpath(cwd);
+    if (real !== cwd) names.push(...keys(real));
   } catch {
     /* 없는 경로 */
   }
-  return out;
+  return [...new Set(names)].map((n) => p.join(root, n));
 }
 
 /** 하위 에이전트를 띄우는 도구 — 이 카드가 열려 있는 동안 companion Codex 를 찾는다. */

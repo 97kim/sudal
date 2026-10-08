@@ -1,4 +1,5 @@
-// CLI 자동 탐지. macOS 앱이라 POSIX 셸만 본다.
+// CLI 자동 탐지. macOS 는 POSIX 로그인 셸의 PATH 를 본다.
+// Windows 는 로그인 셸이 없어 앱이 받은 PATH 에 흔한 설치 위치를 더하고, 실행 파일은 .exe → .cmd → .bat 순으로 찾는다.
 //
 // 사용자 셸 PATH가 진실의 소스다. npm/bun/asdf/brew 어디에 깔든 사용자가 터미널에서
 // `claude` 칠 수 있으면 우리도 잡는다. 하드코딩된 후보 디렉토리나 패키지 매니저
@@ -11,6 +12,7 @@
 import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
+import { launchSpec } from "./cli-launch";
 import type { CliCandidateDto, CliStatusDto, OverrideSetResultDto, Provider } from "@shared/ipc";
 import { mt } from "./i18n";
 
@@ -31,8 +33,9 @@ export interface CliDiscovery {
  * (provider별 출력 포맷 strict 매치는 false negative가 늘어 채택하지 않음).
  */
 function captureVersion(binPath: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const spec = launchSpec(binPath, ["--version"]);
   return new Promise((resolve) => {
-    execFile(binPath, ["--version"], { timeout: 1500, env }, (err, stdout, stderr) => {
+    execFile(spec.command, spec.args, { timeout: 1500, env, shell: spec.shell, windowsHide: true }, (err, stdout, stderr) => {
       if (err) return resolve(null);
       const text = (stdout || stderr || "").toString().trim();
       resolve(text ? text.split("\n")[0] : null);
@@ -52,6 +55,8 @@ class ShellPath {
   capture(): Promise<string[]> {
     if (this.cached) return Promise.resolve(this.cached);
     if (this.inflight) return this.inflight;
+    // Windows 에는 로그인 셸이 없다 — 앱이 받은 PATH(탐색기가 넘긴 사용자·시스템 PATH)만 쓴다
+    if (process.platform === "win32") return Promise.resolve((this.cached = []));
     const shell = process.env.SHELL || "/bin/zsh";
     this.inflight = new Promise((resolve) => {
       execFile(shell, ["-ilc", "printenv PATH"], { timeout: 8000 }, (err, stdout) => {
@@ -156,8 +161,12 @@ class DefaultCliDiscovery implements CliDiscovery {
     this.cachedEnvInflight = (async () => {
       const shellPath = await this.shellPath.capture();
       const existing = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
-      const merged = Array.from(new Set([...shellPath, ...existing]));
-      this.cachedEnv = { ...process.env, PATH: merged.join(path.delimiter) };
+      const extra = process.platform === "win32" ? windowsExtraDirs(process.env).filter((d) => fs.existsSync(d)) : [];
+      const merged = Array.from(new Set([...shellPath, ...existing, ...extra]));
+      const base = { ...process.env };
+      // Windows 의 process.env 는 대소문자를 가리지 않지만 복사본은 보통 "Path" 키를 갖는다 — PATH 하나만 남긴다
+      if (process.platform === "win32") for (const k of Object.keys(base)) if (k !== "PATH" && k.toUpperCase() === "PATH") delete base[k];
+      this.cachedEnv = { ...base, PATH: merged.join(path.delimiter) };
       this.cachedEnvInflight = null;
       return this.cachedEnv;
     })();
@@ -181,12 +190,7 @@ class DefaultCliDiscovery implements CliDiscovery {
 
   /** PATH 순서대로 이 명령의 실행 파일을 모두 모은다(중복 제외). 명령 이름은 provider 와 같다. */
   private candidates(provider: Provider, env: NodeJS.ProcessEnv): string[] {
-    const found: string[] = [];
-    for (const dir of (env.PATH || "").split(path.delimiter).filter(Boolean)) {
-      const full = path.join(dir, provider);
-      if (fs.existsSync(full) && !found.includes(full)) found.push(full);
-    }
-    return found;
+    return findOnPath(provider, env.PATH || "", process.platform, (p) => fs.existsSync(p));
   }
 
   async find(provider: Provider): Promise<CliStatus> {
@@ -267,6 +271,47 @@ class DefaultCliDiscovery implements CliDiscovery {
       }),
     );
   }
+}
+
+/**
+ * PATH 에서 command 의 실행 파일을 모두 찾는다(PATH 순서, 중복 제외).
+ * win32 는 확장자를 붙여 찾고 .exe 를 모두 앞에 둔다 — npm 이 같은 폴더에 두는 확장자 없는 sh 스크립트는 실행할 수 없고,
+ * .cmd 보다 네이티브 .exe 가 SDK·pty 에 그대로 넘길 수 있어서다. 그 뒤로 .cmd, .bat.
+ */
+export function findOnPath(command: string, pathValue: string, platform: NodeJS.Platform, exists: (p: string) => boolean): string[] {
+  const p = platform === "win32" ? path.win32 : path.posix;
+  const dirs = pathValue.split(p.delimiter).filter(Boolean);
+  const exts = platform === "win32" ? [".exe", ".cmd", ".bat"] : [""];
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const ext of exts) {
+    for (const dir of dirs) {
+      const full = p.join(dir, command + ext);
+      const key = platform === "win32" ? full.toLowerCase() : full;
+      if (!seen.has(key) && exists(full)) {
+        seen.add(key);
+        found.push(full);
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Windows 에서 PATH 에 없어도 볼 설치 위치. 앱이 PATH 를 받은 뒤에 설치했거나 설치기가 PATH 를 안 건드린 경우를 잡는다.
+ * Claude Code 네이티브 설치기(~\.local\bin), npm 전역(%APPDATA%\npm), winget 링크, scoop·bun·pnpm 전역.
+ */
+export function windowsExtraDirs(env: NodeJS.ProcessEnv): string[] {
+  const w = path.win32;
+  const home = env.USERPROFILE || "";
+  const appData = env.APPDATA || (home && w.join(home, "AppData", "Roaming"));
+  const local = env.LOCALAPPDATA || (home && w.join(home, "AppData", "Local"));
+  const out: string[] = [];
+  if (home) out.push(w.join(home, ".local", "bin"));
+  if (appData) out.push(w.join(appData, "npm"));
+  if (local) out.push(w.join(local, "Microsoft", "WinGet", "Links"), w.join(local, "pnpm"));
+  if (home) out.push(w.join(home, "scoop", "shims"), w.join(home, ".bun", "bin"));
+  return out;
 }
 
 /** overrideFilePath: userData/cli-overrides.json — 사용자가 직접 지정한 경로를 저장한다. */

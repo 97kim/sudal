@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TerminalManager, trimBacklog } from "./terminals";
+import { TerminalManager, defaultShell, trimBacklog } from "./terminals";
 import { TERMINAL_CLEAR_MARK } from "@shared/ipc";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -106,4 +106,16 @@ test("trimBacklog: 상한을 넘으면 줄 경계에서 자르고, 줄바꿈이 
   assert.equal(trimBacklog("짧다"), "짧다");
   const oneLine = "x".repeat(600_000);
   assert.equal(trimBacklog(oneLine).length, 500_000, "줄바꿈이 없으면 상한만큼 남긴다");
+});
+
+test("defaultShell: macOS 는 SHELL -l, Windows 는 PATH 의 pwsh → Windows PowerShell → COMSPEC", () => {
+  assert.deepEqual(defaultShell("darwin", { SHELL: "/bin/bash" }, () => false), { file: "/bin/bash", args: ["-l"] });
+  const ps = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+  const pwsh = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+  // Git Bash 가 남긴 SHELL 은 무시한다
+  const env = { PATH: "C:\\Windows\\System32;C:\\Program Files\\PowerShell\\7", SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\system32\\cmd.exe", SHELL: "/usr/bin/bash" };
+  assert.deepEqual(defaultShell("win32", env, (p) => p === pwsh || p === ps), { file: pwsh, args: [] });
+  assert.deepEqual(defaultShell("win32", env, (p) => p === ps), { file: ps, args: [] });
+  assert.deepEqual(defaultShell("win32", env, () => false), { file: "C:\\Windows\\system32\\cmd.exe", args: [] });
+  assert.deepEqual(defaultShell("win32", {}, () => false), { file: "C:\\Windows\\System32\\cmd.exe", args: [] });
 });

@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { appMsg, mt } from "./i18n";
+import { launchSpec } from "./cli-launch";
 import { aiReviewNotice } from "./ai-review";
 import type { ChatEvent, ModelUsageEntry, TokenUsage } from "@shared/chat-events";
 
@@ -60,7 +61,9 @@ export class CodexAppServer {
 
   /** 프로세스를 띄우고 initialize 핸드셰이크까지 끝낸다. */
   async start(codexPath: string, env: Record<string, string>, cwd: string, extraArgs: string[] = []): Promise<void> {
-    const proc = spawn(codexPath, [...reasoningSummaryArgs(env), ...sudalEnvArgs(env), ...extraArgs, "app-server"], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    // Windows 의 npm 설치(codex.cmd)는 shim 이 가리키는 codex.js 를 node 로 띄운다(cli-launch)
+    const spec = launchSpec(codexPath, [...reasoningSummaryArgs(env), ...sudalEnvArgs(env), ...extraArgs, "app-server"]);
+    const proc = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], shell: spec.shell, windowsHide: true });
     this.proc = proc;
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (chunk: string) => this.onData(chunk));

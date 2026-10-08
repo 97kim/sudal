@@ -91,6 +91,7 @@ export const main = {
     claudeCliMissing: "Claude CLI를 찾을 수 없습니다.",
     codexCliMissing: "Codex CLI를 찾을 수 없습니다.",
     cliLaunchFailed: "CLI 를 띄우지 못했습니다.",
+    claudeCmdUnsupported: "Claude CLI 래퍼({{path}})가 가리키는 실행 파일을 찾지 못했습니다. Claude Code 네이티브 설치(claude.exe)를 쓰거나 설정에서 실행 파일을 직접 지정하세요.",
     forkFailed: "분기하지 못했습니다: {{detail}}",
     browserNotOpen: "이 탭에 열린 브라우저가 없습니다. 먼저 `sudal browser open --url …` 으로 여세요.",
     browserClosed: "브라우저 탭이 닫혔습니다. 다시 여세요.",
