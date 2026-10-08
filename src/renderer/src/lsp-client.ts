@@ -2,6 +2,7 @@
 // 렌더러는 탭 cwd 만 넘기고 루트(저장소 최상위)는 main 이 정한다 — 서로 다른 cwd 가 같은 루트면 같은 클라이언트를 쓴다.
 import { LSPClient, languageServerExtensions, type Transport } from "@codemirror/lsp-client";
 import { lspServerForPath, type LspServerId } from "@shared/lsp-servers";
+import { fileUri } from "./doc-path";
 
 interface Entry {
   id: string;
@@ -43,9 +44,7 @@ export function lspTarget(path: string): { serverId: LspServerId; languageId: st
   return hit ? { serverId: hit.server.id, languageId: hit.languageId } : null;
 }
 
-export function fileUri(path: string): string {
-  return `file://${encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F")}`;
-}
+export { fileUri };
 
 /** 서버가 죽어 클라이언트를 더 쓸 수 없게 되면 호출된다. 해제 함수를 돌려준다. */
 export function onLspClientLost(listener: (client: LSPClient) => void): () => void {

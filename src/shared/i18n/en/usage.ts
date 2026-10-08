@@ -3,7 +3,7 @@ import type { DeepPartial } from "../types";
 
 export const usage: DeepPartial<typeof ko> = {
   title: "Usage",
-  description: "Usage is calculated from the Claude Code and Codex conversation history stored on this Mac.",
+  description: "Usage is calculated from the Claude Code and Codex conversation history stored on this computer.",
   scanning: "Calculating usage…",
   scanInfo_one: "{{count}} file · updated {{time}}",
   scanInfo_other: "{{count}} files · updated {{time}}",

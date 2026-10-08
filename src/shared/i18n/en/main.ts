@@ -40,6 +40,11 @@ export const main: DeepPartial<typeof ko> = {
     nextAttention: "Next Session Needing a Reply",
     prevAttention: "Previous Session Needing a Reply",
     window: "Window",
+    edit: "Edit",
+    help: "Help",
+    about: "About Sudal",
+    settings: "Settings…",
+    quit: "Exit",
   },
   notify: {
     bgDone: "Background task finished",
@@ -119,6 +124,7 @@ export const main: DeepPartial<typeof ko> = {
   cli: {
     shimComment: "# Sudal CLI — runs the app's bundled cli/sudal.cjs with the app's Electron (node mode). Reinstall from Settings > General to update it.",
     pathHint: 'The terminal PATH does not include {{dir}}. Add export PATH="$HOME/.local/bin:$PATH" to ~/.zshrc and open a new terminal.',
+    pathHintWin: "The terminal PATH does not include {{dir}}. Open 'Edit environment variables for your account' from Windows search, add this folder to the user Path variable, and open a new terminal.",
     noAgents: "Neither Claude Code (~/.claude) nor Codex (~/.codex) is installed on this computer.",
   },
   update: {

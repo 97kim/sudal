@@ -11,6 +11,7 @@ import { Icon, type IconName } from "./Icon";
 import { RunInTerminalContext, normalizeCommand } from "../terminal-run";
 import { shortenHome } from "@shared/path-display";
 import { formatElapsed, useNow } from "../hooks/useNow";
+import { IS_WIN } from "../platform";
 
 const OUTPUT_PREVIEW_LINES = 12;
 
@@ -125,7 +126,8 @@ export function ToolCard({ block }: { block: ToolBlock }) {
   const runInTerminal = useContext(RunInTerminalContext);
   const filePath = block.partial ? null : filePathOf(block.name, input);
   // Bash 명령은 이 탭의 터미널에 넣을 수 있다(Enter 는 사용자가, ⌥클릭이면 바로 실행). 아직 입력이 만들어지는 중이면 없다.
-  const bashCommand = block.name === "Bash" && !block.partial && runInTerminal ? normalizeCommand(str(input.command)) : "";
+  // Windows 터미널은 PowerShell 이라 bash 문법이 깨진다 — 버튼을 두지 않는다.
+  const bashCommand = block.name === "Bash" && !block.partial && runInTerminal && !IS_WIN ? normalizeCommand(str(input.command)) : "";
   // Read 의 offset/limit(1부터 세는 시작 줄·줄 수)이면 그 범위로 에디터를 연다
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : null);
   const readAt = (() => {

@@ -122,3 +122,18 @@ test("브라우저 탭: URL 이나 browser:<n> 키로 열리고 파일 탭과 �
   assert.ok(getEditorTabs(t).files.at(-1)!.startsWith("browser:"), "URL 이 아니면 빈 탭");
   forgetEditorTabs(t);
 });
+
+test("Windows 경로: 표기가 달라도 같은 파일은 한 탭, 하위 판정·이름 변경도 \\ 를 따른다", () => {
+  const id = "tab-win";
+  openEditorFile(id, "C:\\r\\src\\a.ts");
+  openEditorFile(id, "C:/r/src/a.ts");
+  assert.deepEqual(getEditorTabs(id).files, ["C:\\r\\src\\a.ts"]);
+  setEditorFileDirty(id, "C:\\r\\src\\a.ts", true);
+  assert.deepEqual(dirtyEditorPathsUnder("C:\\r"), ["C:\\r\\src\\a.ts"]);
+  assert.deepEqual(dirtyEditorPathsUnder("C:\\r\\sr"), [], "이름 앞부분만 같은 폴더는 아니다");
+  renameEditorPaths("C:\\r\\src", "C:\\r\\lib");
+  assert.deepEqual(getEditorTabs(id).files, ["C:\\r\\lib\\a.ts"]);
+  closeEditorPaths("C:\\r");
+  assert.deepEqual(getEditorTabs(id).files, []);
+  forgetEditorTabs(id);
+});

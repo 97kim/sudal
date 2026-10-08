@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import hljs from "highlight.js/lib/common";
 import { diffLines } from "diff";
+import { basenameAny } from "@shared/any-path";
 
 /** 변경 파일 목록·툴카드 어디서든 파일을 열 수 있게 ChatView 가 내려주는 콜백. */
 /** 파일 열기. at 을 주면(Read 툴카드의 줄 범위) 에디터가 그 줄을 선택하고 가운데로 스크롤한다. */
@@ -74,7 +75,7 @@ const MAX_DIFF_ROWS = 3000;
 const CONTEXT = 3;
 
 function languageFor(path: string): string | undefined {
-  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  const name = basenameAny(path).toLowerCase();
   if (name === "makefile") return "makefile";
   const ext = name.includes(".") ? name.split(".").pop()! : "";
   const lang = EXT_LANG[ext];

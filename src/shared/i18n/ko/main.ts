@@ -40,6 +40,12 @@ export const main = {
     nextAttention: "다음 응답 필요 세션",
     prevAttention: "이전 응답 필요 세션",
     window: "창",
+    // Windows 전용(macOS 는 앱 메뉴가 맡는다)
+    edit: "편집",
+    help: "도움말",
+    about: "Sudal 정보",
+    settings: "설정…",
+    quit: "끝내기",
   },
   notify: {
     bgDone: "백그라운드 작업 완료",
@@ -119,6 +125,7 @@ export const main = {
   cli: {
     shimComment: "# Sudal CLI — 앱에 동봉된 cli/sudal.cjs 를 앱의 Electron(node 모드)으로 실행한다. 설정 > 일반에서 다시 설치하면 갱신된다.",
     pathHint: '터미널 PATH 에 {{dir}} 이 없습니다. ~/.zshrc 에 export PATH="$HOME/.local/bin:$PATH" 를 추가하고 새 터미널을 여세요.',
+    pathHintWin: "터미널 PATH에 {{dir}} 폴더가 없습니다. Windows 검색에서 '계정의 환경 변수 편집'을 열어 사용자 변수 Path에 이 폴더를 추가하고 새 터미널을 여세요.",
     noAgents: "Claude Code(~/.claude)도 Codex(~/.codex)도 이 PC 에 없습니다.",
   },
   update: {

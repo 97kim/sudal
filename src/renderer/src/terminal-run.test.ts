@@ -36,6 +36,16 @@ test("isShellLanguage: bash·sh·zsh·shell 만", () => {
   assert.equal(isShellLanguage(undefined), false);
 });
 
+test("isShellLanguage: Windows 는 PowerShell·cmd 블록만(bash 는 복사만)", () => {
+  assert.equal(isShellLanguage("language-powershell", true), true);
+  assert.equal(isShellLanguage("hljs language-pwsh", true), true);
+  assert.equal(isShellLanguage("language-ps1", true), true);
+  assert.equal(isShellLanguage("language-cmd", true), true);
+  assert.equal(isShellLanguage("language-bat", true), true);
+  assert.equal(isShellLanguage("language-bash", true), false);
+  assert.equal(isShellLanguage("language-powershell"), false);
+});
+
 test("pickShellTarget: 포커스가 셸이면 그것, CLI 탭이면 마지막 셸, 셸이 없으면 null", () => {
   const tabs = [
     { id: "a:t1", kind: "shell" as const },

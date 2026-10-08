@@ -12,6 +12,7 @@ import { FileEditor, type FileEditorApi } from "./FileEditor";
 import { BrowserPane } from "./BrowserPane";
 import type { ChatImageDto } from "@shared/ipc";
 import { Icon } from "./Icon";
+import { basenameAny } from "@shared/any-path";
 import { browserTabLabel, getBrowserUrl, isBrowserTab, openBrowserTab, setBrowserUrl, setEditorMaximized } from "../editor-tabs";
 
 export function EditorPane({
@@ -65,12 +66,12 @@ export function EditorPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, activeFile, tabs.dirty.join("\u0000")]);
 
-  const name = (p: string) => (isBrowserTab(p) ? (browserLabels[p] ?? browserTabLabel(p, t)) : (p.split("/").pop() ?? p));
+  const name = (p: string) => (isBrowserTab(p) ? (browserLabels[p] ?? browserTabLabel(p, t)) : basenameAny(p));
   // 같은 이름의 파일이 둘이면 상위 폴더를 붙여 구분한다
   const label = (p: string) => {
     if (isBrowserTab(p)) return browserLabels[p] ?? browserTabLabel(p, t);
     const n = name(p);
-    return tabs.files.filter((f) => name(f) === n).length > 1 ? p.split("/").slice(-2).join("/") : n;
+    return tabs.files.filter((f) => name(f) === n).length > 1 ? p.split(/[\\/]/).slice(-2).join("/") : n;
   };
 
   return (

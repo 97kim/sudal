@@ -21,6 +21,7 @@ import {
 } from "electron";
 import { isPermissionPolicy, type PermissionAnswer, type PermissionPolicy } from "@shared/chat-events";
 import { isThemeMode } from "@shared/theme";
+import { accelerator, type AppShortcut } from "@shared/app-shortcuts";
 import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT, LOCALES, type Locale } from "@shared/i18n/locale";
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
 import { legacyWorktreeDir, migrateUserData, removeLegacyInstall, type UserDataMigration } from "./legacy-name";
@@ -1086,7 +1087,7 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
       ok: true,
       path: target,
       onPath,
-      ...(onPath ? {} : { hint: mt("main.cli.pathHint", { dir }) }),
+      ...(onPath ? {} : { hint: mt(process.platform === "win32" ? "main.cli.pathHintWin" : "main.cli.pathHint", { dir }) }),
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -2830,24 +2831,39 @@ function shortcut(
 let menuBuilt = false;
 
 function buildMenu() {
+  const mac = process.platform === "darwin";
+  // 키 조합은 shared/app-shortcuts 의 표를 따른다. Windows 는 셸 편집키(Ctrl+W·K·R 등)를 피해 Ctrl+Shift+… 를 쓴다.
+  const acc = (name: AppShortcut, suffix?: string) => accelerator(name, mac, suffix);
   const tabItems: MenuItemConstructorOptions[] = [];
   for (let n = 1; n <= 9; n++) {
-    tabItems.push(shortcut(mt("main.menu.tabN", { n }), `CmdOrCtrl+${n}`, `tab-${n as 1}`));
+    tabItems.push(shortcut(mt("main.menu.tabN", { n }), acc("tabN", `+${n}`), `tab-${n as 1}`));
   }
+  // Windows 는 입력창·터미널이 Ctrl+C·V·Z 를 스스로 처리한다. 메뉴가 가속기로 잡으면 터미널의 Ctrl+C(SIGINT)를
+  // 복사가 가로챈다 — 표시만 하고 등록하지 않는다.
+  const editMenu: MenuItemConstructorOptions = mac
+    ? { role: "editMenu" }
+    : {
+        label: mt("main.menu.edit"),
+        submenu: (["undo", "redo", "separator", "cut", "copy", "paste", "separator", "selectAll"] as const).map(
+          (r): MenuItemConstructorOptions => (r === "separator" ? { type: "separator" } : { role: r, registerAccelerator: false }),
+        ),
+      };
   const template: MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    ...(mac ? [{ role: "appMenu" as const }] : []),
     {
       label: mt("main.menu.file"),
       submenu: [
-        shortcut(mt("main.menu.newSession"), "CmdOrCtrl+T", "new-tab"),
-        shortcut(mt("main.menu.reopenTab"), "CmdOrCtrl+Shift+T", "reopen-tab"),
-        shortcut(mt("main.menu.closeTab"), "CmdOrCtrl+W", "close-tab"),
+        shortcut(mt("main.menu.newSession"), acc("newTab"), "new-tab"),
+        shortcut(mt("main.menu.reopenTab"), acc("reopenTab"), "reopen-tab"),
+        shortcut(mt("main.menu.closeTab"), acc("closeTab"), "close-tab"),
         { type: "separator" },
-        shortcut(mt("main.menu.switchWorkspace"), "CmdOrCtrl+K", "switch-workspace"),
-        shortcut(mt("main.menu.searchChat"), "CmdOrCtrl+F", "search"),
+        shortcut(mt("main.menu.switchWorkspace"), acc("switchWorkspace"), "switch-workspace"),
+        shortcut(mt("main.menu.searchChat"), acc("search"), "search"),
+        // macOS 는 앱 메뉴에 끝내기가 있다
+        ...(mac ? [] : [{ type: "separator" as const }, { role: "quit" as const, label: mt("main.menu.quit") }]),
       ],
     },
-    { role: "editMenu" },
+    editMenu,
     {
       label: mt("main.menu.view"),
       submenu: [
@@ -2859,13 +2875,13 @@ function buildMenu() {
         { role: "zoomIn" },
         { role: "zoomOut" },
         { type: "separator" },
-        shortcut(mt("main.menu.sidebar"), "CmdOrCtrl+B", "toggle-sidebar"),
-        shortcut(mt("main.menu.terminalPanel"), "CmdOrCtrl+J", "toggle-terminal"),
-        shortcut(mt("main.menu.widenEditor"), "CmdOrCtrl+Shift+E", "toggle-editor-maximize"),
+        shortcut(mt("main.menu.sidebar"), acc("sidebar"), "toggle-sidebar"),
+        shortcut(mt("main.menu.terminalPanel"), acc("terminal"), "toggle-terminal"),
+        shortcut(mt("main.menu.widenEditor"), acc("widenEditor"), "toggle-editor-maximize"),
         { type: "separator" },
-        shortcut(mt("main.menu.browserAddress"), "CmdOrCtrl+L", "browser-address"),
-        shortcut(mt("main.menu.browserReload"), "CmdOrCtrl+R", "browser-reload"),
-        shortcut(mt("main.menu.browserHardReload"), "CmdOrCtrl+Shift+R", "browser-hard-reload"),
+        shortcut(mt("main.menu.browserAddress"), acc("browserAddress"), "browser-address"),
+        shortcut(mt("main.menu.browserReload"), acc("browserReload"), "browser-reload"),
+        shortcut(mt("main.menu.browserHardReload"), acc("browserHardReload"), "browser-hard-reload"),
         { type: "separator" },
         { role: "togglefullscreen" },
       ],
@@ -2873,24 +2889,33 @@ function buildMenu() {
     {
       label: mt("main.menu.tab"),
       submenu: [
-        shortcut(mt("main.menu.nextTab"), "Ctrl+Tab", "next-tab"),
-        shortcut(mt("main.menu.prevTab"), "Ctrl+Shift+Tab", "prev-tab"),
+        shortcut(mt("main.menu.nextTab"), acc("nextTab"), "next-tab"),
+        shortcut(mt("main.menu.prevTab"), acc("prevTab"), "prev-tab"),
         { type: "separator" },
-        shortcut(mt("main.menu.nextAttention"), "CmdOrCtrl+Shift+Down", "next-attention"),
-        shortcut(mt("main.menu.prevAttention"), "CmdOrCtrl+Shift+Up", "prev-attention"),
+        shortcut(mt("main.menu.nextAttention"), acc("nextAttention"), "next-attention"),
+        shortcut(mt("main.menu.prevAttention"), acc("prevAttention"), "prev-attention"),
         { type: "separator" },
         ...tabItems,
       ],
     },
     {
       label: mt("main.menu.window"),
-      submenu: [
-        { role: "minimize" },
-        { role: "zoom" },
-        { type: "separator" },
-        { role: "front" },
-      ],
+      // zoom·front 는 macOS 에만 있는 역할이다
+      submenu: mac ? [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] : [{ role: "minimize" }],
     },
+    // Windows 에는 앱 메뉴가 없어 정보·설정을 도움말에 둔다
+    ...(mac
+      ? []
+      : [
+          {
+            label: mt("main.menu.help"),
+            submenu: [
+              shortcut(mt("main.menu.settings"), acc("settings"), "open-settings"),
+              { type: "separator" as const },
+              { role: "about" as const, label: mt("main.menu.about") },
+            ],
+          },
+        ]),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   menuBuilt = true;
@@ -2907,8 +2932,8 @@ function createWindow(): BrowserWindow {
     show: false,
     // 첫 페인트 전 흰 화면이 번쩍이지 않게 테마 배경색으로 시작한다(값은 styles.css 의 --color-bg 와 같다).
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1216" : "#f6f7fb",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 14, y: 14 },
+    // macOS 는 제목 표시줄을 숨기고 신호등을 화면 위에 얹는다(렌더러가 그 자리를 비운다). Windows 는 OS 기본 프레임을 쓴다.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 14 } } : {}),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       sandbox: true,

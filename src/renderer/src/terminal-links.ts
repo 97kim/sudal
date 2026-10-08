@@ -1,5 +1,6 @@
 // 터미널 출력 속 파일 경로("src/a.ts:42")를 링크로 만들 때 쓰는 순수 로직.
 // xterm 의 링크 좌표는 글자 인덱스가 아니라 셀이다 — 앞에 한글·이모지(2칸)가 있으면 인덱스를 그대로 쓰면 어긋난다.
+import { toPosix } from "@shared/any-path";
 
 /** IBufferCell 에서 필요한 것만. width 0 은 넓은 글자의 뒷칸이라 문자열에 나오지 않는다. */
 export interface CellLike {
@@ -75,6 +76,7 @@ function setTimeoutSafe(fn: () => void, ms: number) {
 /** 후보가 여럿이면 참조와 꼬리가 정확히 맞는 것을, 없으면 첫 후보를. */
 export function pickCandidate(candidates: string[], ref: string): string | null {
   if (candidates.length === 0) return null;
-  const tail = ref.replace(/^(\.\.?\/)+/, "").replace(/^\/+/, "");
-  return candidates.find((c) => c === tail || c.endsWith("/" + tail)) ?? candidates[0];
+  // Windows 후보는 \ 로 나뉘어 온다 — 양쪽을 / 로 맞춰 비교한다
+  const tail = toPosix(ref).replace(/^(\.\.?\/)+/, "").replace(/^\/+/, "");
+  return candidates.find((c) => toPosix(c) === tail || toPosix(c).endsWith("/" + tail)) ?? candidates[0];
 }

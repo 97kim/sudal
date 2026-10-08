@@ -155,8 +155,10 @@ function Toggle({
 /** 문장 안에 들어갈 만큼 줄인 경로. 홈은 ~ 로, 너무 길면 뒤쪽 두 칸만 남긴다. */
 function shortPath(p: string): string {
   const short = shortenHome(p);
-  const parts = short.split("/");
-  return parts.length > 4 ? `…/${parts.slice(-2).join("/")}` : short;
+  // Windows 경로는 \ 로 나뉜다 — 줄여도 원래 구분자를 쓴다
+  const sep = short.includes("\\") ? "\\" : "/";
+  const parts = short.split(/[\\/]/);
+  return parts.length > 4 ? `…${sep}${parts.slice(-2).join(sep)}` : short;
 }
 
 /**

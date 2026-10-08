@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* macOS 에서만: 숨긴 제목 표시줄 위의 신호등 버튼 자리. <html> 에 platform-darwin 이 붙는다(main.tsx). */
+@custom-variant mac (&:where(.platform-darwin, .platform-darwin *));
+
 /* 디자인 토큰 — 로컬 디자인 원본(*.pen, 저장소에는 없음)의 변수와 1:1 */
 @theme {
   --color-bg: #f6f7fb;
@@ -30,8 +33,8 @@
   --color-scrollbar: #cfd4dd;
   /* 떠 있는 패널(팝업·입력창)의 그림자. 다크에선 더 진하게. */
   --shadow-pop: 0 12px 32px rgba(24, 32, 42, 0.08);
-  --font-ui: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, ui-monospace, monospace;
+  --font-ui: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, Consolas, ui-monospace, monospace;
   /* 반경 스케일을 한 단계씩 키운다 — 직선·직각 인상을 줄이기 위해 (2026-09-04) */
   --radius-sm: 6px;
   --radius-md: 10px;

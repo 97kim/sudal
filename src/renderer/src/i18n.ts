@@ -4,6 +4,8 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 import { resources, type Locale } from "@shared/i18n";
+import { shortcutVars } from "@shared/app-shortcuts";
+import { IS_MAC } from "./platform";
 
 export function initI18n(locale: Locale): void {
   void i18next.use(initReactI18next).init({
@@ -15,7 +17,8 @@ export function initI18n(locale: Locale): void {
     initAsync: false,
     returnEmptyString: false,
     returnNull: false,
-    interpolation: { escapeValue: false },
+    // 문구 속 단축키({{kNewTab}} 등)는 운영체제에 맞는 표기로 채운다
+    interpolation: { escapeValue: false, defaultVariables: shortcutVars(IS_MAC) },
   });
   document.documentElement.lang = locale;
 }
