@@ -29,6 +29,7 @@ import { PaneSplitContext } from "../pane-focus";
 import { shortenHome } from "@shared/path-display";
 import { startDrag } from "../drag";
 import { IS_MAC, IS_WIN, isMod } from "../platform";
+import { passesToAppMenu } from "@shared/app-shortcuts";
 
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 260;
@@ -906,6 +907,8 @@ function TerminalView({
         cbs.current.onSplit?.((IS_MAC ? e.shiftKey : e.altKey) ? "col" : "row");
         return false;
       }
+      // Windows: 앱 단축키(Ctrl+J·F·1~9 등)는 xterm 이 셸로 보내지 않게 넘겨 메뉴가 받게 한다. 셸 편집키(Ctrl+W 등)는 셸로 간다.
+      if (IS_WIN && e.type === "keydown" && passesToAppMenu(e)) return false;
       // Windows: Ctrl+C 는 선택이 있을 때만 복사하고, 없으면 셸에 보낸다(SIGINT). Ctrl+Shift+C 는 늘 복사.
       // Ctrl+V·Ctrl+Shift+V 는 xterm 이 ^V 로 보내지 않게 넘겨 브라우저의 붙여넣기(paste 이벤트)로 들어가게 한다.
       if (IS_WIN && e.type === "keydown" && e.ctrlKey && !e.altKey && !e.metaKey) {

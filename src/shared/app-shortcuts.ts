@@ -40,6 +40,36 @@ export const APP_SHORTCUTS = {
  */
 export const TERMINAL_YIELD_KEYS: ReadonlySet<string> = new Set(["W", "K", "R", "L", "B", "T"]);
 
+const CODE_OF: Record<string, string> = { Up: "ArrowUp", Down: "ArrowDown", Tab: "Tab", ",": "Comma" };
+
+/** "Mod+Shift+T" 와 키 입력이 같은가(Windows 기준, Mod = Ctrl). 물리 키(code)로 본다. */
+function matchesSpec(spec: string, e: { ctrl: boolean; shift: boolean; alt: boolean; code: string }): boolean {
+  const parts = spec.split("+");
+  const key = parts.pop() ?? "";
+  const mods = new Set(parts.map((p) => (p === "Mod" ? "Ctrl" : p)));
+  if (mods.has("Ctrl") !== e.ctrl || mods.has("Shift") !== e.shift || mods.has("Alt") !== e.alt) return false;
+  const code = CODE_OF[key] ?? (/^[A-Z]$/.test(key) ? `Key${key}` : /^[0-9]$/.test(key) ? `Digit${key}` : key);
+  return e.code === code;
+}
+
+/**
+ * Windows 터미널(xterm)이 손대지 말고 앱 메뉴로 넘길 키인가. Windows 는 메뉴보다 렌더러가 키를 먼저 받아서,
+ * xterm 이 Ctrl+J(줄바꿈 — 입력하던 명령이 실행된다)·Ctrl+F 를 셸로 보내 버리면 메뉴가 받지 못한다.
+ * 셸에 양보하는 키(TERMINAL_YIELD_KEYS)와 터미널 안에서 따로 처리하는 분할·첨부는 뺀다.
+ */
+export function passesToAppMenu(e: { ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean; code: string }): boolean {
+  if (!e.ctrlKey || e.metaKey) return false;
+  const input = { ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, code: e.code };
+  if (yieldsToTerminal({ control: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey, code: e.code })) return false;
+  for (const [name, spec] of Object.entries(APP_SHORTCUTS) as [AppShortcut, Spec][]) {
+    if (name === "attach" || name === "termSplitRow" || name === "termSplitCol") continue;
+    if (name === "tabN") {
+      for (let n = 1; n <= 9; n++) if (matchesSpec(`${spec.other}+${n}`, input)) return true;
+    } else if (matchesSpec(spec.other, input)) return true;
+  }
+  return false;
+}
+
 /** 이 키 입력을 셸에 양보하나. 한글 입력 중이면 key 가 "ㅈ" 처럼 오므로 물리 키(code: "KeyW")로 본다. */
 export function yieldsToTerminal(input: { control: boolean; shift: boolean; alt: boolean; meta: boolean; code: string }): boolean {
   if (!input.control || input.shift || input.alt || input.meta) return false;

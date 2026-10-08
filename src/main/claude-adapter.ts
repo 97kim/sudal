@@ -494,10 +494,10 @@ function handleMessage(s: LiveSession, message: SDKMessage) {
       s.liveTaskCount = s.liveTasks.length;
       sendBackgroundTasks(s, message.session_id);
     } else if (message.subtype === "task_started" || message.subtype === "task_updated") {
+      // 전체 목록은 보통 이 신호보다 먼저 온다. 그때 보낸 목록은 판단 전이라 틀렸으므로, 판단이 바뀌면 다시 보낸다.
       const f = parseTaskForeground(message);
-      if (f?.foreground) s.foregroundTasks.add(f.id);
-      // 포그라운드 작업이 백그라운드로 넘어갔다. 전체 목록이 이 신호보다 먼저 와서 그때는 빠졌으므로 다시 보낸다.
-      else if (f && s.foregroundTasks.delete(f.id)) sendBackgroundTasks(s, message.session_id);
+      const changed = f ? (f.foreground ? !s.foregroundTasks.has(f.id) && !!s.foregroundTasks.add(f.id) : s.foregroundTasks.delete(f.id)) : false;
+      if (changed && s.liveTasks.some((t) => t.id === f?.id)) sendBackgroundTasks(s, message.session_id);
     } else if (message.subtype === "task_notification") {
       const note = parseTaskFinished(message);
       // 턴이 기다리던 작업의 끝은 도구 결과로 화면에 나온다. "백그라운드 작업 완료" 로 알리지 않는다.

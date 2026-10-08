@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accelerator, shortcutVars, yieldsToTerminal } from "./app-shortcuts";
+import { accelerator, passesToAppMenu, shortcutVars, yieldsToTerminal } from "./app-shortcuts";
 import { createI18n } from "./i18n";
 import { ko } from "./i18n/ko";
 import { en } from "./i18n/en";
@@ -26,6 +26,21 @@ test("터미널 포커스 중에는 셸 편집키를 셸에 양보한다", () =>
   assert.equal(key("KeyT", { shift: true }), false);
   assert.equal(key("KeyW", { alt: true }), false);
   assert.equal(key("KeyW", { control: false }), false);
+});
+
+test("Windows 터미널은 셸에 양보하지 않는 앱 단축키를 메뉴로 넘긴다", () => {
+  const key = (code: string, m: Partial<{ ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }> = {}) =>
+    passesToAppMenu({ ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, code, ...m });
+  // Ctrl+J 를 xterm 이 셸로 보내면 줄바꿈이라 입력하던 명령이 실행된다
+  for (const c of ["KeyJ", "KeyF", "Digit1", "Digit9", "Comma", "Tab"]) assert.equal(key(c), true, c);
+  assert.equal(key("KeyT", { shiftKey: true }), true, "탭 다시 열기");
+  assert.equal(key("ArrowDown", { shiftKey: true }), true, "다음 응답 필요 세션");
+  // 셸 편집키·셸 신호는 셸로
+  for (const c of ["KeyW", "KeyK", "KeyR", "KeyC", "KeyD", "KeyA", "Digit0"]) assert.equal(key(c), false, c);
+  // 터미널 안에서 따로 처리하는 분할·첨부
+  assert.equal(key("KeyD", { shiftKey: true }), false);
+  assert.equal(key("KeyA", { shiftKey: true }), false);
+  assert.equal(key("KeyJ", { ctrlKey: false }), false);
 });
 
 /** 사전을 "a.b.c" → 값 으로 편다. */
