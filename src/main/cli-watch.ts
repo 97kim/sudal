@@ -44,7 +44,8 @@ export function parsePsTree(out: string): Map<number, { ppid: number; comm: stri
 }
 
 function providerOf(comm: string): Provider | null {
-  const base = comm.split("/").pop() ?? comm;
+  // Windows 는 "claude.exe" 꼴이라 \ 로도 나누고 .exe 를 뗀다.
+  const base = (comm.split(/[\\/]/).pop() ?? comm).replace(/\.exe$/i, "");
   if (base === "claude") return "claude";
   if (base === "codex") return "codex";
   return null;
@@ -74,17 +75,74 @@ export function findCliDescendants(tree: Map<number, { ppid: number; comm: strin
   return out;
 }
 
-function run(cmd: string, args: string[]): Promise<string> {
-  return new Promise((resolve) => execFile(cmd, args, { timeout: 4000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? "" : String(stdout))));
+function run(cmd: string, args: string[], timeout = 4000): Promise<string> {
+  return new Promise((resolve) =>
+    execFile(cmd, args, { timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout) => resolve(err ? "" : String(stdout))),
+  );
+}
+
+const IS_WIN = process.platform === "win32";
+
+export type ProcTree = Map<number, { ppid: number; comm: string }>;
+
+/**
+ * Windows: `Get-CimInstance Win32_Process | Select ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json` 출력을 트리와 명령 줄로.
+ * npm 으로 깐 CLI 는 이름이 node.exe 라, 명령 줄에 패키지 경로가 보이면 그 CLI 이름으로 바꿔 둔다.
+ */
+export function parseWinProcessJson(json: string): { tree: ProcTree; args: Map<number, string> } {
+  const tree: ProcTree = new Map();
+  const args = new Map<number, string>();
+  let rows: unknown;
+  try {
+    rows = JSON.parse(json.trim() || "[]");
+  } catch {
+    return { tree, args };
+  }
+  for (const r of (Array.isArray(rows) ? rows : [rows]) as (Record<string, unknown> | null)[]) {
+    const pid = Number(r?.ProcessId);
+    if (!r || !Number.isInteger(pid) || pid <= 0) continue;
+    const cmdline = typeof r.CommandLine === "string" ? r.CommandLine : "";
+    let comm = typeof r.Name === "string" ? r.Name : "";
+    if (/^node(\.exe)?$/i.test(comm)) {
+      if (/[\\/]@anthropic-ai[\\/]claude-code[\\/]/i.test(cmdline)) comm = "claude";
+      else if (/[\\/]@openai[\\/]codex[\\/]/i.test(cmdline)) comm = "codex";
+    }
+    tree.set(pid, { ppid: Number(r.ParentProcessId) || 0, comm });
+    args.set(pid, cmdline);
+  }
+  return { tree, args };
+}
+
+type WinSnapshot = ReturnType<typeof parseWinProcessJson>;
+
+// PowerShell 은 뜨는 데만 수백 ms 가 든다 — 한 번 읽은 목록을 잠깐 같이 쓴다(같은 틱의 명령 줄 조회 등).
+const WIN_SNAPSHOT_TTL_MS = 1000;
+let winSnap: { at: number; p: Promise<WinSnapshot> } | null = null;
+
+function winSnapshot(): Promise<WinSnapshot> {
+  if (winSnap && Date.now() - winSnap.at < WIN_SNAPSHOT_TTL_MS) return winSnap.p;
+  const script =
+    "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress";
+  const p = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 10_000).then(parseWinProcessJson);
+  winSnap = { at: Date.now(), p };
+  return p;
+}
+
+/** 모든 프로세스의 pid → { ppid, comm }. 못 읽으면 빈 맵. */
+export async function processTree(): Promise<ProcTree> {
+  if (IS_WIN) return (await winSnapshot()).tree;
+  return parsePsTree(await run("ps", ["-axo", "pid=,ppid=,comm="]));
 }
 
 /** 프로세스의 실행 명령(ps). 못 읽으면 빈 문자열. */
 export async function processArgs(pid: number): Promise<string> {
+  if (IS_WIN) return (await winSnapshot()).args.get(pid)?.trim() ?? "";
   return (await run("ps", ["-p", String(pid), "-o", "args="])).trim();
 }
 
-/** 프로세스의 작업 디렉토리(macOS: lsof). 못 읽으면 null. */
+/** 프로세스의 작업 디렉토리(macOS: lsof). 못 읽으면 null. Windows 는 다른 프로세스의 cwd 를 읽을 길이 없어 늘 null(셸 cwd 로 대신한다). */
 export async function processCwd(pid: number): Promise<string | null> {
+  if (IS_WIN) return null;
   const out = await run("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"]);
   const n = out.split("\n").find((l) => l.startsWith("n/"));
   return n ? n.slice(1) : null;
@@ -111,7 +169,8 @@ export class ShellCliMonitor {
 
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), this.deps.intervalMs ?? 1500);
+    // Windows 는 한 번 훑는 데 PowerShell 을 띄워야 해 간격을 늘린다.
+    this.timer = setInterval(() => void this.tick(), this.deps.intervalMs ?? (IS_WIN ? 3000 : 1500));
     this.timer.unref?.();
   }
 
@@ -135,7 +194,7 @@ export class ShellCliMonitor {
         }
       }
       if (shells.length === 0) return;
-      const tree = parsePsTree(await (this.deps.ps ?? (() => run("ps", ["-axo", "pid=,ppid=,comm="])))());
+      const tree = this.deps.ps ? parsePsTree(await this.deps.ps()) : await processTree();
       for (const [tabId] of live) {
         const cur = this.tracked.get(tabId);
         // 같은 탭의 셸 여러 개(터미널 탭)를 모두 본다

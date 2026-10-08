@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ShellCliMonitor, findCliDescendants, parsePsTree, parseResumeId } from "./cli-watch";
+import { ShellCliMonitor, findCliDescendants, parsePsTree, parseResumeId, parseWinProcessJson } from "./cli-watch";
 
 const ps = (rows: [number, number, string][]) => rows.map(([pid, ppid, comm]) => `${pid} ${ppid} ${comm}`).join("\n");
 
@@ -19,6 +19,28 @@ test("parsePsTree/findCliDescendants: 셸의 자손 가운데 claude·codex 를 
   assert.deepEqual(findCliDescendants(tree, 100), [{ pid: 102, provider: "claude" }]);
   assert.deepEqual(findCliDescendants(tree, 200), [{ pid: 201, provider: "codex" }]);
   assert.deepEqual(findCliDescendants(tree, 300), []);
+});
+
+test("parseWinProcessJson: Win32_Process JSON → 트리. .exe·node 로 띄운 npm CLI 도 알아본다", () => {
+  const rows = [
+    { ProcessId: 4, ParentProcessId: 0, Name: "System", CommandLine: null },
+    { ProcessId: 100, ParentProcessId: 4, Name: "powershell.exe", CommandLine: "powershell.exe" },
+    { ProcessId: 101, ParentProcessId: 100, Name: "claude.exe", CommandLine: '"C:\\Users\\me\\.local\\bin\\claude.exe" --resume 0d9c6a8e-1111-4222-8333-444455556666' },
+    { ProcessId: 200, ParentProcessId: 4, Name: "pwsh.exe", CommandLine: "pwsh" },
+    { ProcessId: 201, ParentProcessId: 200, Name: "node.exe", CommandLine: '"C:\\Program Files\\nodejs\\node.exe" C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js' },
+    { ProcessId: 202, ParentProcessId: 201, Name: "codex.exe", CommandLine: "codex.exe" },
+    { ProcessId: 300, ParentProcessId: 4, Name: "cmd.exe", CommandLine: "cmd" },
+    { ProcessId: 301, ParentProcessId: 300, Name: "node.exe", CommandLine: "node server.js" },
+  ];
+  const { tree, args } = parseWinProcessJson(JSON.stringify(rows));
+  assert.deepEqual(findCliDescendants(tree, 100), [{ pid: 101, provider: "claude" }]);
+  assert.deepEqual(findCliDescendants(tree, 200), [{ pid: 201, provider: "codex" }, { pid: 202, provider: "codex" }]);
+  assert.deepEqual(findCliDescendants(tree, 300), []);
+  assert.equal(parseResumeId(args.get(101) ?? ""), "0d9c6a8e-1111-4222-8333-444455556666");
+  // 프로세스가 하나뿐이면 ConvertTo-Json 은 배열이 아니라 객체를 낸다
+  assert.equal(parseWinProcessJson(JSON.stringify(rows[2])).tree.size, 1);
+  assert.equal(parseWinProcessJson("").tree.size, 0);
+  assert.equal(parseWinProcessJson("깨진 출력").tree.size, 0);
 });
 
 test("parseResumeId: 명령에서 이어받는 세션 id 만 뽑는다(--last·세션 이름은 null)", () => {
