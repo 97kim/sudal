@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   Notification,
+  nativeImage,
   powerMonitor,
   session,
   shell,
@@ -90,7 +91,9 @@ import { brewUpgrade, caskVersion, compareVersions, fetchLatestRelease, type Upd
 import { winDownloadUpdate, winQuitAndInstall } from "./app-update-win";
 import { Store } from "./persistence";
 import { RendererState } from "./renderer-state";
-import { claudeHookSettings, shellQuote } from "./transcript-mirror";
+import { HOOK_APPEND_SCRIPT, claudeHookCmdFile, claudeHookSettings, shellQuote } from "./transcript-mirror";
+import { cmdQuote, nodeCmdWrapper } from "./win-proc";
+import { dotBitmap } from "./badge-dot";
 import { AttentionTracker } from "./attention";
 import { SnippetStore } from "./snippets";
 import { LspManager } from "./lsp";
@@ -1198,11 +1201,32 @@ function cleanHookLogDir(dir: string): string {
   return dir;
 }
 
+/** 터미널 모드 Claude 의 훅 명령: 훅 입력을 hookLog 끝에 붙인다. 준비하지 못하면 null(훅 없이 띄운다). */
+function claudeHookCommand(hookLog: string): string | null {
+  if (process.platform !== "win32") return `cat >> ${shellQuote(hookLog)}`;
+  // Windows: 셸 문법에 기대지 않게 .cmd 경로 하나만 넘긴다(transcript-mirror 의 HOOK_APPEND_SCRIPT 참고).
+  const cmdFile = claudeHookCmdFile(hookLog);
+  if (!cmdFile) return null;
+  try {
+    writeFileSync(join(dirname(hookLog), "hook-append.cjs"), HOOK_APPEND_SCRIPT);
+    writeFileSync(cmdFile, nodeCmdWrapper(process.execPath, `"%~dp0hook-append.cjs"`, [`"%~dpn0.jsonl"`]));
+  } catch {
+    return null;
+  }
+  return cmdQuote(cmdFile);
+}
+
 /** 응답 필요 세션 수를 Dock 배지로. 0 이면 지운다. */
 function updateDockBadge() {
   const n = attention.count();
+  if (process.platform === "win32") {
+    // Windows 는 Dock 이 없다 — 작업 표시줄 단추에 빨간 점(오버레이 아이콘)을 얹는다.
+    liveMainWindow()?.setOverlayIcon(n > 0 ? (badgeDot ??= nativeImage.createFromBitmap(dotBitmap(16), { width: 16, height: 16 })) : null, n > 0 ? String(n) : "");
+    return;
+  }
   app.dock?.setBadge(n > 0 ? String(n) : "");
 }
+let badgeDot: Electron.NativeImage | null = null;
 
 // ===== 사용량 =====
 
@@ -1502,10 +1526,8 @@ function bootstrap() {
           if (hookLog) {
             // 권한 다이얼로그 등을 파일로 알려 주는 훅. 사용자 설정의 훅에 더해진다(덮어쓰지 않음).
             // 경로는 env 가 아니라 명령에 직접 박는다 — CLI 가 띄우는 자식 프로세스에 노출되지 않게.
-            args.push(
-              "--settings",
-              claudeHookSettings(`cat >> ${shellQuote(hookLog)}`),
-            );
+            const command = claudeHookCommand(hookLog);
+            if (command) args.push("--settings", claudeHookSettings(command));
           }
           const r = terminals.openCommand(
             `${tabId}:cli`,
@@ -2082,7 +2104,7 @@ function registerIpc() {
         .model.tabs.filter((t) => t.open && t.id !== exceptTabId)
         .filter((t) => {
           const cwd = sessions.snapshot(t.id).cwd;
-          return !!cwd && (norm(cwd) === target || norm(cwd).startsWith(target + "/"));
+          return !!cwd && isWithin(target, norm(cwd));
         })
         .map((t) => t.id);
     },
@@ -2853,6 +2875,11 @@ function createWindow(): BrowserWindow {
     otter?.refresh();
   });
   win.on("blur", () => otter?.refresh());
+  // macOS 는 창을 다 닫아도 앱이 남지만 Windows 는 메인 창을 닫으면 끝난다. 수달 창도 창이라
+  // window-all-closed 가 오지 않으니 여기서 끝낸다(수달 창 때문에 프로세스가 남지 않게).
+  if (process.platform !== "darwin") win.on("closed", () => app.quit());
+  // 창을 새로 만들면 작업 표시줄 배지도 다시 얹는다.
+  if (process.platform === "win32") win.once("ready-to-show", () => updateDockBadge());
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
@@ -2875,6 +2902,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showMainWindow());
 }
 app.whenReady().then(async () => {
+  // Windows 알림·작업 표시줄이 이 앱을 알아보는 이름. electron-builder 의 appId 와 같아야 설치본의 바로가기와 묶인다.
+  if (process.platform === "win32") app.setAppUserModelId("io.github.97kim.sudal");
   bootstrap();
   registerIpc();
   buildMenu();

@@ -33,6 +33,8 @@ function sh(cmd: string, args: string[]): Promise<string> {
  * 앱이 직접 띄운 Codex 탭의 app-server 는 조상에 claude 가 없어 걸러진다. cwd 가 맞는 프로세스의 열린 rollout 파일(lsof)을 돌려준다.
  */
 export async function findCompanionRolloutByProcess(rootPid: number, cwd: string): Promise<string | null> {
+  // Windows 에는 열린 파일·cwd 를 읽을 lsof 가 없다 — cwd·시각 기반 추정(findCompanionRollout)만 쓴다.
+  if (process.platform === "win32") return null;
   const tree = parsePsTree(await sh("ps", ["-axo", "pid=,ppid=,comm="]));
   if (tree.size === 0) return null;
   const base = (comm: string) => comm.split("/").pop() ?? comm;

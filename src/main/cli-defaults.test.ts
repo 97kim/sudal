@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claudeProgressNotes, claudeShowsThinkingSummaries, codexHasDeveloperInstructions, codexTopLevelModel, readCliDefaultModel } from "./cli-defaults";
+import { claudeManagedSettingsPath, claudeProgressNotes, claudeShowsThinkingSummaries, codexHasDeveloperInstructions, codexTopLevelModel, readCliDefaultModel } from "./cli-defaults";
+
+test("claudeManagedSettingsPath: 운영체제별 관리형 설정 위치", () => {
+  assert.equal(claudeManagedSettingsPath("darwin"), "/Library/Application Support/ClaudeCode/managed-settings.json");
+  assert.equal(claudeManagedSettingsPath("win32"), "C:\\Program Files\\ClaudeCode\\managed-settings.json");
+});
 
 test("codexTopLevelModel: 최상위 model 만, 섹션 안의 model 은 무시", () => {
   assert.equal(codexTopLevelModel('model = "gpt-6-astra"\nmodel_reasoning_effort = "medium"\n[features]\nmodel = "x"'), "gpt-6-astra");

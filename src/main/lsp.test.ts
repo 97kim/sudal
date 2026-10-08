@@ -146,3 +146,10 @@ test("LspManager: 열린 문서가 없으면 idleMs 뒤에 서버를 끄고, did
   assert.equal(exits.length, 2);
   rmSync(base, { recursive: true, force: true });
 });
+
+test("binFileNames: Windows 는 PATHEXT 확장자를 붙여 찾고, macOS 는 이름 그대로", async () => {
+  const { binFileNames } = await import("./lsp");
+  assert.deepEqual(binFileNames("pyright-langserver", "darwin"), ["pyright-langserver"]);
+  assert.deepEqual(binFileNames("tls", "win32"), ["tls.com", "tls.exe", "tls.bat", "tls.cmd"]);
+  assert.deepEqual(binFileNames("tls", "win32", ".EXE;.CMD;"), ["tls.exe", "tls.cmd"]);
+});

@@ -7,6 +7,7 @@
 import { spawn } from "node:child_process";
 import type { PrecheckResult } from "@shared/schedules";
 import { mt } from "./i18n";
+import { IS_WIN, killProcessTree } from "./win-proc";
 
 /** 기록에 남길 출력 길이. 통째로 두면 이력 파일이 커진다. */
 const TAIL_MAX = 2000;
@@ -18,6 +19,7 @@ function tail(s: string): string {
 
 /** 자식이 만든 프로세스까지 정리한다. 타임아웃인데 손자가 살아남으면 의미가 없다. */
 function killTree(pid: number): void {
+  if (IS_WIN) return killProcessTree(pid);
   try {
     // 음수 pid = 프로세스 그룹. detached 로 띄웠으므로 그룹이 있다.
     process.kill(-pid, "SIGKILL");
@@ -59,10 +61,12 @@ export function runPrecheckCommand(input: { command: string; timeoutMs: number; 
     let child: ReturnType<typeof spawn>;
     try {
       child = spawn(input.command, {
-        shell: "/bin/sh",
+        // Windows 는 cmd.exe. detached 는 새 콘솔 창을 띄우니 끄고, 트리 정리는 taskkill /T 가 맡는다.
+        shell: IS_WIN ? true : "/bin/sh",
         cwd: input.cwd ?? undefined,
         env: input.env,
-        detached: true,
+        detached: !IS_WIN,
+        windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (e) {

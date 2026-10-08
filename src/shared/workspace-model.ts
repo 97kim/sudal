@@ -2,6 +2,7 @@
 
 import type { PermissionPolicy, SessionStatus } from "./chat-events";
 import { baseName } from "./path-display";
+import { samePath } from "./any-path";
 import type { Provider } from "./ipc";
 
 
@@ -92,6 +93,18 @@ export function activeWorkspace(m: WorkspaceModel): Workspace | null {
 }
 
 
+/** 끝 구분자(/·\)를 뗀다. 드라이브 루트("C:\")는 그대로 둔다 — "C:" 는 그 드라이브의 현재 폴더라 뜻이 달라진다. */
+export function trimWorkspacePath(p: string): string {
+  const t = p.replace(/[\\/]+$/, "");
+  return /^[A-Za-z]:$/.test(t) ? p.slice(0, 3) : t;
+}
+
+/** 같은 워크스페이스 경로인가. Windows 표기(드라이브·UNC)끼리는 구분자·대소문자를 가리지 않고, 그 밖은 글자 그대로 비교한다. */
+export function sameWorkspacePath(a: string, b: string): boolean {
+  const win = (p: string) => /^[A-Za-z]:|^\\\\/.test(p);
+  return win(a) && win(b) ? samePath(a, b) : a === b;
+}
+
 /** 같은 경로가 이미 있으면 그것을 돌려주고 lastUsedAt 만 갱신한다. */
 export function addWorkspace(
   m: WorkspaceModel,
@@ -99,8 +112,8 @@ export function addWorkspace(
   now: number,
   id: string,
 ): { model: WorkspaceModel; workspace: Workspace } {
-  const normalized = path.replace(/\/+$/, "");
-  const existing = m.workspaces.find((w) => w.path === normalized);
+  const normalized = trimWorkspacePath(path);
+  const existing = m.workspaces.find((w) => sameWorkspacePath(w.path, normalized));
   if (existing) {
     const workspace = { ...existing, lastUsedAt: now };
     return {
@@ -133,7 +146,7 @@ export function updateWorkspace(m: WorkspaceModel, workspaceId: string, patch: P
         ? {
             ...w,
             ...(patch.name !== undefined ? { name: patch.name.trim() || w.name } : {}),
-            ...(patch.path !== undefined ? { path: patch.path.replace(/\/+$/, "") } : {}),
+            ...(patch.path !== undefined ? { path: trimWorkspacePath(patch.path) } : {}),
             ...(patch.verifyCommands !== undefined ? { verifyCommands: patch.verifyCommands.slice() } : {}),
             ...(patch.builtin !== undefined ? { builtin: patch.builtin } : {}),
           }

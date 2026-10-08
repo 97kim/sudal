@@ -1,5 +1,5 @@
 // 검증 실행기 — 워크스페이스에 저장한 명령을 탭의 cwd 에서 순서대로 돌리고, 진행·결과를 verify 이벤트로 탭에 남긴다.
-// 실행은 로그인 셸(zsh -lc)이라 사용자의 PATH·nvm 등이 그대로 적용된다. 하나라도 실패하면 뒤 명령은 건너뛴다.
+// 실행은 로그인 셸(zsh -lc)이라 사용자의 PATH·nvm 등이 그대로 적용된다(Windows 는 cmd.exe). 하나라도 실패하면 뒤 명령은 건너뛴다.
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -9,6 +9,7 @@ import { VERIFY_COMMAND_TIMEOUT_MS, cutOutput, overallStatus, suggestVerifyComma
 import type { Msg } from "@shared/i18n/msg";
 import { sanitizeCliEnv } from "./cli-env";
 import { appMsg, mt } from "./i18n";
+import { IS_WIN, killProcessTree } from "./win-proc";
 
 export interface VerifyRunOptions {
   tabId: string;
@@ -131,6 +132,8 @@ export class VerifyRunner {
   private killTree(child: ChildProcess | null) {
     if (!child || child.pid === undefined) return;
     const pid = child.pid;
+    // Windows 는 그룹 신호가 없다 — taskkill /T /F 한 번으로 트리째 끝낸다.
+    if (IS_WIN) return killProcessTree(pid);
     try {
       process.kill(-pid, "SIGTERM");
     } catch {
@@ -195,7 +198,10 @@ export class VerifyRunner {
       let timedOut = false;
       let child: ChildProcess;
       try {
-        child = spawn("/bin/zsh", ["-lc", c.cmd], { cwd: run.cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+        // Windows: cmd.exe(shell:true) — 추천 명령이 쓰는 && 를 Windows PowerShell 5 는 모른다. detached 는 콘솔 창을 새로 띄워 쓰지 않는다.
+        child = IS_WIN
+          ? spawn(c.cmd, { cwd: run.cwd, env, stdio: ["ignore", "pipe", "pipe"], shell: true, windowsHide: true })
+          : spawn("/bin/zsh", ["-lc", c.cmd], { cwd: run.cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
       } catch (e) {
         resolve({ exitCode: null, output: e instanceof Error ? e.message : String(e), timedOut: false });
         return;

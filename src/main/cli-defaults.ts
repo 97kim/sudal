@@ -45,8 +45,12 @@ export function codexHasDeveloperInstructions(env: Record<string, string | undef
   return false;
 }
 
-/** macOS 관리형 설정. 사용자·프로젝트 설정보다 앞선다. */
-export const CLAUDE_MANAGED_SETTINGS = "/Library/Application Support/ClaudeCode/managed-settings.json";
+/** 관리형 설정. 사용자·프로젝트 설정보다 앞선다. 위치는 운영체제마다 다르다(Claude Code 문서 기준). */
+export function claudeManagedSettingsPath(platform: NodeJS.Platform = process.platform): string {
+  if (platform === "win32") return "C:\\Program Files\\ClaudeCode\\managed-settings.json";
+  return "/Library/Application Support/ClaudeCode/managed-settings.json";
+}
+export const CLAUDE_MANAGED_SETTINGS = claudeManagedSettingsPath();
 
 /**
  * Claude Code 의 showThinkingSummaries 가 켜져 있나. 켜져 있으면 CLI 가 thinking 블록에 추론 요약을 담아 보내고,

@@ -194,6 +194,8 @@ export async function listManagedWorktrees(env: NodeJS.ProcessEnv, roots: string
 }
 
 function diskUsageKb(path: string): Promise<number | null> {
+  // Windows 에는 du 가 없다 — 크기는 보이지 않는다(null).
+  if (process.platform === "win32") return Promise.resolve(null);
   return new Promise((done) => {
     execFile("du", ["-sk", path], { timeout: 10_000 }, (err, stdout) => {
       const n = err ? NaN : Number(String(stdout).split(/\s+/)[0]);

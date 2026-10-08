@@ -5,6 +5,7 @@ import { spawn, execFile, type ChildProcessWithoutNullStreams } from "node:child
 import fs from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { mt } from "./i18n";
+import { cmdQuote, killProcessTree, needsCmdShell } from "./win-proc";
 import { LSP_SERVERS, lspServerSpec, type LspServerId, type LspServerSpec } from "@shared/lsp-servers";
 
 export interface LspServerStatus {
@@ -97,7 +98,26 @@ export function resolveTypescriptLib(root: string, serverBin: string, env: NodeJ
 
 /** PATH 의 절대 경로 항목만 (`.` 이나 `node_modules/.bin` 같은 상대 항목은 main 의 cwd 기준으로 풀리므로 뺀다). */
 function pathDirs(env: NodeJS.ProcessEnv): string[] {
-  return (env.PATH ?? "").split(delimiter).filter((d) => d && isAbsolute(d));
+  return (envValue(env, "PATH") ?? "").split(delimiter).filter((d) => d && isAbsolute(d));
+}
+
+/** Windows 는 env 이름이 대소문자를 가리지 않는다("Path") — 복사한 env 객체에서는 직접 찾아야 한다. */
+function envValue(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  if (process.platform !== "win32" || env[key] !== undefined) return env[key];
+  const k = Object.keys(env).find((x) => x.toUpperCase() === key);
+  return k ? env[k] : undefined;
+}
+
+/** PATH 의 한 폴더에서 볼 파일 이름들. Windows 는 확장자 없이 깔리지 않으니 PATHEXT 의 확장자를 붙여 본다(npm 은 .cmd). */
+export function binFileNames(bin: string, platform: NodeJS.Platform, pathext?: string): string[] {
+  if (platform !== "win32") return [bin];
+  const exts = (pathext || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
+  return exts.map((e) => bin + e.toLowerCase());
+}
+
+/** .cmd 는 cmd.exe 를 거쳐야 뜬다 — 그때는 명령 줄로 합쳐지니 경로를 감싼다. */
+function spawnTarget(path: string): { file: string; shell: boolean } {
+  return needsCmdShell(path) ? { file: cmdQuote(path), shell: true } : { file: path, shell: false };
 }
 
 /** 실행할 수 있는 보통 파일인지. 디렉토리·실행 비트 없는 파일은 spawn 이 실패하거나 엉뚱한 것을 띄운다. */
@@ -117,6 +137,13 @@ export function lspChildEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   for (const k of ["PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TMPDIR", "NODE_PATH", "VIRTUAL_ENV", "PYTHONPATH"]) {
     const v = env[k];
     if (typeof v === "string") out[k] = v;
+  }
+  // Windows 는 이것들이 없으면 cmd.exe·node 가 제대로 뜨지 않는다(SystemRoot·PATHEXT·ComSpec 등).
+  if (process.platform === "win32") {
+    for (const k of ["PATH", "PATHEXT", "SystemRoot", "SystemDrive", "ComSpec", "windir", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "USERNAME", "ProgramFiles", "ProgramData"]) {
+      const v = envValue(env, k.toUpperCase()) ?? env[k];
+      if (typeof v === "string") out[k] = v;
+    }
   }
   return out;
 }
@@ -160,11 +187,14 @@ export class LspManager {
     if (override) {
       path = isExecutableFile(override) ? override : null;
     } else {
-      for (const dir of pathDirs(env)) {
-        const p = join(dir, spec.bin);
-        if (isExecutableFile(p)) {
-          path = p;
-          break;
+      const names = binFileNames(spec.bin, process.platform, envValue(env, "PATHEXT"));
+      search: for (const dir of pathDirs(env)) {
+        for (const name of names) {
+          const p = join(dir, name);
+          if (isExecutableFile(p)) {
+            path = p;
+            break search;
+          }
         }
       }
     }
@@ -177,7 +207,8 @@ export class LspManager {
     let p = this.versions.get(path);
     if (!p) {
       p = new Promise((resolve) => {
-        execFile(path, ["--version"], { env, timeout: 5000 }, (err, stdout) => resolve(err ? null : stdout.toString().trim() || null));
+        const t = spawnTarget(path);
+        execFile(t.file, ["--version"], { env, timeout: 5000, shell: t.shell, windowsHide: true }, (err, stdout) => resolve(err ? null : stdout.toString().trim() || null));
       });
       this.versions.set(path, p);
       void p.then((v) => v === null && this.versions.delete(path));
@@ -236,7 +267,8 @@ export class LspManager {
     const id = `lsp-${++this.seq}`;
     let proc: ChildProcessWithoutNullStreams;
     try {
-      proc = spawn(r.path, spec.args, { cwd: root, env: lspChildEnv(env), stdio: ["pipe", "pipe", "pipe"] });
+      const t = spawnTarget(r.path);
+      proc = spawn(t.file, spec.args, { cwd: root, env: lspChildEnv(env), stdio: ["pipe", "pipe", "pipe"], shell: t.shell, windowsHide: true });
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
@@ -324,6 +356,8 @@ export class LspManager {
       s.idleTimer = null;
     }
     this.servers.delete(id);
+    // Windows 의 .cmd 서버는 cmd.exe 아래 node 로 뜬다 — cmd.exe 만 끄면 서버가 남으니 트리째.
+    if (process.platform === "win32" && s.proc.pid !== undefined) return killProcessTree(s.proc.pid);
     try {
       s.proc.kill();
     } catch {
