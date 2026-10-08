@@ -9,7 +9,7 @@ const LANG: Record<string, string> = {
 };
 
 export function fenceLang(path: string): string {
-  const name = path.split("/").pop() ?? "";
+  const name = path.split(/[\\/]/).pop() ?? "";
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : name.toLowerCase();
   return LANG[ext] ?? "";
 }

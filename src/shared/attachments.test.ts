@@ -9,6 +9,8 @@ test("formatCodeAttachment: 경로:줄 머리말 + 언어 펜스, 범위·단일
   assert.match(formatCodeAttachment({ relPath: "doc.md", line: 1, text: "```js\nfoo\n```" }), /^doc\.md:1\n````md\n/);
   assert.equal(fenceLang("Dockerfile"), "dockerfile");
   assert.equal(fenceLang("weird.unknown"), "");
+  assert.equal(fenceLang("src\\main\\Dockerfile"), "dockerfile", "Windows 구분자");
+  assert.equal(fenceLang("C:\\repo\\a.py"), "python");
 });
 
 test("formatTerminalAttachment / appendToDraft", () => {

@@ -12,6 +12,7 @@ import {
   tabsUsingPath,
   inheritedCwd,
   updateWorkspace,
+  trimWorkspacePath,
   emptyModel,
   MAX_RECENT_TABS,
   nthOpenTab,
@@ -49,6 +50,19 @@ test("addWorkspace: 끝 슬래시 정규화, 같은 경로는 lastUsedAt 만 갱
   assert.equal(again.model.workspaces.length, 2);
   assert.equal(again.workspace.id, "wa");
   assert.equal(again.workspace.lastUsedAt, T0 + 999);
+});
+
+test("addWorkspace: Windows 경로는 끝 구분자·대소문자·구분자 종류가 달라도 같은 워크스페이스", () => {
+  let m = addWorkspace(seeded(), "C:\\Users\\me\\repo\\", T0, "ww").model;
+  const w = m.workspaces.find((x) => x.id === "ww")!;
+  assert.equal(w.path, "C:\\Users\\me\\repo");
+  assert.equal(w.name, "repo");
+  const again = addWorkspace(m, "c:/users/me/Repo", T0 + 5, "ignored");
+  assert.equal(again.workspace.id, "ww");
+  m = again.model;
+  assert.equal(addWorkspace(m, "/repo/A", T0, "wz").workspace.id, "wz", "macOS 경로는 글자 그대로 비교한다");
+  assert.equal(trimWorkspacePath("D:\\"), "D:\\");
+  assert.equal(trimWorkspacePath("/repo/a//"), "/repo/a");
 });
 
 test("createTab: 열린 탭 목록 끝에 추가되고 활성화, 워크스페이스 lastUsedAt 갱신", () => {
