@@ -21,7 +21,7 @@ import {
 } from "electron";
 import { isPermissionPolicy, type PermissionAnswer, type PermissionPolicy } from "@shared/chat-events";
 import { isThemeMode } from "@shared/theme";
-import { accelerator, type AppShortcut } from "@shared/app-shortcuts";
+import { accelerator, yieldsToTerminal, type AppShortcut } from "@shared/app-shortcuts";
 import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT, LOCALES, type Locale } from "@shared/i18n/locale";
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
 import { legacyWorktreeDir, migrateUserData, removeLegacyInstall, type UserDataMigration } from "./legacy-name";
@@ -2571,6 +2571,10 @@ function registerIpc() {
   );
   ipcMain.handle(IPC.termClose, (_e, tabId: string) => terminals.close(tabId));
   ipcMain.on(IPC.termClear, (_e, tabId: string) => terminals.clearBacklog(tabId));
+  ipcMain.on(IPC.termFocus, (e, focused: unknown) => {
+    if (focused === true) terminalFocused.add(e.sender.id);
+    else terminalFocused.delete(e.sender.id);
+  });
   ipcMain.handle(IPC.termList, (_e, tabId: string) =>
     terminals.list(`${tabId}:`),
   );
@@ -2830,9 +2834,12 @@ function shortcut(
 
 let menuBuilt = false;
 
+/** Windows: 터미널에 포커스가 있는 창(webContents id). 그동안 셸 편집키는 메뉴 가속기 대신 셸로 간다. */
+const terminalFocused = new Set<number>();
+
 function buildMenu() {
   const mac = process.platform === "darwin";
-  // 키 조합은 shared/app-shortcuts 의 표를 따른다. Windows 는 셸 편집키(Ctrl+W·K·R 등)를 피해 Ctrl+Shift+… 를 쓴다.
+  // 키 조합은 shared/app-shortcuts 의 표를 따른다. Windows 는 ⌘ 자리에 Ctrl 이다(터미널 포커스 중 셸 편집키 양보는 createWindow).
   const acc = (name: AppShortcut, suffix?: string) => accelerator(name, mac, suffix);
   const tabItems: MenuItemConstructorOptions[] = [];
   for (let n = 1; n <= 9; n++) {
@@ -2943,6 +2950,16 @@ function createWindow(): BrowserWindow {
       webviewTag: true,
     },
   });
+  // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+W·K·R 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
+  // 터미널에 포커스가 있을 때 그 키만 이번 입력에 한해 메뉴를 끈다. 키 입력마다 다시 정하므로 다른 키에는 남지 않는다.
+  if (process.platform === "win32") {
+    const wc = win.webContents;
+    const id = wc.id;
+    wc.on("before-input-event", (_e, input) => {
+      if (input.type === "keyDown") wc.setIgnoreMenuShortcuts(terminalFocused.has(id) && yieldsToTerminal(input));
+    });
+    win.on("closed", () => terminalFocused.delete(id));
+  }
   // 채팅의 링크 등으로 메인 창 자체가 다른 페이지로 가면 안 된다 — 외부 브라우저로 돌린다.
   win.webContents.on("will-navigate", (e, url) => {
     if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL)) return;

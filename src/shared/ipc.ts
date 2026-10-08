@@ -344,6 +344,7 @@ export const IPC = {
   termResize: "term:resize",
   termClose: "term:close",
   termClear: "term:clear",
+  termFocus: "term:focus",
   termData: "term:data",
   termExit: "term:exit",
   termList: "term:list",
@@ -386,6 +387,8 @@ export interface TerminalApi {
   write(termId: string, data: string): void;
   resize(termId: string, cols: number, rows: number): void;
   close(termId: string): Promise<void>;
+  /** Windows: 터미널에 키보드 포커스가 들어오고 나갈 때. 그동안 셸 편집키(Ctrl+W 등)를 메뉴 대신 셸로 보낸다. */
+  setFocused(focused: boolean): void;
   /**
    * ⌘K: main 이 들고 있는 출력 백로그를 비우고(안 비우면 채팅 탭을 오갈 때 지운 화면이 되살아난다)
    * 그 자리에 TERMINAL_CLEAR_MARK 를 onData 로 보낸다. 화면은 그 표시를 받았을 때 지운다.

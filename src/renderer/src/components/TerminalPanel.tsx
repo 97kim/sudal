@@ -881,8 +881,14 @@ function TerminalView({
     fitRef.current = fit;
     cbs.current.onRegister?.(term, search);
     // 키 입력을 받는 건 xterm 의 숨은 textarea 다. 거기에 포커스가 오면 이 터미널이 단축키의 대상이 된다.
-    const onFocusIn = () => cbs.current.onFocus?.();
+    const onFocusIn = () => {
+      cbs.current.onFocus?.();
+      if (IS_WIN) window.sudal.terminal.setFocused(true);
+    };
+    // Windows: 포커스가 있는 동안 main 이 셸 편집키(Ctrl+W 등)를 메뉴 대신 셸로 보낸다(shared/app-shortcuts TERMINAL_YIELD_KEYS)
+    const onFocusOut = () => IS_WIN && window.sudal.terminal.setFocused(false);
     term.textarea?.addEventListener("focus", onFocusIn);
+    term.textarea?.addEventListener("blur", onFocusOut);
     const onResults = search.onDidChangeResults(({ resultIndex, resultCount }) =>
       cbs.current.onFindResults?.(resultIndex, resultCount),
     );
@@ -890,6 +896,7 @@ function TerminalView({
     // ⌘D 좌우 · ⌘⇧D 상하 분할. 보통의 터미널 앱과 같은 자리다. ⌘D 는 셸에 아무 뜻이 없어(EOF 는 ⌃D)
     // 가로채도 잃는 것이 없다. ⌘W·⌘K·⌘F 는 메뉴 가속기라 여기까지 오지 않고 App 이 패널에 넘긴다.
     // Windows 는 Ctrl+D 가 EOF 라 분할은 Ctrl+Shift+D(좌우)·Ctrl+Shift+Alt+D(상하)다(shared/app-shortcuts).
+    // Windows 의 Ctrl+W·K 는 셸 편집키라 main 이 셸로 보낸다 — 여기까지 오면 xterm 이 셸에 넘긴다.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && isMod(e) && e.shiftKey && e.code === "KeyA") {
         cbs.current.onAttach?.();
@@ -989,6 +996,9 @@ function TerminalView({
       host.removeEventListener("mousedown", onDown);
       cbs.current.onReady?.(false);
       term.textarea?.removeEventListener("focus", onFocusIn);
+      term.textarea?.removeEventListener("blur", onFocusOut);
+      // 포커스를 가진 채 사라지면 blur 가 오지 않을 수 있다
+      if (term.textarea && document.activeElement === term.textarea) onFocusOut();
       cbs.current.onRegister?.(null, null);
       term.dispose();
       termRef.current = null;

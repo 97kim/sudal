@@ -1,22 +1,22 @@
 // 앱 단축키 표. 메뉴 가속기(main)와 화면 문구(renderer)가 같은 값을 쓰도록 한곳에 둔다.
-// Windows 는 Mod 가 Ctrl 이라 macOS 와 같은 키를 쓰면 터미널의 셸 편집키(Ctrl+W·K·R·L·B·T·F·D)를 앱이 빼앗는다.
-// 그래서 그런 키는 Windows Terminal·VS Code 처럼 Ctrl+Shift+… 로 옮긴다.
+// Windows 는 macOS 의 ⌘ 자리에 Ctrl 을 쓴다(Mod). 그러면 터미널의 셸 편집키(Ctrl+W·K·R·L·B·T)와 겹치는데,
+// 터미널에 포커스가 있을 때만 그 키를 셸에 양보한다(TERMINAL_YIELD_KEYS). 다른 곳에서는 앱 단축키다.
 import { formatShortcut } from "./shortcut";
 
 type Spec = { mac: string; other: string };
 const same = (s: string): Spec => ({ mac: s, other: s });
 
 export const APP_SHORTCUTS = {
-  newTab: { mac: "Mod+T", other: "Mod+Shift+T" },
-  reopenTab: { mac: "Mod+Shift+T", other: "Mod+Shift+Alt+T" },
-  closeTab: { mac: "Mod+W", other: "Mod+Shift+W" },
-  switchWorkspace: { mac: "Mod+K", other: "Mod+Shift+K" },
-  search: { mac: "Mod+F", other: "Mod+Shift+F" },
-  sidebar: { mac: "Mod+B", other: "Mod+Shift+B" },
-  terminal: { mac: "Mod+J", other: "Mod+Shift+J" },
+  newTab: same("Mod+T"),
+  reopenTab: same("Mod+Shift+T"),
+  closeTab: same("Mod+W"),
+  switchWorkspace: same("Mod+K"),
+  search: same("Mod+F"),
+  sidebar: same("Mod+B"),
+  terminal: same("Mod+J"),
   widenEditor: same("Mod+Shift+E"),
-  browserAddress: { mac: "Mod+L", other: "Mod+Shift+L" },
-  browserReload: { mac: "Mod+R", other: "F5" },
+  browserAddress: same("Mod+L"),
+  browserReload: same("Mod+R"),
   browserHardReload: same("Mod+Shift+R"),
   nextAttention: same("Mod+Shift+Down"),
   prevAttention: same("Mod+Shift+Up"),
@@ -28,10 +28,24 @@ export const APP_SHORTCUTS = {
   settings: same("Mod+,"),
   /** 터미널·에디터의 선택을 채팅 입력창에 넣기 */
   attach: same("Mod+Shift+A"),
-  // 터미널 안에서만
+  // 터미널 안에서만. Windows 는 Ctrl+D 가 셸의 EOF(종료)라 빼앗을 수 없어 Shift 를 더한다.
   termSplitRow: { mac: "Mod+D", other: "Mod+Shift+D" },
   termSplitCol: { mac: "Mod+Shift+D", other: "Mod+Shift+Alt+D" },
 } satisfies Record<string, Spec>;
+
+/**
+ * Windows 에서 터미널에 포커스가 있으면 앱 단축키 대신 셸로 보내는 Ctrl+글자(Shift·Alt 없이).
+ * W 단어 지우기 · K 줄 끝까지 지우기 · R 기록 검색 · L 화면 지우기 · B 뒤로(tmux 접두키) · T 글자 바꾸기(fzf 파일 찾기).
+ * F(찾기)·J(터미널 패널)는 셸에서 거의 안 쓰고 터미널 안에서도 앱 동작이 쓸모 있어 앱에 둔다.
+ */
+export const TERMINAL_YIELD_KEYS: ReadonlySet<string> = new Set(["W", "K", "R", "L", "B", "T"]);
+
+/** 이 키 입력을 셸에 양보하나. 한글 입력 중이면 key 가 "ㅈ" 처럼 오므로 물리 키(code: "KeyW")로 본다. */
+export function yieldsToTerminal(input: { control: boolean; shift: boolean; alt: boolean; meta: boolean; code: string }): boolean {
+  if (!input.control || input.shift || input.alt || input.meta) return false;
+  const m = /^Key([A-Z])$/.exec(input.code);
+  return !!m && TERMINAL_YIELD_KEYS.has(m[1]);
+}
 
 export type AppShortcut = keyof typeof APP_SHORTCUTS;
 

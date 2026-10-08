@@ -271,6 +271,7 @@ const api: SudalApi = {
       ipcRenderer.send(IPC.termResize, tabId, cols, rows),
     close: (tabId: string) => ipcRenderer.invoke(IPC.termClose, tabId),
     clear: (tabId: string) => ipcRenderer.send(IPC.termClear, tabId),
+    setFocused: (focused: boolean) => ipcRenderer.send(IPC.termFocus, focused),
     onData: (listener) => {
       const handler = (_e: IpcRendererEvent, tabId: string, data: string) =>
         listener(tabId, data);
