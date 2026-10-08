@@ -89,7 +89,8 @@ import { createFileLogger, type FileLogger } from "./logger";
 import { brewUpgrade, caskVersion, compareVersions, fetchLatestRelease, type UpdateProgress } from "./app-update";
 import { Store } from "./persistence";
 import { RendererState } from "./renderer-state";
-import { claudeHookSettings, shellQuote } from "./transcript-mirror";
+import { HOOK_APPEND_SCRIPT, claudeHookCmdFile, claudeHookSettings, shellQuote } from "./transcript-mirror";
+import { cmdQuote, nodeCmdWrapper } from "./win-proc";
 import { AttentionTracker } from "./attention";
 import { SnippetStore } from "./snippets";
 import { LspManager } from "./lsp";
@@ -1197,6 +1198,21 @@ function cleanHookLogDir(dir: string): string {
   return dir;
 }
 
+/** 터미널 모드 Claude 의 훅 명령: 훅 입력을 hookLog 끝에 붙인다. 준비하지 못하면 null(훅 없이 띄운다). */
+function claudeHookCommand(hookLog: string): string | null {
+  if (process.platform !== "win32") return `cat >> ${shellQuote(hookLog)}`;
+  // Windows: 셸 문법에 기대지 않게 .cmd 경로 하나만 넘긴다(transcript-mirror 의 HOOK_APPEND_SCRIPT 참고).
+  const cmdFile = claudeHookCmdFile(hookLog);
+  if (!cmdFile) return null;
+  try {
+    writeFileSync(join(dirname(hookLog), "hook-append.cjs"), HOOK_APPEND_SCRIPT);
+    writeFileSync(cmdFile, nodeCmdWrapper(process.execPath, `"%~dp0hook-append.cjs"`, [`"%~dpn0.jsonl"`]));
+  } catch {
+    return null;
+  }
+  return cmdQuote(cmdFile);
+}
+
 /** 응답 필요 세션 수를 Dock 배지로. 0 이면 지운다. */
 function updateDockBadge() {
   const n = attention.count();
@@ -1501,10 +1517,8 @@ function bootstrap() {
           if (hookLog) {
             // 권한 다이얼로그 등을 파일로 알려 주는 훅. 사용자 설정의 훅에 더해진다(덮어쓰지 않음).
             // 경로는 env 가 아니라 명령에 직접 박는다 — CLI 가 띄우는 자식 프로세스에 노출되지 않게.
-            args.push(
-              "--settings",
-              claudeHookSettings(`cat >> ${shellQuote(hookLog)}`),
-            );
+            const command = claudeHookCommand(hookLog);
+            if (command) args.push("--settings", claudeHookSettings(command));
           }
           const r = terminals.openCommand(
             `${tabId}:cli`,

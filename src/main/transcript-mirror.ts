@@ -245,11 +245,7 @@ export function mapCodexRolloutLine(
       const cmd = Array.isArray(item.command)
         ? (item.command as string[])
         : [String(item.command ?? "")];
-      // ["/bin/zsh", "-lc", "실제 명령"] 은 실제 명령만 보여 준다.
-      const shown =
-        cmd.length >= 3 && /^-l?c$/.test(cmd[1])
-          ? cmd[cmd.length - 1]
-          : cmd.join(" ");
+      const shown = shownCommand(cmd);
       const output =
         typeof item.aggregated_output === "string"
           ? item.aggregated_output
@@ -314,6 +310,20 @@ export function mapCodexRolloutLine(
 }
 
 /** rollout 파일의 첫 줄(session_meta)에서 세션 id 와 cwd 를 읽는다. */
+/**
+ * ["/bin/zsh", "-lc", "실제 명령"] 은 실제 명령만 보여 준다.
+ * Windows 의 ["...\\powershell.exe", "-NoProfile", "-Command", "실제 명령"]·["cmd.exe", "/c", "실제 명령"] 도 같다.
+ */
+export function shownCommand(cmd: string[]): string {
+  if (cmd.length >= 3 && /^-l?c$/.test(cmd[1])) return cmd[cmd.length - 1];
+  const exe = (cmd[0] ?? "").split(/[\\/]/).pop() ?? "";
+  if (/^(powershell|pwsh|cmd)(\.exe)?$/i.test(exe)) {
+    const i = cmd.findIndex((a, j) => j > 0 && /^(-command|-c|\/c)$/i.test(a));
+    if (i > 0 && i < cmd.length - 1) return cmd.slice(i + 1).join(" ");
+  }
+  return cmd.join(" ");
+}
+
 export function readCodexRolloutMeta(
   file: string,
 ): { sessionId: string | null; cwd: string | null; originator: string | null } | null {
@@ -492,6 +502,25 @@ export function claudeHookSettings(command: string): string {
       UserPromptSubmit: entry,
     },
   });
+}
+
+/**
+ * Windows 용 훅: stdin 을 그대로 argv[2] 파일 끝에 붙인다(`cat >>` 와 같은 일).
+ * Windows 의 Claude Code 는 훅을 Git Bash 로, 없으면 cmd.exe 로 돌린다고 알려져 있다 — 어느 셸이든 같은 뜻이 되게
+ * 셸 문법 없이 .cmd 경로 하나만 명령으로 넘기고, 실제 일은 node 스크립트가 한다.
+ */
+export const HOOK_APPEND_SCRIPT = `// Sudal 이 만든 Claude Code 훅. stdin 을 기록 파일 끝에 붙인다.
+const fs = require("fs");
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("end", () => {
+  try { fs.appendFileSync(process.argv[2], Buffer.concat(chunks)); } catch {}
+});
+`;
+
+/** 훅 로그(".jsonl")와 같은 이름의 .cmd. .cmd 는 자기 이름(%~dpn0)으로 로그 경로를 알아 명령 줄에 경로를 한 번만 쓴다. */
+export function claudeHookCmdFile(hookLog: string): string | null {
+  return /\.jsonl$/i.test(hookLog) ? hookLog.replace(/\.jsonl$/i, ".cmd") : null;
 }
 
 /** POSIX 셸 작은따옴표 인용. 훅 명령에 절대 경로를 박을 때 쓴다. */

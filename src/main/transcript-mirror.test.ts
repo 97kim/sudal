@@ -20,9 +20,36 @@ import {
   newMirrorState,
   readCodexRolloutMeta,
   shellQuote,
+  shownCommand,
+  HOOK_APPEND_SCRIPT,
+  claudeHookCmdFile,
 } from "./transcript-mirror";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("shownCommand: 셸 래퍼를 벗기고 안쪽 명령만", () => {
+  assert.equal(shownCommand(["/bin/zsh", "-lc", "ls -la"]), "ls -la");
+  assert.equal(shownCommand(["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoProfile", "-Command", "Get-ChildItem"]), "Get-ChildItem");
+  assert.equal(shownCommand(["pwsh", "-Command", "dir"]), "dir");
+  assert.equal(shownCommand(["cmd.exe", "/c", "dir /b"]), "dir /b");
+  assert.equal(shownCommand(["git", "status"]), "git status");
+  assert.equal(shownCommand(["powershell.exe"]), "powershell.exe");
+});
+
+test("HOOK_APPEND_SCRIPT: stdin 을 그대로 파일 끝에 붙인다(cat >> 와 같게)", () => {
+  const d = mkdtempSync(join(tmpdir(), "hook-append-"));
+  const script = join(d, "hook-append.cjs");
+  writeFileSync(script, HOOK_APPEND_SCRIPT);
+  const log = join(d, "s.jsonl");
+  writeFileSync(log, "");
+  execFileSync(process.execPath, [script, log], { input: '{"a":1}\n' });
+  execFileSync(process.execPath, [script, log], { input: '{"b":"한글"}\n' });
+  assert.equal(readFileSync(log, "utf8"), '{"a":1}\n{"b":"한글"}\n');
+  assert.equal(claudeHookCmdFile("C:\\x\\hooks\\abc.jsonl"), "C:\\x\\hooks\\abc.cmd");
+  assert.equal(claudeHookCmdFile("C:\\x\\hooks\\abc.log"), null);
+});
 
 test("mapClaudeTranscriptLine: user 텍스트·tool_result, assistant 블록별 text/tool_use, end_turn 은 message 당 한 번", () => {
   const st = newMirrorState();
