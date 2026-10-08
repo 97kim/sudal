@@ -409,7 +409,7 @@ function UpdateCard() {
         <Icon name="refresh" size={14} className="text-accent" />
         {t("settings.update.title")}
       </div>
-      <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.update.description")}</p>
+      <p className="mb-3 text-[12px] leading-5 text-muted">{t(IS_WIN ? "settings.update.descriptionWin" : "settings.update.description")}</p>
       <div className="flex items-center gap-3 rounded-md border border-line px-3 py-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
@@ -421,7 +421,7 @@ function UpdateCard() {
             {st.kind === "idle" && t("settings.update.idle")}
             {st.kind === "checking" && t("settings.update.checking")}
             {st.kind === "checked" && (st.r.available ? <span className="text-warn">{t("settings.update.available", { version: st.r.latest })}</span> : <span className="text-ok">{t("settings.update.latest")}</span>)}
-            {st.kind === "checked" && st.r.available && !st.r.brew && ` ${t("settings.update.notBrew")}`}
+            {st.kind === "checked" && st.r.available && !st.r.brew && ` ${t(IS_WIN ? "settings.update.notBrewWin" : "settings.update.notBrew")}`}
             {st.kind === "upgrading" && (
               <span data-update-phase={status?.phase}>
                 {t("settings.update.upgrading", { version: st.target })} <span className="text-accent">{status?.running ? updatePhaseLabel(t, status) : ""}</span>

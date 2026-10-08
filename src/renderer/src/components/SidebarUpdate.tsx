@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { updatePhaseLabel, useUpdateStatus } from "../hooks/useUpdate";
+import { IS_WIN } from "../platform";
 
 /**
  * 사이드바 아래 버전 옆의 업데이트 자리. 평소에는 아무것도 없고, 새 버전이 있을 때만 버튼이 나타난다 —
@@ -37,7 +38,7 @@ export function SidebarUpdate({ onOpenSettings }: { onOpenSettings: () => void }
       {t("settings.update.sidebarRun", { version: c.latest })}
     </button>
   ) : (
-    <button onClick={() => void window.sudal.browser.openExternal(c.releaseUrl)} className={btn} title={t("settings.update.sidebarAvailableTitle")} data-sidebar-update="available-manual">
+    <button onClick={() => void window.sudal.browser.openExternal(c.releaseUrl)} className={btn} title={t(IS_WIN ? "settings.update.sidebarAvailableTitleWin" : "settings.update.sidebarAvailableTitle")} data-sidebar-update="available-manual">
       {t("settings.update.sidebarAvailable", { version: c.latest })}
     </button>
   );

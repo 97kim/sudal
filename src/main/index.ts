@@ -1087,7 +1087,7 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
       ok: true,
       path: target,
       onPath,
-      ...(onPath ? {} : { hint: mt(process.platform === "win32" ? "main.cli.pathHintWin" : "main.cli.pathHint", { dir }) }),
+      ...(onPath ? {} : { hint: mt("main.cli.pathHint", { dir }) }),
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1113,7 +1113,7 @@ async function installWindowsCliShim(): Promise<{ ok: true; path: string; onPath
     const dir = windowsCliBinDir(process.env, app.getPath("home"));
     const target = writeWindowsShims(dir);
     const onPath = pathListHas((await cliDiscovery().buildEnv()).PATH ?? "", dir, "win32");
-    return { ok: true, path: target, onPath, ...(onPath ? {} : { hint: mt("main.cli.pathHint", { dir }) }) };
+    return { ok: true, path: target, onPath, ...(onPath ? {} : { hint: mt("main.cli.pathHintWin", { dir }) }) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
