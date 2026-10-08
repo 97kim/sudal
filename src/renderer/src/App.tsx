@@ -22,6 +22,7 @@ import { ChatView } from "./views/ChatView";
 import { SettingsView, type SettingsSection } from "./views/SettingsView";
 import { UsageView } from "./views/UsageView";
 import { startDrag } from "./drag";
+import { IS_MAC, isMod } from "./platform";
 
 export function App() {
   const { t } = useTranslation();
@@ -137,7 +138,7 @@ export function App() {
   useEffect(() => {
     if (!split || view !== "chat") return;
     const move = (e: KeyboardEvent) => {
-      if (!e.metaKey || !e.altKey || e.shiftKey || e.ctrlKey) return;
+      if (!isMod(e) || !e.altKey || e.shiftKey || (IS_MAC ? e.ctrlKey : e.metaKey)) return;
       if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
       e.preventDefault();
       const pane: 0 | 1 = e.code === "ArrowLeft" ? 0 : 1;
@@ -332,7 +333,7 @@ export function App() {
     // ⌘⇧↓/↑(응답 필요 세션으로)는 입력창·에디터·터미널에 포커스가 있으면 편집 명령("끝까지 선택")이 먼저 처리해
     // 메뉴 가속기까지 오지 않는다. 캡처 단계에서 먼저 받아 막는다 — 막힌 키는 메뉴로도 가지 않으니 두 번 돌지 않는다.
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || !e.shiftKey || e.altKey || e.ctrlKey) return;
+      if (!isMod(e) || !e.shiftKey || e.altKey || (IS_MAC ? e.ctrlKey : e.metaKey)) return;
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
       e.preventDefault();
       e.stopPropagation();

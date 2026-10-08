@@ -16,7 +16,7 @@ export const toolCard: DeepPartial<typeof ko> = {
   todoDone: "{{done}}/{{total}} done",
   openInEditor: "Open in editor",
   openInEditorLines: "Open in editor (line {{range}})",
-  runInTerminalHint: "Put it in the terminal. Press Enter yourself (⌥-click: run right away)",
+  runInTerminalHint: "Put it in the terminal. Press Enter yourself ({{kAlt}}click: run right away)",
   subagent: "Subagent",
   aiApproved: "AI approved",
   aiApprovedHint: "This action needed approval, and an AI reviewed and allowed it.",

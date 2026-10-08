@@ -14,6 +14,7 @@ import { linkTargetFor, setLinkOpenMode } from "../link-open";
 import { RunInTerminalContext, isShellLanguage, normalizeCommand } from "../terminal-run";
 import { dirnameAny, relativeAny } from "@shared/any-path";
 import { resolveUnder } from "../doc-path";
+import { IS_WIN } from "../platform";
 
 // ===== 답변 속 파일 참조("ProductByPoController.kt:63") → 에디터로 열기 =====
 // rehype 단계에서 모양이 파일 참조인 텍스트·인라인 코드에 data-file-* 를 달아 두고, FileRef 가 렌더될 때 main 의 file:locate 로
@@ -278,10 +279,11 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
   const lang = Children.toArray(children)
     .map((c) => (isValidElement<{ className?: string }>(c) ? c.props.className : undefined))
     .find(Boolean);
-  if (!run || !isShellLanguage(lang)) return <pre {...rest}>{children}</pre>;
+  if (!run || !isShellLanguage(lang, IS_WIN)) return <pre {...rest}>{children}</pre>;
   const send = (e: MouseEvent<HTMLButtonElement>) => {
     const cmd = normalizeCommand(ref.current?.querySelector("code")?.textContent ?? "");
-    if (cmd) run(cmd, e.altKey);
+    // Windows 는 바로 실행하지 않는다(TerminalPanel 이 프롬프트를 알아볼 수 없다)
+    if (cmd) run(cmd, !IS_WIN && e.altKey);
   };
   return (
     <div className="group relative" data-shell-block>
@@ -291,7 +293,7 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
       <button
         onClick={send}
         className="absolute right-2 top-2 flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-muted opacity-0 shadow-sm hover:text-fg group-hover:opacity-100 focus:opacity-100"
-        title={t("chat.markdown.runInTerminalHint")}
+        title={t(IS_WIN ? "chat.markdown.runInTerminalHintPasteOnly" : "chat.markdown.runInTerminalHint")}
         data-run-in-terminal
       >
         <Icon name="terminal" size={11} />

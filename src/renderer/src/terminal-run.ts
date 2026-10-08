@@ -119,9 +119,10 @@ export function normalizeCommand(text: string): string {
   return text.replace(/\r\n?/g, "\n").replace(/^\n+|\s+$/g, "");
 }
 
-/** 코드 블록 언어가 셸이면 "터미널에서 실행" 을 붙인다. */
-export function isShellLanguage(className: string | undefined): boolean {
-  return /(^|\s)language-(bash|sh|zsh|shell)(\s|$)/.test(className ?? "");
+/** 코드 블록 언어가 이 운영체제의 셸이면 "터미널에서 실행" 을 붙인다. Windows 터미널은 PowerShell 이라 bash 류 대신 PowerShell·cmd 블록에. */
+export function isShellLanguage(className: string | undefined, win = false): boolean {
+  const re = win ? /(^|\s)language-(powershell|pwsh|ps1|ps|cmd|bat|batch)(\s|$)/ : /(^|\s)language-(bash|sh|zsh|shell)(\s|$)/;
+  return re.test(className ?? "");
 }
 
 /**

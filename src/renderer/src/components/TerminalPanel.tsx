@@ -28,6 +28,7 @@ import { LinkChooser } from "./LinkChooser";
 import { PaneSplitContext } from "../pane-focus";
 import { shortenHome } from "@shared/path-display";
 import { startDrag } from "../drag";
+import { IS_MAC, IS_WIN, isMod } from "../platform";
 
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 260;
@@ -286,6 +287,20 @@ export function TerminalPanel({
       const t = setTimeout(() => setRunTick((x) => x + 1), 120);
       return () => clearTimeout(t);
     };
+    // Windows(PowerShell)는 프롬프트에서 bracketed paste 를 켜지 않아 "입력을 기다리나" 를 알 수 없다 — 기다리지 않고 넣기만 하고
+    // Enter 는 늘 사용자에게 맡긴다. 여러 줄은 넣는 순간 줄마다 실행되므로 넣지 않고 복사한다.
+    if (IS_WIN) {
+      takeTerminalRun(tabId);
+      if (req.command.includes("\n")) {
+        navigator.clipboard.writeText(req.command).then(
+          () => showNotice(tr("panel.terminal.copiedMultiline")),
+          () => showNotice(tr("panel.terminal.copyFailedNotReady")),
+        );
+      } else term.paste(req.command);
+      term.focus();
+      if (pendingTerminalRuns(tabId) > 0) return later();
+      return;
+    }
     if (!canDeliver(id)) return; // 앞서 넣은 것이 아직 실행되지 않았다 — 새 프롬프트가 오면 다시 깬다
     // 셸이 프롬프트에서 입력을 기다리나 — 일반 화면 + bracketed paste(zsh·bash·fish 는 프롬프트에서만 켠다). vim·less 는 alternate 화면이라 걸러지고,
     // 실행 중인 프로그램·bracketed paste 없는 REPL 은 모드가 꺼져 있어 걸러진다. 확실하지 않으면 넣지 않고 복사한다.
@@ -872,18 +887,31 @@ function TerminalView({
     // ⌘⇧A: 터미널 안에서 바로 첨부(셸로는 안 보낸다)
     // ⌘D 좌우 · ⌘⇧D 상하 분할. 보통의 터미널 앱과 같은 자리다. ⌘D 는 셸에 아무 뜻이 없어(EOF 는 ⌃D)
     // 가로채도 잃는 것이 없다. ⌘W·⌘K·⌘F 는 메뉴 가속기라 여기까지 오지 않고 App 이 패널에 넘긴다.
+    // Windows 는 Ctrl+D 가 EOF 라 분할은 Ctrl+Shift+D(좌우)·Ctrl+Shift+Alt+D(상하)다(shared/app-shortcuts).
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === "keydown" && e.metaKey && e.shiftKey && e.code === "KeyA") {
+      if (e.type === "keydown" && isMod(e) && e.shiftKey && e.code === "KeyA") {
         cbs.current.onAttach?.();
         return false;
       }
-      if (e.type === "keydown" && e.metaKey && e.code === "KeyD") {
-        cbs.current.onSplit?.(e.shiftKey ? "col" : "row");
+      if (e.type === "keydown" && isMod(e) && e.code === "KeyD" && (IS_MAC || e.shiftKey)) {
+        cbs.current.onSplit?.((IS_MAC ? e.shiftKey : e.altKey) ? "col" : "row");
         return false;
+      }
+      // Windows: Ctrl+C 는 선택이 있을 때만 복사하고, 없으면 셸에 보낸다(SIGINT). Ctrl+Shift+C 는 늘 복사.
+      // Ctrl+V·Ctrl+Shift+V 는 xterm 이 ^V 로 보내지 않게 넘겨 브라우저의 붙여넣기(paste 이벤트)로 들어가게 한다.
+      if (IS_WIN && e.type === "keydown" && e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.code === "KeyC" && (e.shiftKey || term.hasSelection())) {
+          const sel = term.getSelection();
+          if (sel) void navigator.clipboard.writeText(sel);
+          term.clearSelection();
+          e.preventDefault();
+          return false;
+        }
+        if (e.code === "KeyV") return false;
       }
       // ⌘⌥방향키: 옆 칸으로. 옮겼으면 preventDefault 로 표시해 채팅 칸 전환(App)이 받지 않게 한다.
       // 그 방향에 칸이 없을 때 채팅 화면이 나뉘어 있고 좌우면 셸에 넘기지 않고 App 이 옆 채팅 칸으로 옮기게 두고, 아니면 셸에 넘긴다.
-      if (e.type === "keydown" && e.metaKey && e.altKey && ARROW_DIR[e.code]) {
+      if (e.type === "keydown" && isMod(e) && e.altKey && ARROW_DIR[e.code]) {
         if (cbs.current.onFocusPane?.(ARROW_DIR[e.code])) {
           e.preventDefault();
           return false;
@@ -891,8 +919,8 @@ function TerminalView({
         return !(cbs.current.chatSplit && (e.code === "ArrowLeft" || e.code === "ArrowRight"));
       }
       // ⌘← / ⌘→: 줄 처음 / 끝. Mac 텍스트 필드와 같은 손놀림. iTerm 기본값처럼 ^A/^E 를 보낸다 —
-      // Home/End 시퀀스는 zsh 기본 키맵에 없지만 ^A/^E 는 zsh·bash·fish·REPL 이 다 안다.
-      if (e.type === "keydown" && e.metaKey && !e.altKey && !e.shiftKey && !e.ctrlKey && (e.code === "ArrowLeft" || e.code === "ArrowRight")) {
+      // Home/End 시퀀스는 zsh 기본 키맵에 없지만 ^A/^E 는 zsh·bash·fish·REPL 이 다 안다. Windows 는 Home/End 키가 있어 두지 않는다.
+      if (IS_MAC && e.type === "keydown" && e.metaKey && !e.altKey && !e.shiftKey && !e.ctrlKey && (e.code === "ArrowLeft" || e.code === "ArrowRight")) {
         term.input(e.code === "ArrowLeft" ? "\x01" : "\x05");
         return false;
       }

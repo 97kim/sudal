@@ -40,6 +40,11 @@ export const main: DeepPartial<typeof ko> = {
     nextAttention: "Next Session Needing a Reply",
     prevAttention: "Previous Session Needing a Reply",
     window: "Window",
+    edit: "Edit",
+    help: "Help",
+    about: "About Sudal",
+    settings: "Settings…",
+    quit: "Exit",
   },
   notify: {
     bgDone: "Background task finished",

@@ -13,7 +13,7 @@ export const toolCard = {
   todoDone: "{{done}}/{{total}} 완료",
   openInEditor: "에디터로 열기",
   openInEditorLines: "에디터로 열기 ({{range}}줄)",
-  runInTerminalHint: "터미널에 넣습니다. Enter 는 직접 치세요 (⌥클릭: 바로 실행)",
+  runInTerminalHint: "터미널에 넣습니다. Enter 는 직접 치세요 ({{kAlt}}클릭: 바로 실행)",
   subagent: "하위 에이전트",
   aiApproved: "AI 승인",
   aiApprovedHint: "승인이 필요한 작업이라 AI가 검토하고 허용했어요.",

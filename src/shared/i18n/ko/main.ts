@@ -40,6 +40,12 @@ export const main = {
     nextAttention: "다음 응답 필요 세션",
     prevAttention: "이전 응답 필요 세션",
     window: "창",
+    // Windows 전용(macOS 는 앱 메뉴가 맡는다)
+    edit: "편집",
+    help: "도움말",
+    about: "Sudal 정보",
+    settings: "설정…",
+    quit: "끝내기",
   },
   notify: {
     bgDone: "백그라운드 작업 완료",

@@ -6,6 +6,7 @@ import { PERMISSION_POLICIES, type PermissionPolicy } from "@shared/chat-events"
 import type { FanoutStartDto, Provider } from "@shared/ipc";
 import { FANOUT_MAX_VARIANTS, FANOUT_MIN_VARIANTS, PROVIDER_NAME, variantLabel } from "@shared/fanout";
 import { Icon } from "./Icon";
+import { sc } from "../platform";
 import { ProviderLogo } from "./ProviderLogo";
 import { modelOptions, useModels } from "../models";
 import { Modal } from "./Modal";
@@ -186,7 +187,7 @@ export function FanoutModal({
           onClick={() => void start()}
           disabled={!prompt.trim() || busy}
           className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-on-accent hover:bg-accent/90 disabled:opacity-40"
-          title="⌘↩"
+          title={sc("Mod+Enter")}
           data-fanout-start
         >
           <Icon name="play" size={10} />

@@ -88,7 +88,7 @@ export const settings: DeepPartial<typeof ko> = {
   },
   link: {
     title: "How links open",
-    description: "Choose where web links in chats open. ⌘-click opens the default browser and ⌥-click opens the in-app browser. ⇧-click lets you choose again.",
+    description: "Choose where web links in chats open. {{kMod}}click opens the default browser and {{kAlt}}click opens the in-app browser. {{kShift}}click lets you choose again.",
     options: {
       ask: { label: "Ask every time", hint: "Choose where to open each link. Turn on \"Remember\" in the chooser to reuse your choice." },
       app: { label: "In-app browser", hint: "Opens in a browser tab in the right panel." },

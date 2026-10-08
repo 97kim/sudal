@@ -11,6 +11,7 @@ import {
 } from "@shared/workspace-model";
 import { moveNextTo, neighborOf } from "@shared/reorder";
 import { Icon } from "./Icon";
+import { scApp } from "../platform";
 import { ProviderLogo } from "./ProviderLogo";
 import { Logo } from "./Logo";
 import { SidebarLimits } from "./SidebarLimits";
@@ -444,7 +445,7 @@ export function Sidebar({
           <span className="flex-1 text-left">
             {activeWs ? t("nav.sidebar.newSession") : t("nav.sidebar.addWorkspace")}
           </span>
-          {activeWs && <kbd className="mono text-[10px] opacity-70">⌘T</kbd>}
+          {activeWs && <kbd className="mono text-[10px] opacity-70">{scApp("newTab")}</kbd>}
         </button>
         <button
           onClick={onSearch}
@@ -454,7 +455,7 @@ export function Sidebar({
         >
           <Icon name="search" size={13} />
           <span className="flex-1 text-left">{t("nav.sidebar.searchChats")}</span>
-          <kbd className="mono text-[10px] opacity-70">⌘F</kbd>
+          <kbd className="mono text-[10px] opacity-70">{scApp("search")}</kbd>
         </button>
         {attentionCount > 0 && (
           <button
@@ -465,7 +466,7 @@ export function Sidebar({
           >
             <Icon name="alert" size={13} />
             <span className="flex-1 text-left">{t("nav.sidebar.attentionJump", { count: attentionCount })}</span>
-            <kbd className="mono text-[10px] opacity-70">⌘⇧↓</kbd>
+            <kbd className="mono text-[10px] opacity-70">{scApp("nextAttention")}</kbd>
           </button>
         )}
       </div>

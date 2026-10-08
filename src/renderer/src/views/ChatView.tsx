@@ -35,6 +35,7 @@ import { appendComposerDraft, loadComposerDraft } from "../composer-draft";
 import { loadTerminalDock, loadTerminalOpen, loadTerminalWidth, saveTerminalDock, saveTerminalOpen, saveTerminalWidth, TERMINAL_DOCK_EVENT, type TerminalDock } from "../terminal-panes";
 import { RunInTerminalContext, requestTerminalRun } from "../terminal-run";
 import { Icon } from "../components/Icon";
+import { scApp } from "../platform";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { MessageList } from "../components/MessageList";
 import { PermissionPrompt } from "../components/PermissionPrompt";
@@ -652,7 +653,7 @@ export function ChatView({
               onClose={() => setTerminalMenuOpen(false)}
               items={(["bottom", "right"] as const).map((d) => ({
                 key: `terminal-${d}`,
-                label: `${t(`chat.header.terminalDock.${d}.label`)}${d === terminalDock ? " · ⌘J" : ""}`,
+                label: `${t(`chat.header.terminalDock.${d}.label`)}${d === terminalDock ? ` · ${scApp("terminal")}` : ""}`,
                 icon: d === "bottom" ? "panelBottom" : "panelRight",
                 hint: t(`chat.header.terminalDock.${d}.hint`),
                 onSelect: () => openTerminalAt(d),
