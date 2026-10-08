@@ -796,6 +796,8 @@ export interface ChatEventEnvelope {
 
 /** preload 가 window.sudal 로 노출하는 API. */
 export interface SudalApi {
+  /** process.platform. 화면이 첫 렌더부터 알아야 해서(단축키 표기·창 여백) 동기 값으로 둔다. */
+  platform: string;
   app: {
     info(): Promise<AppInfoDto>;
     /** GitHub 최신 릴리즈와 지금 버전을 비교한다. */

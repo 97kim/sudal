@@ -25,6 +25,7 @@ import {
 } from "@shared/ipc";
 
 const api: SudalApi = {
+  platform: process.platform,
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),
     checkUpdate: () => ipcRenderer.invoke(IPC.appUpdateCheck),
