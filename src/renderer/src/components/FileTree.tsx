@@ -16,12 +16,13 @@ import { Icon } from "./Icon";
 import { CheckMark } from "./CheckMark";
 import { closeEditorPaths, dirtyEditorPathsUnder, renameEditorPaths } from "../editor-tabs";
 import { shortenHome } from "@shared/path-display";
+import { basenameAny, dirnameAny, joinAny, relativeAny } from "@shared/any-path";
 
 /** 편집 중(저장 안 됨)인 파일을 건드리는 조작은 거부한다 — 이름 변경·삭제는 에디터 버퍼를 조용히 버리기 때문. */
 function dirtyBlockMessage(t: TFunction, path: string): string | null {
   const d = dirtyEditorPathsUnder(path);
   if (d.length === 0) return null;
-  const name = d[0].split("/").pop() ?? d[0];
+  const name = basenameAny(d[0]);
   return d.length === 1 ? t("panel.fileTree.dirtyOne", { name }) : t("panel.fileTree.dirtyMany", { count: d.length });
 }
 
@@ -83,9 +84,9 @@ function buildStatus(prefix: string, changes: GitChangeDto[]): GitStatus {
   return { files, dirs };
 }
 
-/** 트리 항목의 절대 경로 → 트리 루트 기준 상대 경로. */
+/** 트리 항목의 절대 경로 → 트리 루트 기준 상대 경로. git 키처럼 / 구분이라 Windows 의 \ 경로도 맞는다. */
 function relToRoot(root: string, abs: string): string {
-  return abs.startsWith(`${root}/`) ? abs.slice(root.length + 1) : abs;
+  return relativeAny(abs, root) || abs;
 }
 
 /** 펼쳐도 보통 쓸모없는 큰 폴더. 숨기진 않고 흐리게만. */
@@ -124,7 +125,7 @@ export function FileTree({ root }: { root: string }) {
       window.removeEventListener("keydown", close);
     };
   }, [menu]);
-  const parentOf = (p: string) => p.split("/").slice(0, -1).join("/") || "/";
+  const parentOf = (p: string) => dirnameAny(p);
   const doDelete = async (entry: DirEntryDto) => {
     setConfirmDelete(null);
     const blocked = dirtyBlockMessage(t, entry.path);
@@ -349,7 +350,7 @@ function DirChildren({ dir, depth }: { dir: string; depth: number }) {
             placeholder={creating.kind === "dir" ? t("panel.fileTree.newFolderName") : t("panel.fileTree.newFileName")}
             onCancel={() => ops.setPending(null)}
             onCommit={async (name) => {
-              const r = await window.sudal.files.create(ops.root, `${dir}/${name}`, creating.kind);
+              const r = await window.sudal.files.create(ops.root, joinAny(dir, name), creating.kind);
               if (!r.ok) return r.error;
               ops.setPending(null);
               ops.refreshDir(dir);
@@ -532,7 +533,7 @@ function NameInput({
 
 function RenameRow({ entry, depth, ops }: { entry: DirEntryDto; depth: number; ops: TreeOps }) {
   const { t } = useTranslation();
-  const parent = entry.path.split("/").slice(0, -1).join("/") || "/";
+  const parent = dirnameAny(entry.path);
   return (
     <NameInput
       depth={depth + (entry.kind === "dir" ? 0 : 1)}
@@ -541,7 +542,7 @@ function RenameRow({ entry, depth, ops }: { entry: DirEntryDto; depth: number; o
       placeholder={t("panel.fileTree.newName")}
       onCancel={() => ops.setPending(null)}
       onCommit={async (name) => {
-        const to = `${parent}/${name}`;
+        const to = joinAny(parent, name);
         const blocked = dirtyBlockMessage(t, entry.path);
         if (blocked) return blocked;
         const r = await window.sudal.files.rename(ops.root, entry.path, to);

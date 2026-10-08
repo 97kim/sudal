@@ -9,6 +9,8 @@ import { contextUsage, type SessionState } from "@shared/session-state";
 import { useOpenFile } from "./FileViewer";
 import { Icon } from "./Icon";
 import { shortenHome } from "@shared/path-display";
+import { basenameAny, joinAny } from "@shared/any-path";
+import { isMod } from "../platform";
 import { useNow } from "../hooks/useNow";
 
 const POLICY_IDS = PERMISSION_POLICIES;
@@ -55,7 +57,7 @@ export function ContextPanel({
             <>
               <div className="flex items-center gap-2 text-[14px] font-semibold">
                 <Icon name="folder" size={14} className="text-muted" />
-                {git?.name ?? cwd.split("/").pop()}
+                {git?.name ?? basenameAny(cwd)}
               </div>
               <div className="mono mt-1 truncate text-muted" title={cwd}>
                 {shortenHome(cwd)}
@@ -109,7 +111,7 @@ export function ContextPanel({
               <ul className="flex flex-col gap-px" data-git-changes>
                 {(showAll ? changes : changes.slice(0, 12)).map((c) => {
                   const on = selected.has(c.path);
-                  const open = () => openFile(git ? `${git.root}/${c.path}` : c.path);
+                  const open = () => openFile(git ? joinAny(git.root, c.path) : c.path);
                   return (
                     <li key={c.path}>
                       {/* 행 전체가 토글. 파일 열기는 오른쪽 hover 아이콘 또는 더블클릭. */}
@@ -173,7 +175,7 @@ export function ContextPanel({
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && e.metaKey) {
+                    if (e.key === "Enter" && isMod(e)) {
                       e.preventDefault();
                       void commit();
                     }

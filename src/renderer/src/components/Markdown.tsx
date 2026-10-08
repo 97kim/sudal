@@ -12,6 +12,8 @@ import { Icon } from "./Icon";
 import { LinkChooser } from "./LinkChooser";
 import { linkTargetFor, setLinkOpenMode } from "../link-open";
 import { RunInTerminalContext, isShellLanguage, normalizeCommand } from "../terminal-run";
+import { dirnameAny, relativeAny } from "@shared/any-path";
+import { resolveUnder } from "../doc-path";
 
 // ===== 답변 속 파일 참조("ProductByPoController.kt:63") → 에디터로 열기 =====
 // rehype 단계에서 모양이 파일 참조인 텍스트·인라인 코드에 data-file-* 를 달아 두고, FileRef 가 렌더될 때 main 의 file:locate 로
@@ -160,7 +162,7 @@ function FileRef({ path, line, endLine, as, className, children }: FileRefProps)
           <span className="px-2 pb-1 pt-0.5 text-[10px] text-muted">{t("chat.markdown.ambiguous")}</span>
           {found.slice(0, 8).map((p) => (
             <button key={p} role="menuitem" onClick={() => open(p)} className="mono truncate rounded-md px-2 py-1.5 text-left text-[11.5px] hover:bg-panel-2" title={p}>
-              {cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p}
+              {(cwd && relativeAny(p, cwd)) || p}
             </button>
           ))}
         </span>
@@ -313,13 +315,8 @@ async function loadDocImage(src: string, base: DocBase): Promise<string | null> 
   if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return null;
   const clean = decodeURIComponent(src.replace(/[?#].*$/, ""));
   // GitHub 처럼 "/" 로 시작하면 저장소(cwd) 기준, 아니면 문서가 있는 폴더 기준
-  const dir = clean.startsWith("/") ? base.cwd : base.file.slice(0, base.file.lastIndexOf("/"));
-  const parts: string[] = [];
-  for (const seg of `${dir}/${clean}`.split("/")) {
-    if (seg === "..") parts.pop();
-    else if (seg && seg !== ".") parts.push(seg);
-  }
-  const view = await window.sudal.files.read(base.cwd, "/" + parts.join("/"));
+  const dir = clean.startsWith("/") ? base.cwd : dirnameAny(base.file);
+  const view = await window.sudal.files.read(base.cwd, resolveUnder(dir, clean));
   return view.image?.dataUrl ?? null;
 }
 

@@ -12,6 +12,7 @@ import { lintGutter } from "@codemirror/lint";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { currentTheme, onThemeChange } from "../theme";
+import { basenameAny } from "@shared/any-path";
 
 const theme = EditorView.theme({
   "&": { height: "100%", fontSize: "11.5px", backgroundColor: "var(--color-inset)" },
@@ -53,7 +54,7 @@ function themeExtension(dark: boolean): Extension {
 }
 
 async function languageFor(path: string): Promise<Extension | null> {
-  const name = path.split("/").pop() ?? path;
+  const name = basenameAny(path);
   const desc = languages.find((l) => l.filename?.test(name) || l.extensions.some((e) => name.toLowerCase().endsWith(`.${e}`)));
   if (!desc) return null;
   try {

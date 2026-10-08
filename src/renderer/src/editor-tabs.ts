@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { TFunction } from "i18next";
 import { kvGet, kvSet } from "./kv-store";
+import { isAbsoluteAny, isUnderAny, joinAny, relativeAny, samePath } from "@shared/any-path";
 
 export interface EditorTabsState {
   files: string[];
@@ -140,6 +141,8 @@ export function getLastPane(tabId: string): "chat" | "editor" {
 export function openEditorFile(tabId: string, path: string, at?: { line?: number; endLine?: number } | null): void {
   setLastPane(tabId, "editor");
   const cur = getEditorTabs(tabId);
+  // Windows 에서는 같은 파일이 "C:/a" 와 "C:\a" 로 올 수 있다 — 이미 열린 표기를 그대로 쓴다
+  if (isAbsoluteAny(path)) path = cur.files.find((f) => isAbsoluteAny(f) && samePath(f, path)) ?? path;
   const files = cur.files.includes(path) ? [...cur.files] : [...cur.files, path];
   let over = files.length - MAX_EDITOR_FILES;
   for (let i = 0; over > 0 && i < files.length; ) {
@@ -278,7 +281,7 @@ export function setEditorFileDirty(tabId: string, path: string, dirty: boolean):
 export function dirtyEditorPathsUnder(path: string): string[] {
   ensureLoaded();
   const out = new Set<string>();
-  for (const st of states.values()) for (const f of st.dirty) if (f === path || f.startsWith(`${path}/`)) out.add(f);
+  for (const st of states.values()) for (const f of st.dirty) if (isUnderAny(f, path)) out.add(f);
   return [...out];
 }
 
@@ -335,7 +338,10 @@ export function useEditorTabs(tabId: string): EditorTabsState {
 /** 파일이 이름을 바꾸거나 옮겨졌다: 열려 있던 모든 채팅 탭의 에디터 탭 경로를 따라 바꾼다(폴더면 하위 경로까지). */
 export function renameEditorPaths(from: string, to: string): void {
   ensureLoaded();
-  const mapPath = (p: string) => (p === from ? to : p.startsWith(`${from}/`) ? `${to}${p.slice(from.length)}` : p);
+  const mapPath = (p: string) => {
+    const rel = relativeAny(p, from);
+    return rel === null ? p : rel === "" ? to : joinAny(to, rel);
+  };
   for (const [p, d] of [...drafts]) {
     const np = mapPath(p);
     if (np !== p) {
@@ -345,7 +351,7 @@ export function renameEditorPaths(from: string, to: string): void {
     }
   }
   for (const [tabId, st] of states) {
-    if (!st.files.some((f) => f === from || f.startsWith(`${from}/`))) continue;
+    if (!st.files.some((f) => isUnderAny(f, from))) continue;
     set(tabId, { ...st, files: st.files.map(mapPath), active: st.active ? mapPath(st.active) : null, dirty: st.dirty.map(mapPath) });
   }
 }
@@ -354,13 +360,13 @@ export function renameEditorPaths(from: string, to: string): void {
 export function closeEditorPaths(path: string): void {
   ensureLoaded();
   for (const p of [...drafts.keys()]) {
-    if (p === path || p.startsWith(`${path}/`)) {
+    if (isUnderAny(p, path)) {
       drafts.delete(p);
       scheduleSave();
     }
   }
   for (const [tabId, st] of states) {
-    const files = st.files.filter((f) => !(f === path || f.startsWith(`${path}/`)));
+    const files = st.files.filter((f) => !isUnderAny(f, path));
     if (files.length === st.files.length) continue;
     // 활성 탭이 닫혔으면 closeEditorFile 처럼 그 자리의 이웃을 고른다(맨 끝으로 점프하지 않게)
     const i = st.active ? st.files.indexOf(st.active) : -1;

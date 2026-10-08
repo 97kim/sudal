@@ -10,6 +10,8 @@ import { buildDiff, CodeTable, DiffTable, highlight } from "./FileViewer";
 import { Icon } from "./Icon";
 import { CheckMark, KindBadge } from "./CheckMark";
 import { Modal } from "./Modal";
+import { joinAny } from "@shared/any-path";
+import { isMod } from "../platform";
 
 const KIND_CLASS: Record<GitChangeDto["kind"], string> = {
   added: "text-ok",
@@ -51,7 +53,7 @@ export function ChangeReview({
     let alive = true;
     setFile(null);
     setFileError(null);
-    const abs = g.git ? `${g.git.root}/${current}` : current;
+    const abs = g.git ? joinAny(g.git.root, current) : current;
     window.sudal.files
       .read(cwd, abs)
       .then((f) => alive && setFile(f))
@@ -223,7 +225,7 @@ export function ChangeReview({
           value={g.message}
           onChange={(e) => g.setMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && e.metaKey) {
+            if (e.key === "Enter" && isMod(e)) {
               e.preventDefault();
               void g.commit();
             }

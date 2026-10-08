@@ -55,3 +55,8 @@ test("pickCandidate: 꼬리가 정확히 맞는 후보를, 없으면 첫 후보�
   assert.equal(pickCandidate(["/r/x/a.ts", "/r/src/a.ts"], "./src/a.ts"), "/r/src/a.ts");
   assert.equal(pickCandidate(["/r/x/a.ts", "/r/src/a.ts"], "zzz/a.ts"), "/r/x/a.ts");
 });
+
+test("pickCandidate: Windows 경로(\\ 구분)도 꼬리를 맞춘다", () => {
+  assert.equal(pickCandidate(["C:\\r\\x\\a.ts", "C:\\r\\src\\a.ts"], "./src/a.ts"), "C:\\r\\src\\a.ts");
+  assert.equal(pickCandidate(["C:\\r\\x\\a.ts", "C:\\r\\src\\a.ts"], "src\\a.ts"), "C:\\r\\src\\a.ts");
+});
