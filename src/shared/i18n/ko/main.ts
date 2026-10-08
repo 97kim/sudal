@@ -131,7 +131,7 @@ export const main = {
     pathUnsupportedWin: "사용자 Path 값의 형식이 예상과 달라 건드리지 않았습니다",
     pathUnverifiedWin: "저장한 뒤 다시 읽었을 때 폴더가 보이지 않았습니다",
     pathTooLongWin: "CLI는 설치했지만 사용자 환경 변수 Path가 길어 추가하지 않았습니다. 더 늘리면 명령 프롬프트가 Path를 통째로 무시합니다. 쓰지 않는 Path 항목을 정리한 뒤 다시 설치를 누르거나, 터미널에서 {{path}}로 직접 실행하세요.",
-    pathNotNotifiedWin: "실행 중인 프로그램에 바뀐 Path를 알리지 못했습니다. 터미널에서 sudal을 찾지 못하면 로그아웃했다가 다시 로그인하세요.",
+    pathNotNotifiedWin: "실행 중인 프로그램에 바뀐 Path를 알리지 못했을 수 있습니다. 터미널에서 sudal을 찾지 못하면 로그아웃했다가 다시 로그인하세요.",
     noAgents: "Claude Code(~/.claude)도 Codex(~/.codex)도 이 PC 에 없습니다.",
   },
   update: {

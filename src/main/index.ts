@@ -1133,8 +1133,8 @@ async function installWindowsCliShim(addToPath: boolean): Promise<InstallCliResu
       // 이 앱이 새로 여는 터미널·에이전트도 바로 찾게 한다(이미 열린 터미널은 다시 열어야 한다)
       process.env.PATH = appendPathEntry(process.env.PATH ?? "", dir);
       cliDiscovery().invalidate();
-      // 알림이 확실히 실패했을 때만 덧붙인다(null 은 알 수 없음 — 대부분 전달된다)
-      return { ok: true, path: target, onPath: true, ...(r.status === "added" ? { pathAdded: true, ...(r.notified === false ? { warning: mt("main.cli.pathNotNotifiedWin") } : {}) } : {}) };
+      // 알림을 보냈다고 확인한 때가 아니면(실패·시도도 못 함) 덧붙인다 — 그때는 탐색기가 옛 Path 를 들고 있을 수 있다
+      return { ok: true, path: target, onPath: true, ...(r.status === "added" ? { pathAdded: true, ...(r.notified !== true ? { warning: mt("main.cli.pathNotNotifiedWin") } : {}) } : {}) };
     }
     // 길이 초과는 손으로 더하라고 하면 막은 일을 그대로 하게 되므로 따로 안내한다
     if (r.ok && r.status === "tooLong") return { ok: true, path: target, onPath: false, hint: mt("main.cli.pathTooLongWin", { path: target }) };

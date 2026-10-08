@@ -130,7 +130,7 @@ export const main: DeepPartial<typeof ko> = {
     pathUnsupportedWin: "your user Path value has an unexpected type, so it was left alone",
     pathUnverifiedWin: "the folder was not there when Path was read back after saving",
     pathTooLongWin: "The CLI is installed, but your user Path is too long to add to. Making it longer would make Command Prompt ignore Path entirely. Remove unused Path entries and click Install again, or run {{path}} directly in a terminal.",
-    pathNotNotifiedWin: "Running programs could not be told about the new Path. If terminals can't find sudal, sign out and back in.",
+    pathNotNotifiedWin: "Running programs may not have been told about the new Path. If terminals can't find sudal, sign out and back in.",
     noAgents: "Neither Claude Code (~/.claude) nor Codex (~/.codex) is installed on this computer.",
   },
   update: {
