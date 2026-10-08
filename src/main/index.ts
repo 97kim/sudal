@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   Notification,
+  nativeImage,
   powerMonitor,
   session,
   shell,
@@ -91,6 +92,7 @@ import { Store } from "./persistence";
 import { RendererState } from "./renderer-state";
 import { HOOK_APPEND_SCRIPT, claudeHookCmdFile, claudeHookSettings, shellQuote } from "./transcript-mirror";
 import { cmdQuote, nodeCmdWrapper } from "./win-proc";
+import { dotBitmap } from "./badge-dot";
 import { AttentionTracker } from "./attention";
 import { SnippetStore } from "./snippets";
 import { LspManager } from "./lsp";
@@ -1216,8 +1218,14 @@ function claudeHookCommand(hookLog: string): string | null {
 /** 응답 필요 세션 수를 Dock 배지로. 0 이면 지운다. */
 function updateDockBadge() {
   const n = attention.count();
+  if (process.platform === "win32") {
+    // Windows 는 Dock 이 없다 — 작업 표시줄 단추에 빨간 점(오버레이 아이콘)을 얹는다.
+    liveMainWindow()?.setOverlayIcon(n > 0 ? (badgeDot ??= nativeImage.createFromBitmap(dotBitmap(16), { width: 16, height: 16 })) : null, n > 0 ? String(n) : "");
+    return;
+  }
   app.dock?.setBadge(n > 0 ? String(n) : "");
 }
+let badgeDot: Electron.NativeImage | null = null;
 
 // ===== 사용량 =====
 
@@ -2867,6 +2875,11 @@ function createWindow(): BrowserWindow {
     otter?.refresh();
   });
   win.on("blur", () => otter?.refresh());
+  // macOS 는 창을 다 닫아도 앱이 남지만 Windows 는 메인 창을 닫으면 끝난다. 수달 창도 창이라
+  // window-all-closed 가 오지 않으니 여기서 끝낸다(수달 창 때문에 프로세스가 남지 않게).
+  if (process.platform !== "darwin") win.on("closed", () => app.quit());
+  // 창을 새로 만들면 작업 표시줄 배지도 다시 얹는다.
+  if (process.platform === "win32") win.once("ready-to-show", () => updateDockBadge());
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
@@ -2889,6 +2902,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showMainWindow());
 }
 app.whenReady().then(async () => {
+  // Windows 알림·작업 표시줄이 이 앱을 알아보는 이름. electron-builder 의 appId 와 같아야 설치본의 바로가기와 묶인다.
+  if (process.platform === "win32") app.setAppUserModelId("io.github.97kim.sudal");
   bootstrap();
   registerIpc();
   buildMenu();
