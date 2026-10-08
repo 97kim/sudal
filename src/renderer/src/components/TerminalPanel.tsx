@@ -291,9 +291,11 @@ export function TerminalPanel({
     // Enter 는 늘 사용자에게 맡긴다. 여러 줄은 넣는 순간 줄마다 실행되므로 넣지 않고 복사한다.
     if (IS_WIN) {
       takeTerminalRun(tabId);
-      if (req.command.includes("\n")) {
+      // vim·less 같은 대체 화면이면 그 프로그램에 입력되니(vim 일반 모드는 Enter 없이도 명령이 된다) 넣지 않고 복사한다
+      const alternate = term.buffer.active.type === "alternate";
+      if (req.command.includes("\n") || alternate) {
         navigator.clipboard.writeText(req.command).then(
-          () => showNotice(tr("panel.terminal.copiedMultiline")),
+          () => showNotice(tr(alternate ? "panel.terminal.copiedNotReady" : "panel.terminal.copiedMultiline")),
           () => showNotice(tr("panel.terminal.copyFailedNotReady")),
         );
       } else term.paste(req.command);

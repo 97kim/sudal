@@ -39,3 +39,12 @@ test("formatShortcut: macOS 기호, 그 밖은 Ctrl+", () => {
   assert.equal(formatShortcut("Mod+Alt+Left", false), "Ctrl+Alt+←");
   assert.equal(formatShortcut("Mod+Enter", true), "⌘↩");
 });
+
+test("any-path: macOS 경로의 \\ 는 구분자가 아니라 이름의 글자다", () => {
+  assert.equal(samePath("/repo/a\\b.ts", "/repo/a/b.ts"), false);
+  assert.equal(basenameAny("/repo/a\\b.ts"), "a\\b.ts");
+  assert.equal(dirnameAny("/repo/a\\b.ts"), "/repo");
+  assert.equal(isUnderAny("/repo/a\\b.ts", "/repo/a"), false);
+  // / 없이 \ 만 쓴 상대 경로는 Windows 표기로 본다
+  assert.equal(basenameAny("src\\a.ts"), "a.ts");
+});

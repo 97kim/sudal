@@ -12,13 +12,25 @@ function isWinStyle(p: string): boolean {
   return /^[A-Za-z]:/.test(p) || p.startsWith("\\\\");
 }
 
+/**
+ * \ 를 구분자로 보나. macOS·Linux 에서는 \ 가 파일 이름에 들어갈 수 있는 글자라("a\b.ts") Windows 표기일 때만 —
+ * 드라이브 문자·UNC 이거나, / 없이 \ 만 쓴 상대 경로("src\a.ts").
+ */
+function winSeps(p: string): boolean {
+  return isWinStyle(p) || (p.includes("\\") && !p.includes("/"));
+}
+
+function lastSep(p: string): number {
+  return winSeps(p) ? Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) : p.lastIndexOf("/");
+}
+
 export function toPosix(p: string): string {
-  return p.replace(/\\/g, "/");
+  return winSeps(p) ? p.replace(/\\/g, "/") : p;
 }
 
 /** 끝의 구분자를 뗀다. 루트("/", "C:\")는 그대로. */
 export function trimSep(p: string): string {
-  const t = p.replace(/[\\/]+$/, "");
+  const t = p.replace(winSeps(p) ? /[\\/]+$/ : /\/+$/, "");
   if (t === "") return p.slice(0, 1) || p;
   if (/^[A-Za-z]:$/.test(t)) return p.slice(0, 3);
   return t;
@@ -26,14 +38,14 @@ export function trimSep(p: string): string {
 
 export function basenameAny(p: string): string {
   const t = trimSep(p);
-  const i = Math.max(t.lastIndexOf("/"), t.lastIndexOf("\\"));
+  const i = lastSep(t);
   return (i >= 0 ? t.slice(i + 1) : t) || t;
 }
 
 /** 부모 폴더. 루트의 부모는 루트 자신. */
 export function dirnameAny(p: string): string {
   const t = trimSep(p);
-  const i = Math.max(t.lastIndexOf("/"), t.lastIndexOf("\\"));
+  const i = lastSep(t);
   if (i < 0) return ".";
   // "/a" → "/", "C:\a" → "C:\"
   if (i === 0) return t.slice(0, 1);
@@ -43,10 +55,10 @@ export function dirnameAny(p: string): string {
 
 /** dir 이 쓰는 구분자로 이어 붙인다(Windows 표기면 \). name 은 / 로 나뉜 상대 경로여도 된다. */
 export function joinAny(dir: string, name: string): string {
-  const winSep = dir.includes("\\") || (isWinStyle(dir) && !dir.includes("/"));
-  const s = winSep ? "\\" : "/";
-  const rest = name.replace(/[\\/]+/g, s).replace(/^[\\/]+/, "");
-  return trimSep(dir).replace(/[\\/]$/, "") + s + rest;
+  const win = winSeps(dir);
+  const s = win && (dir.includes("\\") || !dir.includes("/")) ? "\\" : "/";
+  const rest = win ? name.replace(/[\\/]+/g, s).replace(/^[\\/]+/, "") : name.replace(/^\/+/, "");
+  return trimSep(dir).replace(win ? /[\\/]$/ : /\/$/, "") + s + rest;
 }
 
 /** 비교용 열쇠: / 로 맞추고 끝 구분자를 떼고, Windows 표기면 소문자로. */

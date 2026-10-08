@@ -1,6 +1,7 @@
 // 운영체제마다 다른 프로세스 다루기. macOS 는 detached 로 띄워 프로세스 그룹째 신호를 보내고,
 // Windows 에는 그룹 신호가 없어 taskkill /T 로 자식까지 끝낸다.
 import { spawn } from "node:child_process";
+import { cmdPathLiteral } from "./cli-shim";
 
 export const IS_WIN = process.platform === "win32";
 
@@ -46,7 +47,8 @@ export function cmdQuote(s: string): string {
  * Sudal 실행 파일을 node 로 돌려 스크립트를 실행하는 .cmd 내용. 훅 명령처럼 다른 프로그램이 셸로 부르는 자리에 쓴다.
  * ELECTRON_RUN_AS_NODE 는 이 .cmd 안에서만 켠다 — 부르는 쪽(CLI) env 에 넣으면 그 아래 Electron 앱까지 node 로 뜬다.
  * args 는 .cmd 안에서 그대로 쓰이는 문자열이다(%~dp0 같은 cmd 표기 가능).
+ * 실행 파일 경로는 cmdPathLiteral 로 — 설치 경로(%LOCALAPPDATA%\Programs)에 한글 사용자 이름이 들어가면 cmd 가 깨뜨린다.
  */
-export function nodeCmdWrapper(execPath: string, script: string, args: string[] = []): string {
-  return ["@echo off", "set ELECTRON_RUN_AS_NODE=1", [cmdQuote(execPath), script, ...args].join(" "), ""].join("\r\n");
+export function nodeCmdWrapper(execPath: string, script: string, args: string[] = [], env: NodeJS.ProcessEnv = process.env): string {
+  return ["@echo off", "set ELECTRON_RUN_AS_NODE=1", [cmdQuote(cmdPathLiteral(execPath, env)), script, ...args].join(" "), ""].join("\r\n");
 }

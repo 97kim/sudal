@@ -476,9 +476,11 @@ export async function steerCodexTurn(sessionKey: string, text: string, images: {
 
 /** 폴백: SDK exec 경로. 한 턴 = runStreamed 한 번, thread.started 의 id 로 다음 턴 resumeThread. */
 export async function runCodexTurnExec(runtime: CodexRuntime, req: CodexTurnRequest): Promise<void> {
-  // SDK 는 실행 파일을 shell 없이 띄운다 — Windows 의 codex.cmd 가 .exe 를 가리키면 그것을 준다(.js 를 가리키면 방법이 없어 그대로)
+  // SDK 는 실행 파일을 shell 없이 띄운다 — Windows 의 codex.cmd 가 .exe 를 가리키면 그것을 준다.
+  // node <js> 나 cmd.exe 를 거쳐야 하는 경우는 SDK 로 띄울 수 없다(.cmd 를 넘기면 EINVAL) — 무엇을 하면 되는지 알려 준다.
   const spec = launchSpec(runtime.codexPath, []);
-  const codex = new Codex({ codexPathOverride: !spec.shell && spec.args.length === 0 ? spec.command : runtime.codexPath, env: runtime.env });
+  if (spec.shell || spec.args.length > 0) throw new Error(mt("main.error.codexCmdUnsupported", { path: runtime.codexPath }));
+  const codex = new Codex({ codexPathOverride: spec.command, env: runtime.env });
   const threadOptions: ThreadOptions = {
     workingDirectory: req.cwd,
     skipGitRepoCheck: true,
