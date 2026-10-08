@@ -3,6 +3,7 @@
 
 import type { TFunction } from "i18next";
 import type { ChatEvent } from "./chat-events";
+import { joinAny, samePath } from "./any-path";
 
 export interface HandoffStats {
   /** 사용자 메시지 + 완료된 어시스턴트 턴 수. */
@@ -232,8 +233,8 @@ export function isNoteFile(filePath: string, cwd: string, name: string): boolean
   const p = filePath.trim();
   if (!p) return false;
   if (p === name) return true; // 상대 경로로 오는 경우
-  const base = cwd.replace(/\/+$/, "");
-  return p === `${base}/${name}`;
+  // Windows 는 C:\a\CLAUDE.md·C:/a/CLAUDE.md 가 섞이고 대소문자를 가리지 않는다 — any-path 로 비교한다.
+  return samePath(p, joinAny(cwd, name));
 }
 
 /**

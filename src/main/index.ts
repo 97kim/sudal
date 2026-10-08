@@ -2096,7 +2096,7 @@ function registerIpc() {
         .model.tabs.filter((t) => t.open && t.id !== exceptTabId)
         .filter((t) => {
           const cwd = sessions.snapshot(t.id).cwd;
-          return !!cwd && (norm(cwd) === target || norm(cwd).startsWith(target + "/"));
+          return !!cwd && isWithin(target, norm(cwd));
         })
         .map((t) => t.id);
     },

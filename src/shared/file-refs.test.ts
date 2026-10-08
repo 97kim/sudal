@@ -53,3 +53,21 @@ test("localFileHref: 로컬 경로·file URL·~·상대 경로는 참조로, 웹
   assert.deepEqual(localFileHref("AGENTS.md:3"), { path: "AGENTS.md", line: 3 });
   for (const s of ["https://a.com/x.ts", "mailto:a@b.com", "#section", "vscode://file/x", "hello", ""]) assert.equal(localFileHref(s), null, s);
 });
+
+test("findFileRefs·localFileHref: Windows 경로(드라이브·\\ 구분자·file:///C:/)", () => {
+  const text = "수정: C:\\Users\\me\\dev\\src\\main\\index.ts:12 와 src\\shared\\a.ts, ..\\b\\c.md 를 봤어요. https://x.com/a.ts 는 링크.";
+  assert.deepEqual(
+    findFileRefs(text).map((r) => [r.path, r.line ?? null]),
+    [
+      ["C:\\Users\\me\\dev\\src\\main\\index.ts", 12],
+      ["src\\shared\\a.ts", null],
+      ["..\\b\\c.md", null],
+    ],
+  );
+  assert.deepEqual(parseFileRef("C:/repo/a.ts:3-4"), { path: "C:/repo/a.ts", line: 3, endLine: 4 });
+  assert.deepEqual(localFileHref("C:\\repo\\AGENTS.md"), { path: "C:\\repo\\AGENTS.md" });
+  assert.deepEqual(localFileHref("C:\\repo\\no-extension:5"), { path: "C:\\repo\\no-extension", line: 5 });
+  assert.deepEqual(localFileHref("file:///C:/repo/A%20B.md#L3"), { path: "C:/repo/A B.md", line: 3 });
+  assert.deepEqual(localFileHref(".\\src\\a.ts"), { path: ".\\src\\a.ts" });
+  assert.deepEqual(localFileHref("src\\a.ts:2"), { path: "src\\a.ts", line: 2 });
+});

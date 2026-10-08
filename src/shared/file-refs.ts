@@ -26,10 +26,10 @@ const EXTENSIONS = new Set(
   ).split(" "),
 );
 
-// 경로: (./ ../ /)? 디렉토리들/ 이름.확장자  — 앞뒤가 경로 글자면 안 됨(URL 의 host/path 조각, 이메일 등을 피한다).
-// 줄: ":12", ":12-20", ":12–20", ":12:5"(열은 무시), "#L12", "#L12-L20".
+// 경로: (./ ../ / C:\)? 디렉토리들/ 이름.확장자  — 앞뒤가 경로 글자면 안 됨(URL 의 host/path 조각, 이메일 등을 피한다).
+// 구분자는 / 와 \ 둘 다(Windows). 줄: ":12", ":12-20", ":12–20", ":12:5"(열은 무시), "#L12", "#L12-L20".
 const REF_RE =
-  /(?<![\w./@~-])((?:\.{0,2}\/)?(?:[\w.@-]+\/)*[\w@-]+(?:\.[\w-]+)*\.([A-Za-z]\w{0,11}))(?::(\d+)(?:(-|–|:)(\d+))?|#L(\d+)(?:-L?(\d+))?)?(?![\w/])/g;
+  /(?<![\w./\\@~-])((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-]+(?:\.[\w-]+)*\.([A-Za-z]\w{0,11}))(?::(\d+)(?:(-|–|:)(\d+))?|#L(\d+)(?:-L?(\d+))?)?(?![\w/\\])/g;
 
 function fromMatch(m: RegExpExecArray): FileRef | null {
   const [, path, ext, l1, sep, l2, hl1, hl2] = m;
@@ -80,17 +80,19 @@ export function localFileHref(href: string): FileRef | null {
   if (/^file:/i.test(h)) {
     try {
       const u = new URL(h);
-      h = decodeURIComponent(u.pathname) + u.hash;
+      // file:///C:/x 의 pathname 은 "/C:/x" — 앞 슬래시를 뗀다
+      h = decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:[\\/])/, "$1") + u.hash;
     } catch {
       return null;
     }
   }
-  if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(h)) return null; // 다른 스킴(vscode: 등). "AGENTS.md:3" 의 :숫자 는 줄 번호
+  const drive = /^[A-Za-z]:[\\/]/.test(h); // "C:\x" 는 스킴이 아니라 Windows 절대 경로
+  if (!drive && /^[a-z][a-z0-9+.-]*:(?!\d)/i.test(h)) return null; // 다른 스킴(vscode: 등). "AGENTS.md:3" 의 :숫자 는 줄 번호
   const m = /^(.*?)(?:#L(\d+)(?:-L?(\d+))?|:(\d+)(?:[-–](\d+))?)?$/.exec(h);
   if (!m) return null;
   const path = m[1];
   if (!path) return null;
-  const explicit = /^(\/|~\/|\.\.?\/)/.test(path);
+  const explicit = drive || /^(\/|~[\\/]|\.\.?[\\/]|\\\\)/.test(path);
   if (!explicit) {
     const ref = parseFileRef(h);
     return ref;

@@ -132,6 +132,11 @@ test("isNoteFile: cwd 바로 아래의 그 파일만", () => {
   assert.equal(isNoteFile("/r/sub/CLAUDE.md", "/r", "CLAUDE.md"), false);
   assert.equal(isNoteFile("/r/AGENTS.md", "/r", "CLAUDE.md"), false);
   assert.equal(isNoteFile("/other/CLAUDE.md", "/r", "CLAUDE.md"), false);
+  assert.equal(isNoteFile("/r/claude.md", "/r", "CLAUDE.md"), false, "macOS 표기는 대소문자를 가린다");
+  // Windows: 구분자가 섞이고 대소문자를 가리지 않는다
+  assert.equal(isNoteFile("C:\\r\\CLAUDE.md", "C:\\r", "CLAUDE.md"), true);
+  assert.equal(isNoteFile("c:/R/claude.md", "C:\\r\\", "CLAUDE.md"), true);
+  assert.equal(isNoteFile("C:\\r\\sub\\CLAUDE.md", "C:\\r", "CLAUDE.md"), false);
 });
 
 test("인계서 턴 권한: 노트 파일에 덧붙이는 것만 열고, 있는 파일 덮어쓰기는 막는다", () => {
