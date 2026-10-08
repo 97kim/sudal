@@ -10,6 +10,10 @@ This document covers what each feature does and how it works. If you're new, sta
 ⌘⇧E widen code / browser view ·
 ⌘⇧↓ / ⌘⇧↑ next / previous "Needs response" session (waiting for permission, or finished and unread; clicking "Needs response N" in the sidebar does the same)
 
+On **Windows**, press Ctrl for ⌘, Alt for ⌥, and Shift for ⇧ (⌘F → Ctrl+F, ⌘⇧T → Ctrl+Shift+T). Two things differ:
+- While the terminal has focus, Ctrl+R·L·B·T go to the shell (history search, clear screen, and so on). Ctrl+W·K close and clear the terminal, as on Mac.
+- Terminal split is Ctrl+Shift+D (side by side) and Ctrl+Shift+Alt+D (stacked). Ctrl+D is left to the shell, where it ends the session.
+
 Rename a session by clicking the title in the header or double-clicking its tab. A name you set yourself isn't overwritten by the automatic title from the first message; save it empty to go back to the automatic title.
 
 ## Sidebar

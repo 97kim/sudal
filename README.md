@@ -225,15 +225,15 @@ Permissions start at "Ask before changes", so before it changes a file or runs a
 - **Prompt queue**: Write your next request while a task is running, and it's sent when the task finishes. With Codex, you can also slip one into the task in progress.
 - **Schedules**: Open a new session and send a request at a time you set: hourly, daily, weekdays, weekly, or a cron expression. It runs while the app is open.
 - **Slash commands and snippets**: Type `/` to see Claude's commands and skills, and save requests you use often as snippets.
-- **Notifications**: Sessions waiting for permission or finished show up in the sidebar, the Dock badge, and macOS notifications, and ⌘⇧↓ jumps straight to them.
+- **Notifications**: Sessions waiting for permission or finished show up in the sidebar, the Dock badge (the taskbar on Windows), and system notifications, and ⌘⇧↓ jumps straight to them.
 - **Chat search and export**: ⌘F searches even closed sessions, and you can export a conversation as Markdown.
 - **Worktree cleanup**: In settings, see leftover worktrees with their size and number of uncommitted changes, and delete them.
 - **Usage**: See usage by model and workspace, estimated cost at API prices, and your Claude and Codex subscription limits.
 - **Context and limits**: Warns you before the context window fills up, and when you hit a Claude usage limit, retries at the time it resets.
 - Dark mode, image paste, and an indicator for background tasks that keep running after a turn ends.
-- **Language**: Use the screens, menus, and notifications in Korean or English. Choose under Settings → General → Language; the default follows your macOS language.
+- **Language**: Use the screens, menus, and notifications in Korean or English. Choose under Settings → General → Language; the default follows your system language.
 
-Shortcuts are collected in the [feature guide](docs/GUIDE.md#keyboard-shortcuts).
+Shortcuts are written for Mac; on Windows, press Ctrl for ⌘. The full list and what differs on Windows are in the [feature guide](docs/GUIDE.md#keyboard-shortcuts).
 
 ## FAQ
 
