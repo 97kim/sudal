@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseLiveTasks, parseTaskFinished, taskLabel, taskSummary } from "@shared/bg-tasks";
+import { parseLiveTasks, parseTaskFinished, parseTaskForeground, taskLabel, taskSummary } from "@shared/bg-tasks";
 import { createI18n } from "@shared/i18n";
 const { t } = createI18n("ko");
 
@@ -63,4 +63,15 @@ test("끝났다는 알림을 읽는다", () => {
   assert.equal(parseTaskFinished({ task_id: "t1", status: "completed", ambient: true }), null);
   assert.equal(parseTaskFinished({ status: "completed" }), null);
   assert.equal(parseTaskFinished(null), null);
+});
+
+test("턴이 기다리는 작업인지 읽는다", () => {
+  assert.deepEqual(parseTaskForeground({ subtype: "task_started", task_id: "a", is_backgrounded: false }), { id: "a", foreground: true });
+  assert.deepEqual(parseTaskForeground({ subtype: "task_started", task_id: "a", is_backgrounded: true }), { id: "a", foreground: false });
+  // 포그라운드 에이전트가 나중에 백그라운드로 넘어간다
+  assert.deepEqual(parseTaskForeground({ subtype: "task_updated", task_id: "a", patch: { is_backgrounded: true } }), { id: "a", foreground: false });
+  // 바뀐 게 없거나 알 수 없으면 null — 있던 판단을 건드리지 않는다
+  assert.equal(parseTaskForeground({ subtype: "task_updated", task_id: "a", patch: { status: "completed" } }), null);
+  assert.equal(parseTaskForeground({ subtype: "task_started", task_id: "a" }), null);
+  assert.equal(parseTaskForeground({ subtype: "task_started", is_backgrounded: false }), null);
 });

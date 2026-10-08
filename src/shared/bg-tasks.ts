@@ -67,6 +67,20 @@ export function parseLiveTasks(raw: unknown): LiveBackgroundTask[] {
 }
 
 /**
+ * task_started·task_updated 에서 "턴이 기다리고 있는 작업인가" 를 읽는다. 바뀐 게 없으면 null.
+ * background_tasks_changed 에는 포그라운드 하위 에이전트(부른 도구가 끝나기를 턴이 기다리는 것)도 들어온다.
+ * 그걸 백그라운드로 보여 주면 턴이 막혀 있는데 "백그라운드" 라고 떠서, 사용자는 말을 걸 수 있는 줄 안다.
+ */
+export function parseTaskForeground(raw: unknown): { id: string; foreground: boolean } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = typeof o.task_id === "string" ? o.task_id : "";
+  if (!id) return null;
+  const bg = o.subtype === "task_updated" ? (o.patch as Record<string, unknown> | undefined)?.is_backgrounded : o.is_backgrounded;
+  return typeof bg === "boolean" ? { id, foreground: !bg } : null;
+}
+
+/**
  * 끝났다는 알림. status 를 우리 쪽 성공/실패로 옮긴다 — stopped 는 사용자가 세운 것이라 실패가 아니다.
  * 단 SDK 0.3.285 부터 백그라운드 명령은 시간 제한(기본 30분)에 걸려도 stopped 로 온다. 이유를 알려 주는 필드는 없고
  * 요약 문구에만 있다("... was stopped after reaching its background time limit") — 그것은 timedOut 으로 따로 본다.

@@ -10,7 +10,7 @@ import type {
 } from "@shared/chat-events";
 import type { SlashCommandDto } from "@shared/slash-commands";
 import type { ProviderRateLimitDto } from "@shared/ipc";
-import { parseLiveTasks, parseTaskFinished, type LiveBackgroundTask, type TaskFinishedNote } from "@shared/bg-tasks";
+import { parseLiveTasks, parseTaskFinished, parseTaskForeground, type LiveBackgroundTask, type TaskFinishedNote } from "@shared/bg-tasks";
 import { buildClaudeUserMessage, type StoredChatImage } from "./chat-attachments";
 import { ClaudeEventMapper, parseClaudeRateLimit } from "./claude-events";
 import { forkSession, query } from "@anthropic-ai/claude-agent-sdk";
@@ -181,6 +181,10 @@ interface LiveSession {
   ambientSeq: number;
   /** SDK 가 알려 준 살아 있는 백그라운드 작업 수. 유휴 종료 판단에 쓴다. */
   liveTaskCount: number;
+  /** 마지막으로 받은 살아 있는 작업 전체. 포그라운드 작업이 백그라운드로 넘어가면 이걸로 다시 보낸다. */
+  liveTasks: LiveBackgroundTask[];
+  /** 턴이 끝나기를 기다리는 작업(포그라운드 하위 에이전트 등). 화면의 백그라운드 목록·완료 알림에서 뺀다. */
+  foregroundTasks: Set<string>;
   /** 우리가 닫는 중이다(탭 닫기·유휴 종료 등). 스트림이 끝난 이유를 구분하려고 둔다. */
   closing: string | null;
   /** 후속 턴 때문에 유휴 종료를 한 번 미뤘다. 두 번은 미루지 않는다. */
@@ -318,6 +322,8 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
     ambientMapper: null,
     ambientSeq: 0,
     liveTaskCount: 0,
+    liveTasks: [],
+    foregroundTasks: new Set(),
     closing: null,
     idleDeferred: false,
     langDrift: false,
@@ -441,6 +447,11 @@ async function pump(s: LiveSession) {
   }
 }
 
+function sendBackgroundTasks(s: LiveSession, sessionId: string | undefined) {
+  const tasks = s.liveTasks.filter((t) => !s.foregroundTasks.has(t.id));
+  s.onBackgroundTasks?.(sessionId ?? s.sessionId ?? "", tasks, "sdk");
+}
+
 function handleMessage(s: LiveSession, message: SDKMessage) {
   const t = s.turn;
   if (message.type === "assistant" && !s.langDrift) {
@@ -478,14 +489,19 @@ function handleMessage(s: LiveSession, message: SDKMessage) {
       });
     } else if (message.subtype === "background_tasks_changed") {
       // 살아 있는 백그라운드 작업 전체. 턴이 없어도 온다 — 턴에 묶으면 "턴은 끝났는데 일은 도는" 구간을 놓친다.
-      {
-        const tasks = parseLiveTasks(message.tasks);
-        s.liveTaskCount = tasks.length;
-        s.onBackgroundTasks?.(message.session_id ?? s.sessionId ?? "", tasks, "sdk");
-      }
+      // 유휴 종료 판단(liveTaskCount)은 포그라운드 작업까지 센다. 화면에만 빼고 보낸다.
+      s.liveTasks = parseLiveTasks(message.tasks);
+      s.liveTaskCount = s.liveTasks.length;
+      sendBackgroundTasks(s, message.session_id);
+    } else if (message.subtype === "task_started" || message.subtype === "task_updated") {
+      const f = parseTaskForeground(message);
+      if (f?.foreground) s.foregroundTasks.add(f.id);
+      // 포그라운드 작업이 백그라운드로 넘어갔다. 전체 목록이 이 신호보다 먼저 와서 그때는 빠졌으므로 다시 보낸다.
+      else if (f && s.foregroundTasks.delete(f.id)) sendBackgroundTasks(s, message.session_id);
     } else if (message.subtype === "task_notification") {
       const note = parseTaskFinished(message);
-      if (note) s.onTaskFinished?.(note);
+      // 턴이 기다리던 작업의 끝은 도구 결과로 화면에 나온다. "백그라운드 작업 완료" 로 알리지 않는다.
+      if (note && !s.foregroundTasks.delete(note.id)) s.onTaskFinished?.(note);
     } else if (message.subtype === "commands_changed") {
       t?.req.onCommands?.({
         commands: message.commands.map((c) => ({
