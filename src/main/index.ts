@@ -2950,7 +2950,7 @@ function createWindow(): BrowserWindow {
       webviewTag: true,
     },
   });
-  // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+W·K·R 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
+  // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+K·R·L 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
   // 터미널에 포커스가 있을 때 그 키만 이번 입력에 한해 메뉴를 끈다. 키 입력마다 다시 정하므로 다른 키에는 남지 않는다.
   if (process.platform === "win32") {
     const wc = win.webContents;

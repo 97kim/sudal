@@ -19,7 +19,9 @@ test("메뉴 가속기: Windows 는 macOS 의 ⌘ 자리에 Ctrl 을 쓴다", ()
 test("터미널 포커스 중에는 셸 편집키를 셸에 양보한다", () => {
   const key = (code: string, m: Partial<{ control: boolean; shift: boolean; alt: boolean; meta: boolean }> = {}) =>
     yieldsToTerminal({ control: true, shift: false, alt: false, meta: false, code, ...m });
-  for (const c of ["KeyW", "KeyK", "KeyR", "KeyL", "KeyB", "KeyT"]) assert.equal(key(c), true, c);
+  for (const c of ["KeyK", "KeyR", "KeyL", "KeyB", "KeyT"]) assert.equal(key(c), true, c);
+  // Ctrl+W 는 macOS 의 ⌘W 처럼 터미널을 닫는다
+  assert.equal(key("KeyW"), false);
   // 앱에 두는 것: 찾기·터미널 패널·탭 번호
   for (const c of ["KeyF", "KeyJ", "Digit1"]) assert.equal(key(c), false, c);
   // Shift·Alt 가 붙으면 앱 단축키(새 탭 다시 열기 등)
@@ -32,11 +34,11 @@ test("Windows 터미널은 셸에 양보하지 않는 앱 단축키를 메뉴로
   const key = (code: string, m: Partial<{ ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }> = {}) =>
     passesToAppMenu({ ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, code, ...m });
   // Ctrl+J 를 xterm 이 셸로 보내면 줄바꿈이라 입력하던 명령이 실행된다
-  for (const c of ["KeyJ", "KeyF", "Digit1", "Digit9", "Comma", "Tab"]) assert.equal(key(c), true, c);
+  for (const c of ["KeyJ", "KeyF", "KeyW", "Digit1", "Digit9", "Comma", "Tab"]) assert.equal(key(c), true, c);
   assert.equal(key("KeyT", { shiftKey: true }), true, "탭 다시 열기");
   assert.equal(key("ArrowDown", { shiftKey: true }), true, "다음 응답 필요 세션");
   // 셸 편집키·셸 신호는 셸로
-  for (const c of ["KeyW", "KeyK", "KeyR", "KeyC", "KeyD", "KeyA", "Digit0"]) assert.equal(key(c), false, c);
+  for (const c of ["KeyK", "KeyR", "KeyC", "KeyD", "KeyA", "Digit0"]) assert.equal(key(c), false, c);
   // 터미널 안에서 따로 처리하는 분할·첨부
   assert.equal(key("KeyD", { shiftKey: true }), false);
   assert.equal(key("KeyA", { shiftKey: true }), false);
