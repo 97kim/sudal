@@ -343,7 +343,7 @@ function noticeText(t: TFunction, n: Notice): string {
   return t(`settings.outOfRange.${n.range}`, { min: n.min, max: n.max });
 }
 
-type InstallNotice = { ok: boolean; text: string } | { ok: true; cli: string } | { ok: true; skills: string };
+type InstallNotice = { ok: boolean; text: string } | { ok: true; cli: string; pathAdded?: boolean } | { ok: true; skills: string };
 
 type UpdateState =
   | { kind: "idle" }
@@ -510,7 +510,7 @@ function GeneralSection() {
     void refreshInstalled();
     if (!r.ok) setInstallMsg({ ok: false, text: r.error });
     else if (r.hint) setInstallMsg({ ok: false, text: r.hint });
-    else setInstallMsg({ ok: true, cli: shortenHome(r.path) });
+    else setInstallMsg({ ok: true, cli: shortenHome(r.path), pathAdded: r.pathAdded });
   };
   const installSkill = async (agent: Provider) => {
     const r = await window.sudal.app.installSkill(agent);
@@ -722,7 +722,7 @@ function GeneralSection() {
             {"text" in installMsg
               ? installMsg.text
               : "cli" in installMsg
-                ? t("settings.install.doneCli", { path: installMsg.cli })
+                ? t(installMsg.pathAdded ? "settings.install.doneCliPathAdded" : "settings.install.doneCli", { path: installMsg.cli })
                 : t("settings.install.doneSkill", { paths: installMsg.skills })}
           </p>
         )}

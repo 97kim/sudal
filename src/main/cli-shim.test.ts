@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cmdPathLiteral, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
+import { ADD_TO_USER_PATH_PS, cmdPathLiteral, encodePowerShell, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
 
 const ENV = {
   LOCALAPPDATA: "C:\\Users\\김수달\\AppData\\Local",
@@ -58,4 +58,14 @@ test("pathListHas: macOS 는 : 와 정확한 비교, win32 는 ; 와 대소문�
   assert.equal(pathListHas("C:\\Windows;c:\\users\\a\\appdata\\local\\sudal\\bin\\", dir, "win32"), true);
   assert.equal(pathListHas('C:\\Windows;"C:\\Users\\a\\AppData\\Local\\Sudal\\bin"', dir, "win32"), true);
   assert.equal(pathListHas("C:\\Windows;C:\\Users\\a\\AppData\\Local\\Sudal", dir, "win32"), false);
+});
+
+test("사용자 Path 에 더하는 PowerShell 은 폴더를 명령에 넣지 않고 인코딩해서 넘긴다", () => {
+  // 한글 사용자 이름·따옴표가 섞인 경로도 명령 줄 규칙과 상관없게 환경 변수로 받는다
+  assert.match(ADD_TO_USER_PATH_PS, /\$env:SUDAL_BIN_DIR/);
+  // 레지스트리 값의 %USERPROFILE% 같은 표기를 풀지 않고 이어 쓴다
+  assert.match(ADD_TO_USER_PATH_PS, /DoNotExpandEnvironmentNames/);
+  assert.match(ADD_TO_USER_PATH_PS, /ExpandString/);
+  const encoded = encodePowerShell("Write-Output '수달'");
+  assert.equal(Buffer.from(encoded, "base64").toString("utf16le"), "Write-Output '수달'");
 });

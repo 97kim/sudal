@@ -68,3 +68,30 @@ export function pathListHas(pathValue: string, dir: string, platform: NodeJS.Pla
   const key = (p: string) => p.replace(/^"|"$/g, "").replace(/[\\/]+$/, "").toLowerCase();
   return pathValue.split(";").some((p) => p && key(p) === key(dir));
 }
+
+/**
+ * 사용자 환경 변수 Path(HKCU\Environment)에 $env:SUDAL_BIN_DIR 를 더하는 PowerShell. 관리자 권한이 필요 없다.
+ * [Environment]::GetEnvironmentVariable 은 %USERPROFILE% 같은 변수를 풀어서 돌려주므로(다시 쓰면 원래 표기가 사라진다)
+ * 레지스트리를 풀지 않고 읽어 그대로 이어 쓴다. 폴더 경로는 명령에 넣지 않고 환경 변수로 넘긴다(한글 사용자 이름·따옴표).
+ * 바꾼 뒤에는 WM_SETTINGCHANGE 를 보내야 탐색기에서 새로 여는 터미널이 바뀐 Path 를 받는다 —
+ * 없는 사용자 변수를 지우는 SetEnvironmentVariable 호출이 그 알림만 보낸다.
+ */
+export const ADD_TO_USER_PATH_PS = [
+  "$ErrorActionPreference = 'Stop'",
+  "$dir = $env:SUDAL_BIN_DIR",
+  "$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')",
+  "$cur = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
+  "$norm = { param($p) $p.Trim().Trim('\"').TrimEnd('\\').ToLowerInvariant() }",
+  "$has = @($cur.Split(';') | Where-Object { $_.Trim() -and ((& $norm $_) -eq (& $norm $dir)) }).Count -gt 0",
+  "if (-not $has) {",
+  "  $next = if ($cur.Trim()) { $cur.TrimEnd(';') + ';' + $dir } else { $dir }",
+  "  $key.SetValue('Path', $next, [Microsoft.Win32.RegistryValueKind]::ExpandString)",
+  "  [Environment]::SetEnvironmentVariable('SUDAL_PATH_REFRESH', $null, 'User')",
+  "}",
+  "$key.Close()",
+].join("\n");
+
+/** powershell.exe -EncodedCommand 값(UTF-16LE base64). 따옴표·특수문자를 셸 규칙과 상관없이 넘긴다. */
+export function encodePowerShell(script: string): string {
+  return Buffer.from(script, "utf16le").toString("base64");
+}

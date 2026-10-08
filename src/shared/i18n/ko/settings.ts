@@ -224,6 +224,7 @@ export const settings = {
     reinstall: "다시 설치",
     update: "업데이트",
     doneCli: "설치했습니다: {{path}}",
+    doneCliPathAdded: "설치했습니다: {{path}} · 사용자 환경 변수 Path에도 추가했습니다. 새로 여는 터미널부터 sudal 명령을 쓸 수 있습니다.",
     doneSkill: "설치했습니다: {{paths}} — 새 세션부터 보입니다.",
   },
   browserLogin: {

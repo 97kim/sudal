@@ -2,6 +2,8 @@ import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { isWithin } from "./path-within";
 import { existsSync, rmSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync } from "node:fs";
 import { createConnection } from "node:net";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir, userInfo } from "node:os";
 import {
@@ -44,7 +46,7 @@ import {
 import { forkClaudeSession, setClaudeSessionIdleMs, type ClaudeRuntime } from "./claude-adapter";
 import { buildCliDiscovery, type CliDiscovery } from "./cli-discovery";
 import { claudeExecutableFor } from "./cli-launch";
-import { pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
+import { ADD_TO_USER_PATH_PS, encodePowerShell, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim } from "./cli-shim";
 import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
@@ -1062,7 +1064,7 @@ function deliverControlOpen(req: ControlOpenDto) {
 
 
 /** ~/.local/bin/sudal — 앱의 Electron 을 node 로 써서 동봉 CLI 를 실행하는 셸 스크립트. */
-async function installCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }> {
+async function installCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string }> {
   if (process.platform === "win32") return installWindowsCliShim();
   try {
     const dir = join(app.getPath("home"), ".local", "bin");
@@ -1107,17 +1109,35 @@ function writeWindowsShims(dir: string): string {
   return cmd;
 }
 
-/** Windows: %LOCALAPPDATA%\Sudal\bin 에 설치. PATH 에 넣는 일은 하지 않고 onPath·hint 로 알린다. */
-async function installWindowsCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string } | { ok: false; error: string }> {
+/**
+ * Windows: %LOCALAPPDATA%\Sudal\bin 에 설치하고, PATH 에 없으면 사용자 환경 변수 Path 에 더한다.
+ * Windows 사용자는 환경 변수를 손으로 고치는 데 익숙하지 않아 안내만으로는 설치가 끝나지 않았다. 못 더하면 hint 로 알린다.
+ */
+async function installWindowsCliShim(): Promise<{ ok: true; path: string; onPath: boolean; hint?: string; pathAdded?: boolean } | { ok: false; error: string }> {
   try {
     const dir = windowsCliBinDir(process.env, app.getPath("home"));
     const target = writeWindowsShims(dir);
-    const onPath = pathListHas((await cliDiscovery().buildEnv()).PATH ?? "", dir, "win32");
-    return { ok: true, path: target, onPath, ...(onPath ? {} : { hint: mt("main.cli.pathHintWin", { dir }) }) };
+    if (pathListHas((await cliDiscovery().buildEnv()).PATH ?? "", dir, "win32")) return { ok: true, path: target, onPath: true };
+    try {
+      await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(ADD_TO_USER_PATH_PS)], {
+        env: { ...process.env, SUDAL_BIN_DIR: dir },
+        timeout: 20_000,
+        windowsHide: true,
+      });
+    } catch (e) {
+      console.error("[cli] 사용자 Path 에 더하지 못했습니다:", e);
+      return { ok: true, path: target, onPath: false, hint: mt("main.cli.pathHintWin", { dir }) };
+    }
+    // 이 앱이 새로 여는 터미널·에이전트도 바로 찾게 한다(이미 열린 터미널은 다시 열어야 한다)
+    process.env.PATH = `${process.env.PATH ?? ""};${dir}`;
+    cliDiscovery().invalidate();
+    return { ok: true, path: target, onPath: true, pathAdded: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+const execFileAsync = promisify(execFile);
 
 let workerShimDir: string | null | undefined;
 /**

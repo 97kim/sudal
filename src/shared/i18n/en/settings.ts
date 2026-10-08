@@ -226,6 +226,7 @@ export const settings: DeepPartial<typeof ko> = {
     reinstall: "Reinstall",
     update: "Update",
     doneCli: "Installed: {{path}}",
+    doneCliPathAdded: "Installed: {{path}} · Also added to your user Path. Terminals you open from now on can run sudal.",
     doneSkill: "Installed: {{paths}} — available from the next new session.",
   },
   browserLogin: {
