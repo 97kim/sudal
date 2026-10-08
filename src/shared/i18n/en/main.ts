@@ -130,6 +130,8 @@ export const main: DeepPartial<typeof ko> = {
     brewUpgradeFailed: "brew upgrade failed",
     unknownVersion: "unknown",
     notYetOnHomebrew: "Version {{target}} isn't available on Homebrew yet (installed version {{installed}}). Try again in a moment.",
+    installerOnly: "You can only update the app when it was installed with the installer.",
+    notYetForWindows: "Version {{target}} isn't available for Windows yet (available version {{available}}). Try again in a moment.",
   },
   verify: {
     cwdMissing: "Couldn't find the working folder: {{cwd}}",

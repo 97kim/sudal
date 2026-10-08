@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub Releases 에 DMG 를 올리고 Homebrew cask 를 갱신한다. 로컬에서 빌드해 올리는 방식이다 —
+# GitHub Releases 에 DMG 와 Windows 설치 파일을 올리고 Homebrew cask 를 갱신한다. 로컬에서 빌드해 올리는 방식이다 —
 # 서명·공증을 하지 않아 CI 로 옮길 이유가 없고, 받는 쪽은 어차피 첫 실행 때 한 번 허용해야 한다.
 # 소스 저장소(origin, 공개·MIT)에 태그와 릴리즈를 올리고, cask 는 TAP_REPO 에.
 #
@@ -46,6 +46,9 @@ fi
 VERSION="$(node -p "require('./package.json').version")"
 TAG="v$VERSION"
 DMG="release/sudal-${VERSION}-arm64.dmg"
+# Windows 는 이 Mac 에서 크로스 빌드한다. 앱은 latest.yml 을 읽어 스스로 업데이트하고(electron-updater), blockmap 으로 바뀐 부분만 받는다.
+EXE="release/sudal-${VERSION}-x64.exe"
+WIN_ASSETS=("$EXE" "$EXE.blockmap" "release/latest.yml")
 
 git rev-parse "$TAG" >/dev/null 2>&1 && die "$TAG 태그가 이미 있다. 버전을 올릴 것."
 gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1 && die "$TAG 릴리스가 이미 $PUBLIC_REPO 에 있다."
@@ -58,6 +61,14 @@ run yarn test
 step "패키징 (몇 분 걸린다)"
 run yarn package
 [[ -n "$DRY_RUN" || -f "$DMG" ]] || die "$DMG 가 만들어지지 않았다."
+
+step "Windows 패키징"
+run yarn package:win
+if [[ -z "$DRY_RUN" ]]; then
+  for f in "${WIN_ASSETS[@]}"; do [[ -f "$f" ]] || die "$f 가 만들어지지 않았다."; done
+  # latest.yml 은 버전마다 같은 이름이라 예전 빌드의 것이 남아 있을 수 있다
+  grep -qx "version: $VERSION" release/latest.yml || die "release/latest.yml 이 $VERSION 이 아니다."
+fi
 
 # ===== 릴리스 노트 =====
 # 지난 태그 이후의 커밋 제목. 첫 릴리스면 전체.
@@ -101,9 +112,18 @@ xattr -d com.apple.quarantine /Applications/Sudal.app
 한 번 열어 본 뒤 **시스템 설정 → 개인정보 보호 및 보안**에서 "그래도 열기"를 눌러도 돼요.
 예전에 쓰던 우클릭 → 열기는 macOS 15 Sequoia부터 통하지 않아요.
 
+## Windows에 설치하기
+
+아래 \`sudal-${VERSION}-x64.exe\`를 내려받아 실행하면 관리자 권한 없이 바로 설치되고 Sudal이 열려요.
+
+코드 서명을 하지 않은 설치 파일이라 처음 실행할 때 "Windows의 PC 보호" 창이 떠요. **추가 정보**를 누른 뒤 **실행**을 누르세요.
+
+이후 업데이트는 앱의 설정 → 일반 → 업데이트에서 받을 수 있어요.
+
 ## 필요한 것
 
-Apple Silicon Mac, 그리고 로그인을 마친 \`claude\` 또는 \`codex\` CLI가 필요해요.
+Apple Silicon Mac 또는 64비트 Windows 10·11, 그리고 로그인을 마친 \`claude\` 또는 \`codex\` CLI가 필요해요.
+Windows에서 Claude Code를 쓰려면 [Git for Windows](https://git-scm.com/downloads/win)(Git Bash)도 설치해야 해요.
 EOF
 )"
 
@@ -112,12 +132,12 @@ run git tag -a "$TAG" -m "$TAG"
 run git push origin main
 run git push origin "$TAG"
 
-step "릴리스 만들기 ($PUBLIC_REPO, $DMG)"
+step "릴리스 만들기 ($PUBLIC_REPO, $DMG, $EXE)"
 if [[ -n "$DRY_RUN" ]]; then
-  echo "  (dry-run) gh release create $TAG $DMG --repo $PUBLIC_REPO --title $TAG --notes …"
+  echo "  (dry-run) gh release create $TAG $DMG ${WIN_ASSETS[*]} --repo $PUBLIC_REPO --title $TAG --notes …"
   echo "$NOTES" | sed 's/^/    | /'
 else
-  gh release create "$TAG" "$DMG" --repo "$PUBLIC_REPO" --title "$TAG" --notes "$NOTES"
+  gh release create "$TAG" "$DMG" "${WIN_ASSETS[@]}" --repo "$PUBLIC_REPO" --title "$TAG" --notes "$NOTES"
 fi
 
 # ===== Homebrew cask =====
@@ -173,4 +193,4 @@ else
 fi
 
 step "끝"
-echo "  $TAG · $(du -h "$DMG" 2>/dev/null | cut -f1 || echo '?') · https://github.com/$PUBLIC_REPO/releases/tag/$TAG"
+echo "  $TAG · DMG $(du -h "$DMG" 2>/dev/null | cut -f1 || echo '?') · EXE $(du -h "$EXE" 2>/dev/null | cut -f1 || echo '?') · https://github.com/$PUBLIC_REPO/releases/tag/$TAG"

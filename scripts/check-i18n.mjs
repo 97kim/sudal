@@ -81,7 +81,8 @@ for (const target of targets) {
   const list = statSync(abs).isDirectory() ? files(abs) : [abs];
   let areaCount = 0;
   for (const f of list) {
-    const rel = relative(ROOT, f);
+    // Windows 에서는 relative() 가 \ 로 잇는다 — SKIP 과 출력이 / 기준이라 맞춘다
+    const rel = relative(ROOT, f).replaceAll("\\", "/");
     if (SKIP.some((re) => re.test(rel))) continue;
     const hits = scan(f);
     if (hits.length === 0) continue;

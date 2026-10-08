@@ -9,11 +9,12 @@
   <a href="https://github.com/97kim/sudal/releases"><img src="https://img.shields.io/github/v/release/97kim/sudal?label=release&color=4f5bd5" alt="최신 릴리즈" /></a>
   <img src="https://img.shields.io/badge/license-MIT-4f5bd5" alt="라이선스: MIT" />
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-4f5bd5" alt="지원 환경: macOS Apple Silicon" />
+  <img src="https://img.shields.io/badge/Windows-x64-4f5bd5" alt="지원 환경: Windows x64" />
 </p>
 
 <p align="center">
   <strong>에이전트가 다른 에이전트에게 일을 맡기고, 결과를 받아 와요.</strong><br/>
-  Claude Code와 Codex를 워크스페이스의 탭으로 띄우는 macOS 앱이에요.
+  Claude Code와 Codex를 워크스페이스의 탭으로 띄우는 macOS·Windows 앱이에요.
 </p>
 
 <p align="center">
@@ -167,8 +168,11 @@ sudal tab read --tab 리뷰 --last 3
 
 ## 설치
 
-**필요한 것**: Apple Silicon Mac(macOS 13 이상), 그리고 로그인을 마친 `claude`와 `codex` CLI 중 하나 이상.
+**필요한 것**: Apple Silicon Mac(macOS 13 이상) 또는 64비트 Windows 10·11, 그리고 로그인을 마친 `claude`와 `codex` CLI 중 하나 이상.
 아직 없다면 [Claude Code 설치](https://code.claude.com/docs/en/setup)나 [Codex CLI 설치](https://developers.openai.com/codex/cli) 안내를 따라 설치하고 로그인해 두세요.
+Windows에서 Claude Code를 쓰려면 [Git for Windows](https://git-scm.com/downloads/win)(Git Bash)도 있어야 해요.
+
+### macOS
 
 Homebrew로 설치해요.
 
@@ -196,6 +200,14 @@ xattr -d com.apple.quarantine /Applications/Sudal.app
 </details>
 
 Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/sudal/releases)에서 DMG를 받아 `Sudal.app`을 Applications 폴더로 옮기세요.
+
+### Windows
+
+[릴리즈](https://github.com/97kim/sudal/releases)에서 `sudal-<버전>-x64.exe`를 받아 실행하세요. 관리자 권한 없이 내 계정에 설치되고, 끝나면 Sudal이 열려요.
+
+**처음 열 때**: 코드 서명을 하지 않은 설치 파일이라 SmartScreen이 "Windows의 PC 보호" 창을 띄워요. **추가 정보**를 누른 뒤 **실행**을 누르세요.
+
+업데이트는 앱 안에서 받아요. 새 버전이 나오면 사이드바 왼쪽 아래의 업데이트 버튼(또는 **설정 → 일반 → 업데이트**)을 누르세요. 새 버전을 내려받고, 다시 시작하면 설치돼요.
 
 ## 첫 작업 시작하기
 
@@ -236,11 +248,11 @@ Sudal 자체는 아무 데도 보내지 않아요. 모델과의 통신은 Claude
 
 ### 데이터는 어디에 저장되나요?
 
-워크스페이스와 채팅 기록은 `~/Library/Application Support/Sudal/`에, 격리 세션의 worktree는 `~/sudal/worktrees/`에 있어요. **설정 → 일반 → 저장 위치**에서 열거나 바꿀 수 있어요.
+워크스페이스와 채팅 기록은 `~/Library/Application Support/Sudal/`(Windows는 `%APPDATA%\Sudal\`)에, 격리 세션의 worktree는 `~/sudal/worktrees/`에 있어요. **설정 → 일반 → 저장 위치**에서 열거나 바꿀 수 있어요.
 
 ### Intel Mac에서도 되나요?
 
-지금은 Apple Silicon만 지원해요.
+Mac은 지금은 Apple Silicon만 지원해요. Windows는 x64만 지원해요.
 
 ## 라이선스
 

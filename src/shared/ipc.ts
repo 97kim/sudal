@@ -73,7 +73,7 @@ export interface UpdateCheckDto {
   latest: string;
   available: boolean;
   releaseUrl: string;
-  /** 이 앱이 Homebrew cask 로 설치됐는지(개발 실행이면 false). */
+  /** 앱 안에서 올릴 수 있는지. macOS 는 Homebrew cask 로 설치됐을 때, Windows 는 설치 프로그램으로 깐 앱일 때(개발 실행이면 false). */
   brew: boolean;
 }
 

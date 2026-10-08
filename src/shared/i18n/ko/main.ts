@@ -130,6 +130,8 @@ export const main = {
     brewUpgradeFailed: "brew upgrade 실패",
     unknownVersion: "알 수 없음",
     notYetOnHomebrew: "Homebrew에 아직 {{target}} 버전이 올라오지 않았습니다(설치된 버전 {{installed}}). 잠시 뒤 다시 시도하세요.",
+    installerOnly: "설치 프로그램으로 설치한 앱에서만 업데이트할 수 있습니다.",
+    notYetForWindows: "Windows용 {{target}} 버전이 아직 올라오지 않았습니다(받을 수 있는 버전 {{available}}). 잠시 뒤 다시 시도하세요.",
   },
   verify: {
     cwdMissing: "작업 경로를 찾을 수 없습니다: {{cwd}}",
