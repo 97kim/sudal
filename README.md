@@ -9,11 +9,12 @@
   <a href="https://github.com/97kim/sudal/releases"><img src="https://img.shields.io/github/v/release/97kim/sudal?label=release&color=4f5bd5" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/license-MIT-4f5bd5" alt="License: MIT" />
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-4f5bd5" alt="Supported: macOS Apple Silicon" />
+  <img src="https://img.shields.io/badge/Windows-x64-4f5bd5" alt="Supported: Windows x64" />
 </p>
 
 <p align="center">
   <strong>Agents hand work to other agents and collect the results.</strong><br/>
-  A macOS app that runs Claude Code and Codex as tabs in a workspace.
+  A macOS and Windows app that runs Claude Code and Codex as tabs in a workspace.
 </p>
 
 <p align="center">
@@ -167,8 +168,11 @@ Either one is enough. If you switch agents mid-conversation, Sudal summarizes th
 
 ## Install
 
-**Requirements**: An Apple Silicon Mac (macOS 13 or later), and at least one logged-in `claude` or `codex` CLI.
+**Requirements**: An Apple Silicon Mac (macOS 13 or later) or 64-bit Windows 10/11, and at least one logged-in `claude` or `codex` CLI.
 If you don't have one yet, follow the [Claude Code setup](https://code.claude.com/docs/en/setup) or [Codex CLI setup](https://developers.openai.com/codex/cli) guide, then log in.
+On Windows, Claude Code also needs [Git for Windows](https://git-scm.com/downloads/win) (Git Bash).
+
+### macOS
 
 Install with Homebrew.
 
@@ -196,6 +200,14 @@ xattr -d com.apple.quarantine /Applications/Sudal.app
 </details>
 
 To install without Homebrew, download the DMG from [Releases](https://github.com/97kim/sudal/releases) and move `Sudal.app` to your Applications folder.
+
+### Windows
+
+Download `sudal-<version>-x64.exe` from [Releases](https://github.com/97kim/sudal/releases) and run it. It installs for your user account without administrator rights, and Sudal opens when it's done.
+
+**First launch**: The installer isn't code-signed, so Windows SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**.
+
+Updates happen inside the app. When a new version is out, click the update button at the bottom left of the sidebar (or under **Settings → General → Updates**); it downloads the new version, and restarting installs it.
 
 ## Start your first task
 
@@ -236,11 +248,11 @@ Sudal itself sends nothing anywhere. Communication with the models is handled by
 
 ### Where is my data stored?
 
-Workspaces and chat history are in `~/Library/Application Support/Sudal/`, and worktrees for isolated sessions are in `~/sudal/worktrees/`. Open or change them under **Settings → General → Storage location**.
+Workspaces and chat history are in `~/Library/Application Support/Sudal/` (`%APPDATA%\Sudal\` on Windows), and worktrees for isolated sessions are in `~/sudal/worktrees/`. Open or change them under **Settings → General → Storage location**.
 
 ### Does it work on Intel Macs?
 
-For now, only Apple Silicon is supported.
+For now, only Apple Silicon is supported on Mac. On Windows, only x64 is supported.
 
 ## License
 

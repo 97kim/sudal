@@ -2,7 +2,7 @@
 name: sudal-cli
 description: >-
   Control the Sudal app's workspaces, tabs, and sessions (워크스페이스·탭·세션) with the `sudal` CLI.
-  Sudal is a macOS app that runs Claude Code and Codex as chat tabs. Use for opening a session in Sudal,
+  Sudal is a desktop app that runs Claude Code and Codex as chat tabs. Use for opening a session in Sudal,
   sending a prompt to a tab, reading a tab's reply, handing work off to another tab, or opening a file in Sudal:
   "sudal tab", "open a new session in Sudal", "send it to that tab", "read that tab's result", "hand this off",
   "sudal 탭", "Sudal 에서 새 세션 열어", "그 탭에 보내", "탭 결과 읽어", "다른 탭에 넘겨/핸드오프",

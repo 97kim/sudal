@@ -87,6 +87,7 @@ import { runPrecheckCommand } from "./precheck";
 import { isScheduleWorkspace, runReason, type Run, type Schedule, type ScheduleTarget } from "@shared/schedules";
 import { createFileLogger, type FileLogger } from "./logger";
 import { brewUpgrade, caskVersion, compareVersions, fetchLatestRelease, type UpdateProgress } from "./app-update";
+import { winDownloadUpdate, winQuitAndInstall } from "./app-update-win";
 import { Store } from "./persistence";
 import { RendererState } from "./renderer-state";
 import { claudeHookSettings, shellQuote } from "./transcript-mirror";
@@ -1761,6 +1762,8 @@ function registerIpc() {
   );
   // cask 가 깔려 있어도 지금 띄운 것이 그 앱이어야 한다 — 다른 곳의 빌드에서 누르면 /Applications 의 앱이 바뀐다.
   const fromCask = () => app.isPackaged && /^\/Applications\/Sudal\.app\//.test(realpathSync(process.execPath));
+  // Windows 는 설치 프로그램으로 깐 앱이면 electron-updater 로 앱 안에서 받는다(app-update-win.ts). 상태·IPC 는 macOS 와 같다.
+  const isWin = process.platform === "win32";
   // 업데이트 상태는 main 이 들고 있다 — 설정 카드와 사이드바가 같은 것을 보고, 화면을 옮겼다 돌아와도 이어 보이게.
   let lastCheck: UpdateCheckDto | null = null;
   let dmgSize: number | undefined;
@@ -1781,9 +1784,10 @@ function registerIpc() {
   const checkUpdate = (): Promise<UpdateCheckDto> => {
     checking ??= (async () => {
       const current = app.getVersion();
-      const [latest, cask] = await Promise.all([fetchLatestRelease(), fromCask() ? caskVersion(await cliDiscovery().buildEnv()) : null]);
+      const [latest, cask] = await Promise.all([fetchLatestRelease(), !isWin && fromCask() ? caskVersion(await cliDiscovery().buildEnv()) : null]);
       dmgSize = latest.dmgSize;
-      lastCheck = { current, latest: latest.version, available: compareVersions(latest.version, current) > 0, releaseUrl: latest.url, brew: cask !== null };
+      const brew = isWin ? app.isPackaged : cask !== null;
+      lastCheck = { current, latest: latest.version, available: compareVersions(latest.version, current) > 0, releaseUrl: latest.url, brew };
       lastCheckAt = Date.now();
       announceUpdate();
       return lastCheck;
@@ -1808,23 +1812,17 @@ function registerIpc() {
     if (update) return update.job;
     // 진행 상태를 본 뒤 다시 붙기 전에 끝났을 수 있다 — 다시 돌리지 않고 결과를 준다
     if (installed) return Promise.resolve({ ok: true, version: installed });
-    if (!fromCask()) return Promise.resolve({ ok: false, error: mt("main.update.caskOnly") });
+    if (isWin ? !app.isPackaged : !fromCask()) return Promise.resolve({ ok: false, error: mt(isWin ? "main.update.installerOnly" : "main.update.caskOnly") });
     const target = lastCheck?.latest;
     if (!target) return Promise.resolve({ ok: false, error: mt("main.update.checkFirst") });
-    const job = cliDiscovery()
-      .buildEnv()
-      .then((env) =>
-        brewUpgrade(env, target, {
-          dmgSize,
-          onProgress: (p) => {
-            if (!update) return;
-            update.progress = p;
-            announceUpdate();
-          },
-        }),
-      )
+    const onProgress = (p: UpdateProgress) => {
+      if (!update) return;
+      update.progress = p;
+      announceUpdate();
+    };
+    const job = (isWin ? winDownloadUpdate(target, onProgress) : cliDiscovery().buildEnv().then((env) => brewUpgrade(env, target, { dmgSize, onProgress })))
       .then((r) => {
-        console.log(r.ok ? `[update] brew upgrade 완료 (${r.version})` : `[update] ${r.error}`);
+        console.log(r.ok ? `[update] ${isWin ? "내려받기" : "brew upgrade"} 완료 (${r.version})` : `[update] ${r.error}`);
         if (r.ok) installed = r.version;
         else updateError = r.error;
         return r;
@@ -1838,7 +1836,9 @@ function registerIpc() {
     announceUpdate();
     return job;
   });
-  ipcMain.handle(IPC.appRelaunch, () => {
+  ipcMain.handle(IPC.appRelaunch, async () => {
+    // Windows 에서 받아 둔 업데이트가 있으면 설치 프로그램이 앱을 닫고 깐 뒤 새 버전을 띄운다
+    if (isWin && (await winQuitAndInstall())) return;
     app.relaunch();
     app.quit();
   });
@@ -2889,9 +2889,8 @@ app.whenReady().then(async () => {
   startSchedules();
   void startControlServer();
   mainWindow = createWindow();
-  // 자동 업데이트는 붙이지 않는다 — 새 버전은 GitHub Releases 의 DMG 를 다시 받아 덮어쓴다(scripts/release.sh).
-  // 붙이려면 electron-updater 를 다시 넣고 electron-builder 의 publish 를 GitHub provider 로 바꾼다.
-  // 다만 서명·공증이 없으면 자동 설치는 Gatekeeper 에 막혀 알림까지만 된다.
+  // macOS 는 자동 업데이트를 붙이지 않는다 — 새 버전은 brew 로 갈아 끼우거나 GitHub Releases 의 DMG 를 다시 받는다.
+  // 서명·공증이 없으면 electron-updater 의 자동 설치는 Gatekeeper 에 막힌다. Windows 만 electron-updater 를 쓴다(app-update-win.ts).
 
   // 시작 시 탐지 결과를 콘솔에 남긴다 — 설정 화면과 별개로 로그만으로 진단 가능.
   for (const provider of ["claude", "codex"] as const) {
