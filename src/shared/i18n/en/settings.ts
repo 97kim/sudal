@@ -40,7 +40,7 @@ export const settings: DeepPartial<typeof ko> = {
     title: "Language",
     description: "The language used in the app.",
     options: {
-      system: { label: "Match system", hint: "Follows the macOS language setting." },
+      system: { label: "Match system", hint: "Follows the system language setting." },
       ko: { label: "한국어", hint: "Always use Korean." },
       en: { label: "English", hint: "Always use English." },
     },
@@ -49,7 +49,7 @@ export const settings: DeepPartial<typeof ko> = {
     title: "Appearance",
     description: "Doesn't apply to websites shown in the in-app browser.",
     options: {
-      system: { label: "Match system", hint: "Changes with the macOS appearance." },
+      system: { label: "Match system", hint: "Changes with the system appearance." },
       light: { label: "Light", hint: "Always use a light background." },
       dark: { label: "Dark", hint: "Always use a dark background." },
     },
@@ -58,7 +58,7 @@ export const settings: DeepPartial<typeof ko> = {
     title: "Response notifications",
     description: "Choose whether to be notified when a response finishes. If you're in another app and a task needs approval, you're notified regardless of this setting.",
     options: {
-      always: { label: "Always", hint: "Sends a macOS notification when a response finishes. Click it to jump to that tab." },
+      always: { label: "Always", hint: "Sends a system notification when a response finishes. Click it to jump to that tab." },
       unfocused: { label: "Only when I'm away", hint: "Notifies you when you're in another app or another chat tab." },
       off: { label: "Off", hint: "No notification when a response finishes. Approval requests still notify you." },
     },
@@ -92,7 +92,7 @@ export const settings: DeepPartial<typeof ko> = {
     options: {
       ask: { label: "Ask every time", hint: "Choose where to open each link. Turn on \"Remember\" in the chooser to reuse your choice." },
       app: { label: "In-app browser", hint: "Opens in a browser tab in the right panel." },
-      external: { label: "Default browser", hint: "Opens in the macOS default browser." },
+      external: { label: "Default browser", hint: "Opens in the system default browser." },
     },
   },
   warm: {
@@ -105,7 +105,7 @@ export const settings: DeepPartial<typeof ko> = {
   },
   nav: {
     title: "Settings",
-    description: "Set up the tools and app behavior on this Mac.",
+    description: "Set up the tools and app behavior on this computer.",
     group: "App",
     general: "General",
     cli: "Find CLIs",
@@ -122,7 +122,7 @@ export const settings: DeepPartial<typeof ko> = {
   saveFailed: "Couldn't save",
   cli: {
     title: "Find CLIs",
-    description: "Finds the Claude Code and Codex CLIs installed on this Mac. You can change which version to use and the path to the executable.",
+    description: "Finds the Claude Code and Codex CLIs installed on this computer. You can change which version to use and the path to the executable.",
     rescan: "Scan again",
     scanning: "Scanning",
     scanned: "Scan complete",
@@ -215,8 +215,9 @@ export const settings: DeepPartial<typeof ko> = {
     notInstalled: "Not installed",
     otherApp: "Points to a different app location",
     needsPath: "Installed · add ~/.local/bin to your shell PATH",
+    needsPathWin: "Installed · add the install folder to your user Path environment variable",
     installed: "Installed",
-    notFound: "Not found on this Mac",
+    notFound: "Not found on this computer",
     outdated: "Out of date — update needed",
     install: "Install",
     reinstall: "Reinstall",
@@ -227,7 +228,7 @@ export const settings: DeepPartial<typeof ko> = {
   browserLogin: {
     title: "Keep in-app browser logins",
     description1: "Saves the cookies used for sign-in when you quit the app and restores them when you reopen it. Depending on a site's security policy or session expiry, you may still need to sign in again.",
-    description2: "Saved cookies are stored unencrypted in this Mac's app data folder and can be read only by the current user. Turning this off deletes the cookie file saved for restoring.",
+    description2: "Saved cookies are stored unencrypted in this computer's app data folder and can be read only by the current user. Turning this off deletes the cookie file saved for restoring.",
     checkbox: "Save login info for the next launch",
   },
   storage: {

@@ -38,7 +38,7 @@ export const settings = {
     title: "언어",
     description: "앱 화면에 쓰는 언어입니다.",
     options: {
-      system: { label: "시스템 따라가기", hint: "macOS의 언어 설정을 따릅니다." },
+      system: { label: "시스템 따라가기", hint: "시스템의 언어 설정을 따릅니다." },
       ko: { label: "한국어", hint: "항상 한국어로 표시합니다." },
       en: { label: "English", hint: "항상 영어로 표시합니다." },
     },
@@ -47,7 +47,7 @@ export const settings = {
     title: "화면 테마",
     description: "인앱 브라우저에 표시되는 웹사이트에는 적용되지 않습니다.",
     options: {
-      system: { label: "시스템 따라가기", hint: "macOS 화면 모드가 바뀌면 함께 바뀝니다." },
+      system: { label: "시스템 따라가기", hint: "시스템 화면 모드가 바뀌면 함께 바뀝니다." },
       light: { label: "밝게", hint: "항상 밝은 배경." },
       dark: { label: "어둡게", hint: "항상 어두운 배경." },
     },
@@ -56,7 +56,7 @@ export const settings = {
     title: "응답 완료 알림",
     description: "응답이 끝났을 때 알림을 받을지 정합니다. 다른 앱을 보고 있을 때 작업 승인이 필요하면 이 설정과 관계없이 알립니다.",
     options: {
-      always: { label: "항상", hint: "응답이 끝나면 macOS 알림을 보냅니다. 알림을 누르면 해당 탭으로 이동합니다." },
+      always: { label: "항상", hint: "응답이 끝나면 시스템 알림을 보냅니다. 알림을 누르면 해당 탭으로 이동합니다." },
       unfocused: { label: "안 보고 있을 때만", hint: "다른 앱이나 다른 채팅 탭을 보고 있을 때 알립니다." },
       off: { label: "끄기", hint: "응답 완료는 알리지 않습니다. 작업 승인 요청은 계속 알립니다." },
     },
@@ -90,7 +90,7 @@ export const settings = {
     options: {
       ask: { label: "클릭할 때마다 묻기", hint: "링크를 누를 때 열 위치를 고릅니다. 선택창에서 '기억'을 켜면 다음부터 같은 방식으로 엽니다." },
       app: { label: "인앱 브라우저", hint: "오른쪽 패널의 브라우저 탭에서 엽니다." },
-      external: { label: "기본 브라우저", hint: "macOS 기본 브라우저에서 엽니다." },
+      external: { label: "기본 브라우저", hint: "시스템 기본 브라우저에서 엽니다." },
     },
   },
   warm: {
@@ -103,7 +103,7 @@ export const settings = {
   },
   nav: {
     title: "설정",
-    description: "이 Mac에서 사용할 도구와 앱 동작을 설정합니다.",
+    description: "이 컴퓨터에서 사용할 도구와 앱 동작을 설정합니다.",
     group: "앱",
     general: "일반",
     cli: "CLI 찾기",
@@ -120,7 +120,7 @@ export const settings = {
   saveFailed: "저장 실패",
   cli: {
     title: "CLI 찾기",
-    description: "이 Mac에 설치된 Claude Code와 Codex CLI를 찾습니다. 사용할 버전과 실행 파일 경로를 바꿀 수 있습니다.",
+    description: "이 컴퓨터에 설치된 Claude Code와 Codex CLI를 찾습니다. 사용할 버전과 실행 파일 경로를 바꿀 수 있습니다.",
     rescan: "다시 찾기",
     scanning: "찾는 중",
     scanned: "찾기 완료",
@@ -213,8 +213,9 @@ export const settings = {
     notInstalled: "설치되지 않음",
     otherApp: "다른 앱 위치를 가리킴",
     needsPath: "설치됨 · 셸 PATH에 ~/.local/bin을 추가해야 합니다",
+    needsPathWin: "설치됨 · 사용자 환경 변수 Path에 설치 폴더를 추가해야 합니다",
     installed: "설치됨",
-    notFound: "이 Mac에서 찾지 못함",
+    notFound: "이 컴퓨터에서 찾지 못함",
     outdated: "구버전 — 업데이트 필요",
     install: "설치",
     reinstall: "다시 설치",
@@ -225,7 +226,7 @@ export const settings = {
   browserLogin: {
     title: "인앱 브라우저 로그인 유지",
     description1: "앱을 종료할 때 로그인에 쓰이는 쿠키를 저장하고, 다시 열 때 복원합니다. 사이트의 보안 정책이나 로그인 만료에 따라 다시 로그인해야 할 수 있습니다.",
-    description2: "저장한 쿠키는 이 Mac의 앱 데이터 폴더에 암호화 없이 보관되며, 현재 사용자만 읽을 수 있습니다. 끄면 복원을 위해 저장한 쿠키 파일을 삭제합니다.",
+    description2: "저장한 쿠키는 이 컴퓨터의 앱 데이터 폴더에 암호화 없이 보관되며, 현재 사용자만 읽을 수 있습니다. 끄면 복원을 위해 저장한 쿠키 파일을 삭제합니다.",
     checkbox: "다음 실행을 위해 로그인 정보 저장",
   },
   storage: {

@@ -31,6 +31,7 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import sudari from "../assets/otter/idle-0.png";
 import { OTTER_ROAM, OTTER_ROAM_RANGE, type OtterRoamTuning } from "@shared/otter";
 import { shortenHome } from "@shared/path-display";
+import { IS_WIN } from "../platform";
 import { getLinkOpenMode, setLinkOpenMode, type LinkOpenMode } from "../link-open";
 import { useSnippets } from "../hooks/useSnippets";
 import { updatePhaseLabel, useUpdateStatus } from "../hooks/useUpdate";
@@ -524,8 +525,9 @@ function GeneralSection() {
     rows.push({
       key: "cli",
       name: "sudal CLI",
-      path: cli?.path ?? "~/.local/bin/sudal",
-      state: !cli ? "" : !cli.installed ? t("settings.install.notInstalled") : !cli.current ? t("settings.install.otherApp") : !cli.onPath ? t("settings.install.needsPath") : t("settings.install.installed"),
+      // 설치 위치는 운영체제마다 달라 main 이 알려 준 값을 그대로 쓴다
+      path: cli?.path ?? "",
+      state: !cli ? "" : !cli.installed ? t("settings.install.notInstalled") : !cli.current ? t("settings.install.otherApp") : !cli.onPath ? t(IS_WIN ? "settings.install.needsPathWin" : "settings.install.needsPath") : t("settings.install.installed"),
       tone: !cli || !cli.installed ? "text-muted" : cli.current && cli.onPath ? "text-ok" : "text-warn",
       dot: !cli || !cli.installed ? "bg-muted-2/50" : cli.current && cli.onPath ? "bg-ok" : "bg-warn",
       button: cli?.installed ? t("settings.install.reinstall") : t("settings.install.install"),

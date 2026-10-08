@@ -1067,7 +1067,7 @@ async function installCliShim(): Promise<{ ok: true; path: string; onPath: boole
       ok: true,
       path: target,
       onPath,
-      ...(onPath ? {} : { hint: mt("main.cli.pathHint", { dir }) }),
+      ...(onPath ? {} : { hint: mt(process.platform === "win32" ? "main.cli.pathHintWin" : "main.cli.pathHint", { dir }) }),
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

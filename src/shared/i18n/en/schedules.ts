@@ -9,7 +9,7 @@ export const schedules: DeepPartial<typeof ko> = {
   newSchedule: "New schedule",
   notice: {
     missed:
-      "Schedules run only while Sudal is open and your Mac is awake. If a run is missed because the app was closed or the Mac was asleep, Sudal tries to run it when you come back within the grace period, and skips it after that. A short extra margin is added for the run-check interval.",
+      "Schedules run only while Sudal is open and your computer is awake. If a run is missed because the app was closed or the computer was asleep, Sudal tries to run it when you come back within the grace period, and skips it after that. A short extra margin is added for the run-check interval.",
     cleanup:
       "Before each new run, a schedule that uses an isolated session keeps its 3 most recent worktrees and automatically deletes older worktrees and their tabs. Uncommitted changes are deleted too, so save any results you need first. Tabs that are running are never deleted.",
   },
@@ -74,7 +74,7 @@ export const schedules: DeepPartial<typeof ko> = {
     worktree: "Run in an isolated session",
     worktreeHint: "Creates a worktree so the work stays separate from the original. Old worktrees are deleted automatically as described above.",
     create: "Create",
-    fullWarning: "Changes files and runs commands without asking. Even in an isolated session, commands run on this Mac.",
+    fullWarning: "Changes files and runs commands without asking. Even in an isolated session, commands run on this computer.",
   },
   empty: {
     title: "No schedules yet.",

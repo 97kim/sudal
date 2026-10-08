@@ -1,7 +1,7 @@
 // usage 영역의 한국어 문구.
 export const usage = {
   title: "사용량",
-  description: "이 Mac에 저장된 Claude Code·Codex 대화 기록을 바탕으로 사용량을 계산합니다.",
+  description: "이 컴퓨터에 저장된 Claude Code·Codex 대화 기록을 바탕으로 사용량을 계산합니다.",
   scanning: "사용량 집계 중…",
   scanInfo_one: "{{count}}개 파일 · {{time}} 갱신",
   scanInfo_other: "{{count}}개 파일 · {{time}} 갱신",
