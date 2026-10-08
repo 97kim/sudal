@@ -6,6 +6,7 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { mt } from "./i18n";
 import type { CodexAppServer } from "./codex-app-server";
+import { cmdQuote, nodeCmdWrapper } from "./win-proc";
 
 let dir: string | null = null;
 
@@ -29,6 +30,28 @@ if [ -f "$f" ]; then cat "$f"; rm -f "$f"; fi
 exit 0
 `;
 
+// Windows 에는 /bin/sh 가 없다 — 같은 일을 하는 node 스크립트를 Sudal 실행 파일(ELECTRON_RUN_AS_NODE)로 돌린다.
+// 입력·출력·pending 파일 규칙은 위 sh 와 같다.
+export const WIN_SCRIPT = `// Sudal 이 만든 Codex 훅(언어 리마인더). Sudal 이 띄운 Codex 에서만 등록된다.
+const fs = require("fs");
+const path = require("path");
+const d = __dirname;
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("end", () => {
+  const input = Buffer.concat(chunks).toString("utf8");
+  let j = null;
+  try { j = JSON.parse(input); } catch {}
+  const out = (f) => { try { process.stdout.write(fs.readFileSync(f)); return true; } catch { return false; } };
+  if (j && j.hook_event_name === "UserPromptSubmit") { out(path.join(d, "user-prompt.json")); return; }
+  const m = /"session_id"\\s*:\\s*"([^"]*)"/.exec(input);
+  const id = j && typeof j.session_id === "string" ? j.session_id : m ? m[1] : "";
+  if (!/^[A-Za-z0-9-]+$/.test(id)) return;
+  const f = path.join(d, "pending", id + ".json");
+  if (out(f)) { try { fs.rmSync(f, { force: true }); } catch {} }
+});
+`;
+
 function reminder(event: "UserPromptSubmit" | "PostToolUse"): string {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: mt("prompt.claude.languageReminder") } });
 }
@@ -36,27 +59,35 @@ function reminder(event: "UserPromptSubmit" | "PostToolUse"): string {
 /** 훅 스크립트를 준비하고 app-server 에 넘길 -c 인자를 돌려준다. 준비하지 못하면 빈 배열(훅 없이 띄운다). */
 export function codexLangHookArgs(): string[] {
   if (!dir) return [];
-  const script = join(dir, "lang-reminder.sh");
+  const win = process.platform === "win32";
+  const script = join(dir, win ? "lang-reminder.cjs" : "lang-reminder.sh");
+  const wrapper = join(dir, "lang-reminder.cmd");
   try {
     mkdirSync(join(dir, "pending"), { recursive: true });
-    let cur = "";
-    try {
-      cur = readFileSync(script, "utf8");
-    } catch {
-      // 처음
-    }
     // 내용이 그대로면 쓰지 않는다 — 훅 신뢰는 등록 내용의 해시라 스크립트 내용과는 무관하지만, 괜히 건드릴 이유도 없다.
-    if (cur !== SCRIPT) writeFileSync(script, SCRIPT);
-    chmodSync(script, 0o755);
+    writeIfChanged(script, win ? WIN_SCRIPT : SCRIPT);
+    if (win) writeIfChanged(wrapper, nodeCmdWrapper(process.execPath, `"%~dp0lang-reminder.cjs"`));
+    else chmodSync(script, 0o755);
     // 언어는 바뀔 수 있으니 띄울 때마다 새로 쓴다.
     writeFileSync(join(dir, "user-prompt.json"), reminder("UserPromptSubmit"));
   } catch {
     return [];
   }
   // 앱 데이터 경로에 공백이 있다("Application Support") — 셸 명령으로 넘기니 작은따옴표로 감싸고, 경로 속 ' 는 '\'' 로 바꾼다.
-  const cmd = JSON.stringify(`/bin/sh ${shellQuote(script)}`);
+  // Windows 의 Codex 는 훅을 cmd.exe /C 로 돌린다 — .cmd 경로를 큰따옴표로 감싸 넘긴다.
+  const cmd = JSON.stringify(win ? cmdQuote(wrapper) : `/bin/sh ${shellQuote(script)}`);
   const handler = `{type="command",command=${cmd},timeout=5}`;
   return ["-c", `hooks.UserPromptSubmit=[{hooks=[${handler}]}]`, "-c", `hooks.PostToolUse=[{matcher="*",hooks=[${handler}]}]`];
+}
+
+function writeIfChanged(file: string, content: string): void {
+  let cur = "";
+  try {
+    cur = readFileSync(file, "utf8");
+  } catch {
+    // 처음
+  }
+  if (cur !== content) writeFileSync(file, content);
 }
 
 export function shellQuote(s: string): string {
@@ -109,7 +140,7 @@ async function trustNow(server: CodexAppServer, cwd: string, log?: (line: string
     const r = await server.request<{ data?: { hooks?: HookMeta[] }[] }>("hooks/list", { cwds: [cwd] }, 10_000);
     const ours = (r.data ?? [])
       .flatMap((e) => e.hooks ?? [])
-      .filter((h) => h.source === "sessionFlags" && h.command?.includes("lang-reminder.sh"));
+      .filter((h) => h.source === "sessionFlags" && /lang-reminder\.(sh|cmd)/.test(h.command ?? ""));
     const untrusted = ours.filter((h) => h.trustStatus !== "trusted" && h.trustStatus !== "managed");
     if (untrusted.length === 0) {
       trusted = ours.length > 0;
