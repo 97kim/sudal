@@ -206,14 +206,17 @@ function diskUsageKb(path: string): Promise<number | null> {
 
 /**
  * 폴더 아래 파일이 디스크에서 차지하는 공간(KB). 링크·정션은 따라가지 않는다(worktree 밖을 셀 수 있다).
- * 정리 화면의 크기는 "지우면 확보되는 공간" 으로 읽힌다. macOS 의 du -sk 와 뜻을 맞추려고 파일마다 할당 단위(4KB)로 올림하고,
+ * 정리 화면의 크기는 "지우면 확보되는 공간" 으로 읽힌다. macOS 의 du -sk 와 뜻을 맞추려고 파일마다 할당 단위로 올림하고,
  * 하드 링크는 한 번만 센다. 작은 파일이 많은 node_modules 에서 파일 크기를 그냥 더하면 실제보다 한참 작게 나온다.
+ * 할당 단위는 NTFS 기본값 4KB 로 둔다(볼륨마다 다를 수 있어 근삿값이다). NTFS 는 수백 바이트 이하 파일을 MFT 레코드 안에 담아
+ * 따로 공간을 쓰지 않으므로 그런 파일은 0 으로 센다. 파일 ID 는 64비트라 bigint 로 읽는다(number 로는 다른 파일이 같은 값이 된다).
  * du 처럼 시간 제한을 둔다: deadline 을 넘기면 null(크기를 보이지 않는다). 파일을 읽는 도중에도 확인한다.
  * 지워지는 중인 파일(ENOENT)은 건너뛰지만, 읽지 못한 폴더·파일(권한 등)이 있으면 null — 작은 값으로 보이면 오해한다.
  */
 export async function walkSizeKb(root: string, deadline: number): Promise<number | null> {
   const BATCH = 64;
   const CLUSTER = 4096;
+  const RESIDENT = 512;
   let bytes = 0;
   const seen = new Set<string>();
   const stack = [root];
@@ -239,14 +242,15 @@ export async function walkSizeKb(root: string, deadline: number): Promise<number
         if (Date.now() > deadline) return null;
         const sizes = await Promise.all(
           files.slice(i, i + BATCH).map((f) =>
-            fs.promises.lstat(f).then(
+            fs.promises.lstat(f, { bigint: true }).then(
               (st) => {
-                if (st.nlink > 1 && st.ino) {
+                if (st.nlink > 1n && st.ino) {
                   const key = `${st.dev}:${st.ino}`;
                   if (seen.has(key)) return 0;
                   seen.add(key);
                 }
-                return Math.ceil(st.size / CLUSTER) * CLUSTER;
+                const size = Number(st.size);
+                return size <= RESIDENT ? 0 : Math.ceil(size / CLUSTER) * CLUSTER;
               },
               (e) => {
                 if (gone(e)) return 0;

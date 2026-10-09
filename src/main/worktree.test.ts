@@ -175,13 +175,14 @@ test("listManagedWorktrees: worktree 폴더의 worktree 를 원본 저장소·�
   assert.ok((list[0].sizeKb ?? 0) > 0);
 });
 
-test("walkSizeKb: 파일마다 4KB 단위로 올림해 더하고(하드 링크는 한 번), 시간을 넘기면 null", async () => {
+test("walkSizeKb: 파일마다 4KB 단위로 올림해 더하고(아주 작은 파일은 0, 하드 링크는 한 번), 시간을 넘기면 null", async () => {
   const dir = mkdtempSync(join(tmpdir(), "wb-size-"));
   writeFileSync(join(dir, "a.bin"), Buffer.alloc(1500));
   const { mkdirSync } = await import("node:fs");
   mkdirSync(join(dir, "sub"));
   writeFileSync(join(dir, "sub", "b.bin"), Buffer.alloc(600));
-  assert.equal(await walkSizeKb(dir, Date.now() + 10_000), 8, "1500B·600B 는 각각 4KB 를 차지한다");
+  writeFileSync(join(dir, "tiny.txt"), "x".repeat(100));
+  assert.equal(await walkSizeKb(dir, Date.now() + 10_000), 8, "1500B·600B 는 각각 4KB, 100B 는 MFT 안이라 0");
   const { linkSync } = await import("node:fs");
   linkSync(join(dir, "a.bin"), join(dir, "sub", "a-link.bin"));
   assert.equal(await walkSizeKb(dir, Date.now() + 10_000), 8, "하드 링크는 다시 세지 않는다");

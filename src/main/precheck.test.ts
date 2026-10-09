@@ -44,6 +44,7 @@ test("windowsPrecheckCommand: 따옴표 안이나 ^ 로 끝나면 꼬리를 붙�
   assert.equal(windowsPrecheckCommand("echo hi  "), "echo hi  & call exit %^errorlevel%");
   assert.equal(windowsPrecheckCommand('node -e "process.exit(0)'), 'node -e "process.exit(0)');
   assert.equal(windowsPrecheckCommand("echo hi^"), "echo hi^");
+  assert.equal(windowsPrecheckCommand("없는명령_xyz\r\n"), "없는명령_xyz& call exit %^errorlevel%");
   // 이스케이프된 따옴표는 따옴표가 아니다
   assert.equal(windowsPrecheckCommand('없는명령_xyz ^"'), '없는명령_xyz ^"& call exit %^errorlevel%');
   // 따옴표 안의 ^ 는 그냥 글자다

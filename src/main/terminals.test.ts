@@ -17,10 +17,11 @@ const stubbornCmd = (sec: number) => (IS_WIN ? sleepCmd(sec) : { file: "/bin/sh"
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에 붙고, close 하면 exit 가 온다", async () => {
+test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에 붙고, close 하면 exit 가 온다", async (t) => {
   const data: string[] = [];
   const exits: number[] = [];
   const tm = new TerminalManager({ onData: (_id, d) => data.push(d), onExit: (_id, code) => exits.push(code) });
+  t.after(() => tm.closeAll()); // 중간에 실패해도 셸·pty 를 남기지 않는다
   const env = shellEnv;
 
   const r = tm.open("t1", process.cwd(), env, 80, 24);
@@ -28,14 +29,18 @@ test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에
   assert.equal(r.existing, false);
   if (IS_WIN) assert.match(r.shell ?? "", /pwsh|powershell|cmd/i);
   else assert.equal(r.shell, "/bin/sh");
+  const isCmd = /cmd\.exe$/i.test(r.shell ?? "");
 
   // 프롬프트가 뜨기 전에 보낸 입력은 셸 초기화(rc 파일)에 먹힐 수 있어 첫 출력 후 잠시 기다린다.
   for (let i = 0; i < 200 && data.length === 0; i++) await wait(50);
   await wait(500);
-  // 입력한 글자에는 42 가 없다 — 출력에 PTY_42 가 있으면 셸이 실제로 계산한 것이다(Windows 기본 셸은 PowerShell)
-  assert.equal(tm.write("t1", IS_WIN ? 'Write-Output ("PTY_" + (6*7))\r' : "echo PTY_$((6*7))\n"), true);
-  for (let i = 0; i < 200 && !data.join("").includes("PTY_42"); i++) await wait(50); // 로그인 셸 기동 대기
-  assert.ok(data.join("").includes("PTY_42"), `출력에 PTY_42 가 없음: ${JSON.stringify(data.join(""))}`);
+  // 입력한 글자에는 계산 결과가 없다 — 출력에 있으면 셸이 실제로 계산한 것이다
+  // (Windows 기본 셸은 PowerShell, 없으면 cmd — cmd 는 set /a 가 42 를 찍는다)
+  const input = !IS_WIN ? "echo PTY_$((6*7))\n" : isCmd ? "set /a 6*7\r" : 'Write-Output ("PTY_" + (6*7))\r';
+  const expected = isCmd ? /\b42\b/ : /PTY_42/;
+  assert.equal(tm.write("t1", input), true);
+  for (let i = 0; i < 200 && !expected.test(data.join("")); i++) await wait(50); // 로그인 셸 기동 대기
+  assert.match(data.join(""), expected);
 
   const again = tm.open("t1", process.cwd(), env, 100, 30);
   assert.equal(again.existing, true);
@@ -57,10 +62,11 @@ test("TerminalManager: 없는 cwd 는 ok:false 로 알린다", () => {
   assert.equal(tm.has("t2"), false);
 });
 
-test("TerminalManager: 셸을 CLI 로 바꾼 뒤 늦게 오는 옛 셸의 exit 는 알리지 않고, clearBacklog 는 다음 open 의 backlog 를 비운다", async () => {
+test("TerminalManager: 셸을 CLI 로 바꾼 뒤 늦게 오는 옛 셸의 exit 는 알리지 않고, clearBacklog 는 다음 open 의 backlog 를 비운다", async (t) => {
   const exits: { id: string; kind: string }[] = [];
   const data: string[] = [];
   const tm = new TerminalManager({ onData: (_id, d) => data.push(d), onExit: (id, _code, kind) => exits.push({ id, kind }) });
+  t.after(() => tm.closeAll()); // 중간에 실패해도 셸·pty 를 남기지 않는다
   const env = shellEnv;
 
   assert.equal(tm.open("t2", process.cwd(), env, 80, 24).ok, true);
@@ -81,9 +87,10 @@ test("TerminalManager: 셸을 CLI 로 바꾼 뒤 늦게 오는 옛 셸의 exit �
   assert.deepEqual(exits, [{ id: "t2", kind: "command" }], "CLI 가 끝나면 그 exit 는 온다");
 });
 
-test("TerminalManager: 밀려난 옛 pty 의 exit 가 새 pty 가 끝난 뒤에 와도 알리지 않는다", async () => {
+test("TerminalManager: 밀려난 옛 pty 의 exit 가 새 pty 가 끝난 뒤에 와도 알리지 않는다", async (t) => {
   const exits: { id: string; kind: string }[] = [];
   const tm = new TerminalManager({ onData: () => {}, onExit: (id, _code, kind) => exits.push({ id, kind }) });
+  t.after(() => tm.closeAll()); // 중간에 실패해도 셸·pty 를 남기지 않는다
   const env = IS_WIN ? shellEnv : { PATH: posixEnv.PATH, HOME: posixEnv.HOME };
 
   // HUP 를 무시하는 옛 프로세스: kill() 로는 안 죽고 sleep 이 끝나야 exit 가 온다.
@@ -98,9 +105,10 @@ test("TerminalManager: 밀려난 옛 pty 의 exit 가 새 pty 가 끝난 뒤에 
   assert.deepEqual(exits, [{ id: "t3", kind: "command" }], "그 뒤에 온 옛 pty 의 exit 는 삼킨다");
 });
 
-test("TerminalManager: 끊은(close) 뒤 같은 id 로 새 CLI 를 띄우면, 옛 CLI 의 늦은 exit 는 알리지 않고 새 것의 exit 만 온다", async () => {
+test("TerminalManager: 끊은(close) 뒤 같은 id 로 새 CLI 를 띄우면, 옛 CLI 의 늦은 exit 는 알리지 않고 새 것의 exit 만 온다", async (t) => {
   const exits: { id: string; kind: string }[] = [];
   const tm = new TerminalManager({ onData: () => {}, onExit: (id, _code, kind) => exits.push({ id, kind }) });
+  t.after(() => tm.closeAll()); // 중간에 실패해도 셸·pty 를 남기지 않는다
   const env = IS_WIN ? shellEnv : { PATH: posixEnv.PATH, HOME: posixEnv.HOME };
 
   const old = stubbornCmd(1.5);

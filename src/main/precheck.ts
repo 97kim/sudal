@@ -102,11 +102,14 @@ export function runPrecheckCommand(input: { command: string; timeoutMs: number; 
  * - & 앞에 공백을 더하지 않는다 — echo 출력·리다이렉션 내용 끝에 공백이 붙는다. 사용자가 쓴 끝 공백은 그대로 둔다.
  * - 명령이 따옴표 안에서 끝나면 꼬리가 마지막 인수 안으로 들어가 뜻이 바뀌고(node -e "… 가 문법 오류가 된다),
  *   ^ 로 끝나면 꼬리의 & 가 이스케이프된다. 둘 다 그때는 붙이지 않는다(endsCleanForCmd).
+ * - cmd /c 는 줄바꿈 뒤를 읽지 않는다. 끝 줄바꿈은 떼고 붙인다(중간 줄바꿈이면 꼬리도 무시돼 원래 동작 그대로다).
+ * - %X% 처럼 변수가 펼쳐진 뒤에 따옴표·^ 가 생기는 경우는 미리 알 수 없다(드물어 그대로 둔다).
  * - %errorlevel% 은 같은 이름의 환경 변수가 있으면 그 값을 읽는다 — 띄울 때 env 에서 뺀다(withoutErrorlevelVar).
  */
 export function windowsPrecheckCommand(command: string): string {
-  if (!endsCleanForCmd(command)) return command;
-  return `${command}& call exit %^errorlevel%`;
+  const body = command.replace(/[\r\n]+$/, "");
+  if (!endsCleanForCmd(body)) return command;
+  return `${body}& call exit %^errorlevel%`;
 }
 
 /** cmd 규칙으로 끝까지 읽었을 때 따옴표 밖이고 ^ 이스케이프가 걸려 있지 않은가. 따옴표 밖의 ^ 는 다음 글자를 이스케이프한다(^" 도). */
