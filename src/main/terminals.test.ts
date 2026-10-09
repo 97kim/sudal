@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import { TerminalManager, defaultShell, trimBacklog } from "./terminals";
 import { TERMINAL_CLEAR_MARK } from "@shared/ipc";
 
+// /bin/sh 로 pty 를 띄우는 테스트. Windows 에는 /bin/sh 가 없어 ConPTY 가 끝나지 않고 테스트 프로세스가 멈췄다.
+// Windows 의 셸 선택은 아래 defaultShell 테스트가 본다.
+const POSIX_ONLY = process.platform === "win32" && "POSIX 셸(/bin/sh) 전용";
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에 붙고, close 하면 exit 가 온다", async () => {
+test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에 붙고, close 하면 exit 가 온다", { skip: POSIX_ONLY }, async () => {
   const data: string[] = [];
   const exits: number[] = [];
   const tm = new TerminalManager({ onData: (_id, d) => data.push(d), onExit: (_id, code) => exits.push(code) });
@@ -34,7 +38,7 @@ test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에
   assert.equal(tm.write("t1", "x"), false);
 });
 
-test("TerminalManager: 없는 cwd 는 ok:false 로 알린다", () => {
+test("TerminalManager: 없는 cwd 는 ok:false 로 알린다", { skip: POSIX_ONLY }, () => {
   const tm = new TerminalManager({ onData: () => {}, onExit: () => {} });
   const r = tm.open("t2", "/nonexistent/dir/for/test", { PATH: "/usr/bin:/bin", SHELL: "/bin/sh" }, 80, 24);
   assert.equal(r.ok, false);
@@ -42,7 +46,7 @@ test("TerminalManager: 없는 cwd 는 ok:false 로 알린다", () => {
   assert.equal(tm.has("t2"), false);
 });
 
-test("TerminalManager: 셸을 CLI 로 바꾼 뒤 늦게 오는 옛 셸의 exit 는 알리지 않고, clearBacklog 는 다음 open 의 backlog 를 비운다", async () => {
+test("TerminalManager: 셸을 CLI 로 바꾼 뒤 늦게 오는 옛 셸의 exit 는 알리지 않고, clearBacklog 는 다음 open 의 backlog 를 비운다", { skip: POSIX_ONLY }, async () => {
   const exits: { id: string; kind: string }[] = [];
   const data: string[] = [];
   const tm = new TerminalManager({ onData: (_id, d) => data.push(d), onExit: (id, _code, kind) => exits.push({ id, kind }) });
@@ -65,7 +69,7 @@ test("TerminalManager: 셸을 CLI 로 바꾼 뒤 늦게 오는 옛 셸의 exit �
   assert.deepEqual(exits, [{ id: "t2", kind: "command" }], "CLI 가 끝나면 그 exit 는 온다");
 });
 
-test("TerminalManager: 밀려난 옛 pty 의 exit 가 새 pty 가 끝난 뒤에 와도 알리지 않는다", async () => {
+test("TerminalManager: 밀려난 옛 pty 의 exit 가 새 pty 가 끝난 뒤에 와도 알리지 않는다", { skip: POSIX_ONLY }, async () => {
   const exits: { id: string; kind: string }[] = [];
   const tm = new TerminalManager({ onData: () => {}, onExit: (id, _code, kind) => exits.push({ id, kind }) });
   const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/tmp" };
@@ -80,7 +84,7 @@ test("TerminalManager: 밀려난 옛 pty 의 exit 가 새 pty 가 끝난 뒤에 
   assert.deepEqual(exits, [{ id: "t3", kind: "command" }], "그 뒤에 온 옛 pty 의 exit 는 삼킨다");
 });
 
-test("TerminalManager: 끊은(close) 뒤 같은 id 로 새 CLI 를 띄우면, 옛 CLI 의 늦은 exit 는 알리지 않고 새 것의 exit 만 온다", async () => {
+test("TerminalManager: 끊은(close) 뒤 같은 id 로 새 CLI 를 띄우면, 옛 CLI 의 늦은 exit 는 알리지 않고 새 것의 exit 만 온다", { skip: POSIX_ONLY }, async () => {
   const exits: { id: string; kind: string }[] = [];
   const tm = new TerminalManager({ onData: () => {}, onExit: (id, _code, kind) => exits.push({ id, kind }) });
   const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/tmp" };
