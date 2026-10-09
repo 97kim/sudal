@@ -57,6 +57,14 @@ export class WorkspaceService {
   attentionSource: (() => WorkspaceStateDto["attention"]) | null = null;
   /** 설정의 "새 탭 권한". inherit 면 새 탭을 열 때 보고 있던 탭을 따른다. */
   newTabPolicy: () => NewTabPolicy = () => "inherit";
+
+  /** 검증된 CLI가 하나뿐이면 새 세션은 그 CLI를 사용한다. */
+  availableProviders: readonly Provider[] = [];
+
+  private newTabProvider(preferred?: Provider): Provider {
+    return this.availableProviders.length === 1 ? this.availableProviders[0] : preferred ?? "claude";
+  }
+
   private fixedNewTabPolicy(): PermissionPolicy | undefined {
     const p = this.newTabPolicy();
     return p === "inherit" ? undefined : p;
@@ -132,7 +140,7 @@ export class WorkspaceService {
       this.commit(activateTab(model, open.id));
       return { workspaceId: workspace.id, tabId: open.id };
     }
-    const created = createTab(model, workspace.id, now, randomUUID(), { policy: this.fixedNewTabPolicy() });
+    const created = createTab(model, workspace.id, now, randomUUID(), { provider: this.newTabProvider(), policy: this.fixedNewTabPolicy() });
     this.commit(created.model);
     return { workspaceId: workspace.id, tabId: created.tab.id };
   }
@@ -141,7 +149,7 @@ export class WorkspaceService {
   createWorkspace(name: string, builtin?: Workspace["builtin"]): { workspaceId: string; tabId: string } {
     const now = Date.now();
     const { model, workspace } = createWorkspace(this.model, name, now, randomUUID(), builtin);
-    const created = createTab(model, workspace.id, now, randomUUID(), { policy: this.fixedNewTabPolicy() });
+    const created = createTab(model, workspace.id, now, randomUUID(), { provider: this.newTabProvider(), policy: this.fixedNewTabPolicy() });
     this.commit(created.model);
     return { workspaceId: workspace.id, tabId: created.tab.id };
   }
@@ -171,13 +179,15 @@ export class WorkspaceService {
       ? this.model.workspaces.find((w) => w.id === workspaceId)
       : activeWorkspace(this.model);
     if (!ws) return null;
-    // 새 탭은 활성 탭의 provider/모델을 이어받는다. 정책은 설정이 정해 두었으면 그것, 아니면 활성 탭을 따른다.
+    // 설치된 CLI가 하나면 우선 사용하고, 그 외에는 활성 탭의 provider/모델을 이어받는다.
+    // 정책은 설정이 정해 두었으면 그것, 아니면 활성 탭을 따른다.
     // 작업 경로는 inheritedCwd 가 정한다(다른 워크스페이스면 그쪽 최근 경로).
     const active = this.model.tabs.find((t) => t.id === this.model.activeTabId);
+    const provider = this.newTabProvider(active?.provider);
     const now = Date.now();
     const { model, tab } = createTab(this.model, ws.id, now, randomUUID(), {
-      provider: active?.provider,
-      model: active?.model,
+      provider,
+      model: provider === active?.provider ? active.model : undefined,
       policy: this.fixedNewTabPolicy() ?? active?.policy,
       cwd: extra?.cwd ?? inheritedCwd(this.model, ws.id, this.model.activeTabId),
     });

@@ -38,6 +38,8 @@ export interface ControlSnapshot {
 
 export interface ControlDeps {
   version: string;
+  /** 새 세션의 기본 CLI 탐색이 끝날 때까지 기다린다. 조회 요청은 막지 않는다. */
+  readyForNewSession?(): Promise<void>;
   state(): WorkspaceStateDto;
   addWorkspace(path: string): { workspaceId: string; tabId: string };
   createTab(workspaceId?: string): string | null;
@@ -311,6 +313,7 @@ export class ControlServer {
       case "ws.add": {
         const path = this.requireString(params, "path");
         if (!isAbsolute(path)) throw new ControlError(mt("cli.control.pathAbsolute"));
+        await this.deps.readyForNewSession?.();
         this.deps.approveRoot(path);
         const r = this.deps.addWorkspace(path);
         return { workspaceId: r.workspaceId, tabId: r.tabId };
@@ -420,6 +423,7 @@ export class ControlServer {
         };
       }
       case "tab.new": {
+        await this.deps.readyForNewSession?.();
         const st = this.deps.state();
         // --ws 가 없으면 부른 탭(caller)의 워크스페이스, 탭 밖에서 불렀으면 화면에 보이는 탭의 워크스페이스
         const wsOf = (tabId: unknown) => st.model.workspaces.find((w) => w.id === st.model.tabs.find((t) => t.id === tabId)?.workspaceId);

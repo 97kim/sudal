@@ -180,6 +180,17 @@ function cliDiscovery(): CliDiscovery {
   return discovery;
 }
 
+let cliDefaultsReady: Promise<void> = Promise.resolve();
+function refreshAvailableProviders(): Promise<void> {
+  // 탐색은 직렬화한다. 이전 탐색이 늦게 끝나 최신 설정의 결과를 덮어쓰지 않게 한다.
+  cliDefaultsReady = cliDefaultsReady.then(async () => {
+    cliDiscovery().invalidate();
+    const statuses = await Promise.all(PROVIDERS.map(async (provider) => ({ provider, status: await cliDiscovery().find(provider) })));
+    workspaces.availableProviders = statuses.filter(({ status }) => status.installed).map(({ provider }) => provider);
+  }).catch((error) => console.error("[cli] default provider discovery failed:", error));
+  return cliDefaultsReady;
+}
+
 async function cliStatus(provider: Provider): Promise<CliStatusDto> {
   const status = await cliDiscovery().find(provider);
   // "기본 (CLI 설정)" 항목에 실제 모델 이름을 붙이기 위해 CLI 설정 파일의 기본 모델도 함께 준다.
@@ -266,6 +277,7 @@ async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
 // ===== Broadcast helpers =====
 
 let mainWindow: BrowserWindow | null = null;
+let mainWindowReady = false;
 /** 살아 있는 메인 창. 닫은 뒤의 객체나 수달 창은 아니다. */
 function liveMainWindow(): BrowserWindow | null {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
@@ -717,6 +729,7 @@ async function startControlServer() {
     {
       version: app.getVersion(),
       state: () => workspaces.state(),
+      readyForNewSession: () => cliDefaultsReady,
       addWorkspace: (path) => workspaces.addWorkspace(path),
       createTab: (workspaceId) => workspaces.createTab(workspaceId),
       configure: (tabId, patch) => void sessions.configure(tabId, patch),
@@ -1733,11 +1746,6 @@ function bootstrap() {
   });
   // 시작 시 전체 1회(증분 캐시) + 이후 파일 변경 감시. 터미널에서 쓴 사용량도 30초 안에 반영.
   void usage.scan().then(() => usage.watch());
-
-  // 개발 편의: 워크스페이스를 환경변수로 미리 추가 (디렉토리 선택 다이얼로그 생략).
-  if (!app.isPackaged && process.env.SUDAL_DEV_CWD) {
-    workspaces.addWorkspace(process.env.SUDAL_DEV_CWD);
-  }
 }
 
 /**
@@ -2123,11 +2131,14 @@ function registerIpc() {
   );
   ipcMain.handle(
     IPC.cliSetOverride,
-    (_e, provider: Provider, binPath: string | null): OverrideSetResultDto =>
-      cliDiscovery().setOverride(provider, binPath),
+    async (_e, provider: Provider, binPath: string | null): Promise<OverrideSetResultDto> => {
+      const result = cliDiscovery().setOverride(provider, binPath);
+      if (result.ok) await refreshAvailableProviders();
+      return result;
+    },
   );
-  ipcMain.handle(IPC.cliRefresh, () => {
-    cliDiscovery().invalidate();
+  ipcMain.handle(IPC.cliRefresh, async () => {
+    await refreshAvailableProviders();
   });
   ipcMain.handle(IPC.cliDiagnostics, () => cliDiagnostics());
 
@@ -2634,11 +2645,14 @@ function registerIpc() {
   ipcMain.handle(IPC.wsAdd, async (e, path?: string) => {
     // 렌더러가 경로를 직접 주면 승인된 루트 안일 때만, 아니면 선택 창을 연다
     const dir = typeof path === "string" && path && isApprovedDir(path) ? path : await pickDirectory(e.sender);
-    return dir ? workspaces.addWorkspace(dir) : null;
+    if (!dir) return null;
+    await cliDefaultsReady;
+    return workspaces.addWorkspace(dir);
   });
-  ipcMain.handle(IPC.wsCreate, (_e, name: string) =>
-    workspaces.createWorkspace(name.trim() || mt("main.workspace.defaultName")),
-  );
+  ipcMain.handle(IPC.wsCreate, async (_e, name: string) => {
+    await cliDefaultsReady;
+    return workspaces.createWorkspace(name.trim() || mt("main.workspace.defaultName"));
+  });
   ipcMain.handle(
     IPC.wsUpdate,
     (_e, id: string, patch: { name?: string; path?: string; verifyCommands?: string[] }) => {
@@ -2658,9 +2672,10 @@ function registerIpc() {
     workspaces.removeWorkspace(id);
     snippets.removeWorkspace(id);
   });
-  ipcMain.handle(IPC.tabCreate, (_e, workspaceId?: string) =>
-    workspaces.createTab(workspaceId),
-  );
+  ipcMain.handle(IPC.tabCreate, async (_e, workspaceId?: string) => {
+    await cliDefaultsReady;
+    return workspaces.createTab(workspaceId);
+  });
   ipcMain.handle(IPC.tabClose, (_e, tabId: string) => {
     terminals.closePrefix(`${tabId}:`);
     return workspaces.closeTab(tabId);
@@ -2672,6 +2687,7 @@ function registerIpc() {
   ipcMain.handle(
     IPC.wtCreate,
     async (_e, workspaceId: string, fromTabId: string | null) => {
+      await cliDefaultsReady;
       const model = workspaces.state().model;
       const ws = model.workspaces.find((w) => w.id === workspaceId);
       if (!ws) return { ok: false, error: mt("main.error.noWorkspace") };
@@ -3056,13 +3072,21 @@ hardenWebviews();
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => showMainWindow());
+  app.on("second-instance", () => {
+    // 초기화 중의 요청은 곧 열릴 첫 창으로 처리한다.
+    if (mainWindowReady) showMainWindow();
+  });
 }
 app.whenReady().then(async () => {
   // Windows 알림·작업 표시줄이 이 앱을 알아보는 이름. electron-builder 의 appId 와 같아야 설치본의 바로가기와 묶인다.
   if (process.platform === "win32") app.setAppUserModelId("io.github.97kim.sudal");
   bootstrap();
   registerIpc();
+  // 창과 기존 세션은 탐색을 기다리지 않는다. 새 세션을 만드는 진입점만 기다린다.
+  void refreshAvailableProviders();
+  // 개발 편의: 기본 CLI가 정해진 뒤 환경변수의 워크스페이스를 추가한다.
+  const devCwd = !app.isPackaged && process.env.SUDAL_DEV_CWD;
+  if (devCwd) void cliDefaultsReady.then(() => workspaces.addWorkspace(devCwd));
   buildMenu();
   // 브라우저 탭의 실패한 요청 수집 — webRequest 는 세션에 한 번만 걸 수 있어 창보다 먼저 건다
   watchBrowserNetwork();
@@ -3074,7 +3098,8 @@ app.whenReady().then(async () => {
   startBackgroundJobWatcher();
   startSchedules();
   void startControlServer();
-  mainWindow = createWindow();
+  mainWindow = liveMainWindow() ?? createWindow();
+  mainWindowReady = true;
   // macOS 는 자동 업데이트를 붙이지 않는다 — 새 버전은 brew 로 갈아 끼우거나 GitHub Releases 의 DMG 를 다시 받는다.
   // 서명·공증이 없으면 electron-updater 의 자동 설치는 Gatekeeper 에 막힌다. Windows 만 electron-updater 를 쓴다(app-update-win.ts).
 

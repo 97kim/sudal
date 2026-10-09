@@ -106,6 +106,22 @@ function fakeDeps() {
   return { deps, calls, statuses, pending, model };
 }
 
+test("ControlServer: CLI 탐색 중에는 생성만 기다리고 조회는 응답한다", async () => {
+  const { deps, calls } = fakeDeps();
+  let ready!: () => void;
+  const pending = new Promise<void>((resolve) => { ready = resolve; });
+  deps.readyForNewSession = () => pending;
+  const srv = new ControlServer(deps, "unused");
+  const tab = srv.dispatch("tab.new", {});
+  const workspace = srv.dispatch("ws.add", { path: process.cwd() });
+  await srv.dispatch("tab.list", {});
+  assert.equal(calls.some((c) => /^(createTab|addWorkspace)/.test(c)), false);
+  ready();
+  await Promise.all([tab, workspace]);
+  assert.equal(calls.filter((c) => c.startsWith("createTab")).length, 1);
+  assert.equal(calls.filter((c) => c.startsWith("addWorkspace")).length, 1);
+});
+
 test("ControlServer: 선택자·목록·읽기·보내고 기다리기·화면 열기", async () => {
   const { deps, calls, pending, model } = fakeDeps();
   const srv = new ControlServer(deps, join(mkdtempSync(join(tmpdir(), "wb-ctl-")), "c.sock"));
@@ -162,7 +178,7 @@ test("ControlServer: 선택자·목록·읽기·보내고 기다리기·화면 �
 
 test("ControlServer: 소켓으로 줄 단위 JSON 요청·응답, 잘못된 줄은 error 로", async () => {
   const dir = mkdtempSync(join(tmpdir(), "wb-ctl-"));
-  const sock = join(dir, "c.sock");
+  const sock = process.platform === "win32" ? controlPipeName(dir) : join(dir, "c.sock");
   const { deps } = fakeDeps();
   const srv = new ControlServer(deps, sock);
   await srv.start();
