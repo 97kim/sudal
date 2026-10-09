@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { realpathSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listManagedWorktrees, worktreeCreate, worktreeMerge, worktreeRemove, worktreeSlug, worktreeStatus } from "./worktree";
+import { listManagedWorktrees, walkSizeKb, worktreeCreate, worktreeMerge, worktreeRemove, worktreeSlug, worktreeStatus } from "./worktree";
 
 // Windows 러너의 전역 core.autocrlf=true 가 파일 내용을 CRLF 로 바꾸지 않게 이 테스트의 git 에서만 끈다
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.autocrlf", GIT_CONFIG_VALUE_0: "false" };
@@ -172,7 +172,16 @@ test("listManagedWorktrees: worktree 폴더의 worktree 를 원본 저장소·�
   assert.equal(list[0].repo, repo);
   assert.equal(list[0].branch, "sudal/feat");
   assert.equal(list[0].dirty, 1);
-  // Windows 에는 du 가 없어 크기를 재지 않는다(null — 화면에 크기를 보이지 않는다)
-  if (process.platform === "win32") assert.equal(list[0].sizeKb, null);
-  else assert.ok((list[0].sizeKb ?? 0) > 0);
+  assert.ok((list[0].sizeKb ?? 0) > 0);
+});
+
+test("walkSizeKb: 파일 크기를 더해 KB 로 올림하고, 시간을 넘기면 null", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "wb-size-"));
+  writeFileSync(join(dir, "a.bin"), Buffer.alloc(1500));
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(join(dir, "sub"));
+  writeFileSync(join(dir, "sub", "b.bin"), Buffer.alloc(600));
+  assert.equal(await walkSizeKb(dir, Date.now() + 10_000), 3);
+  assert.equal(await walkSizeKb(dir, Date.now() - 1), null);
+  rmSync(dir, { recursive: true, force: true });
 });

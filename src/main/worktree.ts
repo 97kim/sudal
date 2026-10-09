@@ -194,14 +194,45 @@ export async function listManagedWorktrees(env: NodeJS.ProcessEnv, roots: string
 }
 
 function diskUsageKb(path: string): Promise<number | null> {
-  // Windows 에는 du 가 없다 — 크기는 보이지 않는다(null).
-  if (process.platform === "win32") return Promise.resolve(null);
+  // Windows 에는 du 가 없어 직접 훑는다
+  if (process.platform === "win32") return walkSizeKb(path, Date.now() + 10_000);
   return new Promise((done) => {
     execFile("du", ["-sk", path], { timeout: 10_000 }, (err, stdout) => {
       const n = err ? NaN : Number(String(stdout).split(/\s+/)[0]);
       done(Number.isFinite(n) ? n : null);
     });
   });
+}
+
+/**
+ * 폴더 아래 파일 크기의 합(KB, 올림). 링크는 따라가지 않는다(worktree 밖을 셀 수 있다).
+ * du 처럼 시간 제한을 둔다 — node_modules 가 큰 worktree 는 deadline 을 넘기면 null(크기를 보이지 않는다).
+ */
+export async function walkSizeKb(root: string, deadline: number): Promise<number | null> {
+  let bytes = 0;
+  const stack = [root];
+  while (stack.length > 0) {
+    if (Date.now() > deadline) return null;
+    const dir = stack.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) stack.push(p);
+      else if (e.isFile()) {
+        try {
+          bytes += (await fs.promises.lstat(p)).size;
+        } catch {
+          /* 그사이 지워졌다 */
+        }
+      }
+    }
+  }
+  return Math.ceil(bytes / 1024);
 }
 
 function runInput(cwd: string, args: string[], env: NodeJS.ProcessEnv, input: string): Promise<Run> {
