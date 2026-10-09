@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { locateFiles, looksBinary, readFileView, listDirectory, writeFileView } from "./files";
 
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
@@ -161,14 +161,21 @@ test("createPath / renamePath / resolveDeletable: 저장소 안에서만, 덮어
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("renamePath / resolveDeletable: 심링크는 링크 자체를 다루고 원본은 건드리지 않는다", async () => {
+test("renamePath / resolveDeletable: 심링크는 링크 자체를 다루고 원본은 건드리지 않는다", async (t) => {
   const { mkdtempSync, existsSync, writeFileSync, symlinkSync, lstatSync, readFileSync, realpathSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { renamePath, resolveDeletable, createPath } = await import("./files");
   const dir = mkdtempSync(join(tmpdir(), "wb-symlink-"));
   writeFileSync(join(dir, "real.txt"), "keep me");
-  symlinkSync("real.txt", join(dir, "link.txt"));
+  try {
+    symlinkSync("real.txt", join(dir, "link.txt"));
+  } catch (e) {
+    rmSync(dir, { recursive: true, force: true });
+    // Windows 는 관리자·개발자 모드가 아니면 심링크를 만들 수 없다
+    if ((e as NodeJS.ErrnoException).code === "EPERM") return t.skip("심링크를 만들 권한이 없음");
+    throw e;
+  }
   // 링크 이름 변경 → 링크만 옮겨지고 원본은 그대로
   const r = await renamePath(dir, "link.txt", "moved.txt");
   assert.equal(r.ok, true);
@@ -178,7 +185,7 @@ test("renamePath / resolveDeletable: 심링크는 링크 자체를 다루고 원
   // 삭제 대상도 링크 경로(원본이 아님)
   const d = await resolveDeletable(dir, "moved.txt");
   assert.equal(d.ok, true);
-  assert.equal((d as { path: string }).path.endsWith("/moved.txt"), true);
+  assert.equal((d as { path: string }).path, join(realpathSync.native(dir), "moved.txt"));
   // 저장소 밖을 가리키는 링크 위로는 만들거나 옮기지 못한다(원본이 생기면 안 된다)
   const outside = mkdtempSync(join(tmpdir(), "wb-symlink-out-"));
   symlinkSync(join(outside, "x.txt"), join(dir, "escape.txt"));
@@ -193,7 +200,7 @@ test("renamePath / resolveDeletable: 심링크는 링크 자체를 다루고 원
   assert.equal(readFileSync(join(outside, "x.txt"), "utf8"), "outside");
   const del = await resolveDeletable(dir, "escape2.txt");
   assert.equal(del.ok, true);
-  assert.equal((del as { path: string }).path, join(realpathSync(dir), "escape2.txt"));
+  assert.equal((del as { path: string }).path, join(realpathSync.native(dir), "escape2.txt"));
   rmSync(dir, { recursive: true, force: true });
   rmSync(outside, { recursive: true, force: true });
 });
@@ -205,9 +212,10 @@ test("repoRoot: git 저장소면 최상위, 아니면 cwd 의 실제 경로", as
   const { repoRoot } = await import("./files");
   const r = repo();
   mkdirSync(join(r, "sub"));
-  assert.equal(await repoRoot(join(r, "sub"), env), realpathSync(r));
+  // .native: Windows 의 8.3 짧은 이름(RUNNER~1)까지 풀어야 앱(fs.promises.realpath)과 같다
+  assert.equal(await repoRoot(join(r, "sub"), env), realpathSync.native(r));
   const plain = mkdtempSync(join(tmpdir(), "wb-plain-"));
-  assert.equal(await repoRoot(plain, env), realpathSync(plain));
+  assert.equal(await repoRoot(plain, env), realpathSync.native(plain));
   rmSync(r, { recursive: true, force: true });
   rmSync(plain, { recursive: true, force: true });
 });
@@ -244,7 +252,7 @@ test("locateFiles: 이름만·경로 꼬리·cwd 상대·절대·대소문자·�
   git(dir, "commit", "-qm", "files");
   writeFileSync(join(dir, "src", "main", "kotlin", "Untracked.kt"), "new\n"); // 미추적도 잡혀야 한다
   const real = (p: string) => join(dir, p);
-  const rel = (list: string[]) => list.map((p) => p.slice(p.indexOf("/src/") + 1));
+  const rel = (list: string[]) => list.map((p) => p.split(sep).join("/")).map((p) => p.slice(p.indexOf("/src/") + 1));
 
   // 이름만: 둘 다, main 쪽이 먼저(같은 깊이면 이름순)
   assert.deepEqual(rel(await locateFiles(dir, "ProductByPoController.kt", env)), [
@@ -278,6 +286,6 @@ test("locateFiles: git 이 아닌 디렉토리는 걷되 node_modules 는 건너
   writeFileSync(join(dir, "node_modules", "x", "util.py"), "y\n");
   const r = await locateFiles(dir, "util.py", env);
   assert.equal(r.length, 1);
-  assert.ok(r[0].endsWith("/lib/util.py"));
+  assert.ok(r[0].endsWith(join("lib", "util.py")));
   rmSync(dir, { recursive: true, force: true });
 });

@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listManagedWorktrees, worktreeCreate, worktreeMerge, worktreeRemove, worktreeSlug, worktreeStatus } from "./worktree";
 
-const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x" };
+// Windows 러너의 전역 core.autocrlf=true 가 파일 내용을 CRLF 로 바꾸지 않게 이 테스트의 git 에서만 끈다
+const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.autocrlf", GIT_CONFIG_VALUE_0: "false" };
 const sh = (cwd: string, args: string[]) => execFileSync("git", args, { cwd, env }).toString();
 
 test("worktreeSlug: 안전한 이름 + 시각", () => {
@@ -143,7 +144,7 @@ test("worktreePatch → applyPatch: 커밋·수정·새 파일을 한 패치로 
 });
 
 test("worktree: worktree 폴더가 저장소 안이면 만들지 않는다(원본에 untracked 로 보인다)", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "wb-wt-in-")));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "wb-wt-in-")));
   const repo = join(root, "repo");
   execFileSync("git", ["init", "-q", "-b", "main", repo], { env });
   writeFileSync(join(repo, "a.txt"), "a\n");
@@ -155,7 +156,7 @@ test("worktree: worktree 폴더가 저장소 안이면 만들지 않는다(원�
 });
 
 test("listManagedWorktrees: worktree 폴더의 worktree 를 원본 저장소·브랜치·변경 수와 함께 모은다", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "wb-wt-list-")));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "wb-wt-list-")));
   const repo = join(root, "repo");
   const wtRoot = join(root, "worktrees");
   execFileSync("git", ["init", "-q", "-b", "main", repo], { env });

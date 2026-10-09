@@ -6,7 +6,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitChanges, gitCommit, gitDiffFor, gitRecentSubjects, gitRevert } from "./git";
 
-const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x" };
+// Windows 러너의 전역 core.autocrlf=true 가 diff·status 를 흔들지 않게 끈다
+const env = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "t",
+  GIT_AUTHOR_EMAIL: "t@x",
+  GIT_COMMITTER_NAME: "t",
+  GIT_COMMITTER_EMAIL: "t@x",
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "core.autocrlf",
+  GIT_CONFIG_VALUE_0: "false",
+};
 const sh = (cwd: string, args: string[]) => execFileSync("git", args, { cwd, env }).toString();
 
 test("gitCommit: 고른 파일만 커밋하고 나머지는 워킹 트리에 남긴다; gitDiffFor 는 새 파일도 diff 로", async () => {
@@ -51,11 +61,11 @@ test("gitCommit: 고른 파일만 커밋하고 나머지는 워킹 트리에 남
   assert.deepEqual(sh(dir, ["ls-tree", "--name-only", "HEAD"]).trim().split("\n").sort(), ["new.txt", "other.txt", "renamed.txt"]);
   assert.equal(sh(dir, ["status", "--porcelain"]).trim(), "");
 
-  // pathspec 매직처럼 보이는 이름·한글 이름도 글자 그대로 다룬다
-  writeFileSync(join(dir, ":(glob)x.txt"), "g\n");
-  writeFileSync(join(dir, "한글 파일.txt"), "h\n");
+  // pathspec 매직처럼 보이는 이름·한글 이름도 글자 그대로 다룬다(Windows 파일 이름에는 : 를 못 써서 한글 이름만)
+  const odd = process.platform === "win32" ? ["한글 파일.txt"] : [":(glob)x.txt", "한글 파일.txt"];
+  for (const f of odd) writeFileSync(join(dir, f), "x\n");
   writeFileSync(join(dir, "z.txt"), "z\n");
-  const r4 = await gitCommit(dir, env, [":(glob)x.txt", "한글 파일.txt"], "Odd names");
+  const r4 = await gitCommit(dir, env, odd, "Odd names");
   assert.equal(r4.ok, true);
   assert.deepEqual((await gitChanges(dir, env)).map((c) => c.path), ["z.txt"]);
   // 레포 밖 경로는 diff 에 넣지 않는다

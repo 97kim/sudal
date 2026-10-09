@@ -1,9 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { chmodSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { injectTsserverPath, parseLspFrames } from "./lsp";
 
-/** 가짜 언어 서버: --version 은 바로 답하고, 서버 모드는 죽일 때까지 기다린다. */
-const FAKE_SERVER = '#!/bin/sh\n[ "$1" = "--version" ] && { echo 1.0.0; exit 0; }\nexec /bin/sleep 600\n';
+const IS_WIN = process.platform === "win32";
+
+/**
+ * 가짜 언어 서버: --version 은 바로 답하고, 서버 모드는 죽일 때까지 기다린다.
+ * Windows 는 sh 스크립트를 못 띄우니 npm 처럼 node 를 감싼 .cmd 로 — 앱이 cmd.exe 로 띄우는 경로를 그대로 탄다.
+ */
+function writeFakeServer(dir: string, name: string): string {
+  if (IS_WIN) {
+    const p = join(dir, `${name}.cmd`);
+    writeFileSync(p, ["@echo off", 'if "%~1"=="--version" (echo 1.0.0& exit /b 0)', `"${process.execPath}" -e "setTimeout(() => {}, 600000)"`, ""].join("\r\n"));
+    return p;
+  }
+  const p = join(dir, name);
+  writeFileSync(p, '#!/bin/sh\n[ "$1" = "--version" ] && { echo 1.0.0; exit 0; }\nexec /bin/sleep 600\n');
+  chmodSync(p, 0o755);
+  return p;
+}
+
+/** Windows 의 서버 종료는 taskkill 을 거쳐 비동기다 — exit 통지를 고정 시간 대신 조건으로 기다린다. */
+async function until(cond: () => boolean, ms = 5000): Promise<void> {
+  for (const end = Date.now() + ms; !cond() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+}
+
+/** node 가 SystemRoot 없이는 제대로 뜨지 않는다(Windows). macOS 에서는 lspChildEnv 가 버린다. */
+const FAKE_ENV = { PATH: "", SystemRoot: process.env.SystemRoot };
 
 test("parseLspFrames: 여러 프레임·잘린 프레임·한글 본문", () => {
   const body1 = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { 한글: "값" } });
@@ -51,11 +76,11 @@ test("resolveTypescriptLib: 프로젝트 node_modules 는 맨 뒤 — 서버 동
   // 있으면 서버 동봉이 우선
   mk(join(base, "srv", "node_modules", "typescript", "lib"));
   assert.equal(resolveTypescriptLib(root, serverBin, { PATH: "" }), join(base, "srv", "node_modules", "typescript", "lib"));
-  // 실행 파일 판정: 디렉토리·실행 비트 없는 파일은 아님
+  // 실행 파일 판정: 디렉토리·실행 비트 없는 파일은 아님(Windows 에는 실행 비트가 없어 X_OK 가 늘 통과한다)
   assert.equal(isExecutableFile(serverBin), true);
   assert.equal(isExecutableFile(join(base, "srv")), false);
   writeFileSync(join(base, "plain"), "");
-  assert.equal(isExecutableFile(join(base, "plain")), false);
+  if (!IS_WIN) assert.equal(isExecutableFile(join(base, "plain")), false);
   // 자식 env 는 필요한 키만
   const env = lspChildEnv({ PATH: "/a", HOME: "/h", ANTHROPIC_API_KEY: "secret", OPENAI_API_KEY: "s2" });
   assert.deepEqual(env, { PATH: "/a", HOME: "/h" });
@@ -71,7 +96,7 @@ test("LspManager: spawn 실패도 servers 에서 지우고 onExit 를 알린다,
   const exits: Array<[string, number | null]> = [];
   const mk = (bin: string) =>
     new LspManager({
-      env: async () => ({ PATH: "" }),
+      env: async () => FAKE_ENV,
       resolveRoot: async (cwd) => cwd,
       loadOverride: () => bin,
       // (typescript 로 취급)
@@ -86,25 +111,24 @@ test("LspManager: spawn 실패도 servers 에서 지우고 onExit 를 알린다,
   const m = mk(bad);
   const r = await m.start(base, "typescript");
   assert.equal(r.ok, true);
-  await new Promise((r) => setTimeout(r, 300));
+  await until(() => exits.length > 0);
   assert.equal((await m.status())[0].running.length, 0, "죽은 서버가 running 에 남으면 안 된다");
   assert.equal(exits.length, 1);
   assert.equal(exits[0][0], (r as { id: string }).id);
   // 동시 start: 정상 서버(sleep 스크립트)로 두 번 부르면 id 가 같다
-  const ok = join(base, "ok");
-  writeFileSync(ok, FAKE_SERVER);
-  chmodSync(ok, 0o755);
+  const ok = writeFakeServer(base, "ok");
   const m2 = mk(ok);
   const [a, b] = await Promise.all([m2.start(base, "typescript"), m2.start(base, "typescript")]);
   assert.equal(a.ok && b.ok && a.id === b.id, true);
   assert.deepEqual((await m2.status())[0].running, [base]);
   m2.stopAll();
   assert.equal((await m2.status())[0].running.length, 0);
+  await until(() => exits.length === 2); // 서버가 base 를 cwd 로 물고 있으면 Windows 에서 지워지지 않는다
   rmSync(base, { recursive: true, force: true });
 });
 
 test("LspManager: 열린 문서가 없으면 idleMs 뒤에 서버를 끄고, didOpen 이 있으면 살려 둔다", async () => {
-  const { mkdtempSync, writeFileSync, chmodSync, realpathSync, rmSync } = await import("node:fs");
+  const { mkdtempSync, realpathSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { LspManager, documentLifecycle } = await import("./lsp");
@@ -112,12 +136,10 @@ test("LspManager: 열린 문서가 없으면 idleMs 뒤에 서버를 끄고, did
   assert.deepEqual(documentLifecycle(JSON.stringify({ jsonrpc: "2.0", method: "textDocument/didClose", params: { textDocument: { uri: "file:///a.ts" } } })), { uri: "file:///a.ts", open: false });
   assert.equal(documentLifecycle(JSON.stringify({ jsonrpc: "2.0", method: "textDocument/didChange", params: { textDocument: { uri: "file:///a.ts" }, contentChanges: [{ text: '"textDocument/didOpen"' }] } })), null);
   const base = realpathSync(mkdtempSync(join(tmpdir(), "wb-lspidle-")));
-  const ok = join(base, "ok");
-  writeFileSync(ok, FAKE_SERVER);
-  chmodSync(ok, 0o755);
+  const ok = writeFakeServer(base, "ok");
   const exits: string[] = [];
   const m = new LspManager({
-    env: async () => ({ PATH: "" }),
+    env: async () => FAKE_ENV,
     resolveRoot: async (cwd) => cwd,
     loadOverride: () => ok,
     saveOverride: () => {},
@@ -130,6 +152,7 @@ test("LspManager: 열린 문서가 없으면 idleMs 뒤에 서버를 끄고, did
   assert.equal(r1.ok, true);
   await new Promise((r) => setTimeout(r, 400));
   assert.equal((await m.status())[0].running.length, 0);
+  await until(() => exits.length > 0);
   assert.deepEqual(exits, [(r1 as { id: string }).id]);
   // 문서가 열려 있으면 살아 있고, 닫으면 그때부터 idle 계산
   const r2 = await m.start(base, "typescript");
@@ -143,6 +166,7 @@ test("LspManager: 열린 문서가 없으면 idleMs 뒤에 서버를 끄고, did
   m.send(id, close);
   await new Promise((r) => setTimeout(r, 400));
   assert.equal((await m.status())[0].running.length, 0, "마지막 문서를 닫으면 idleMs 뒤에 꺼진다");
+  await until(() => exits.length === 2);
   assert.equal(exits.length, 2);
   rmSync(base, { recursive: true, force: true });
 });

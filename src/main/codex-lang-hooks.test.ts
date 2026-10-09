@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WIN_SCRIPT, shellQuote } from "./codex-lang-hooks";
 
-test("shellQuote: 공백·작은따옴표·$ 가 든 경로도 셸에서 그대로 한 인자다", () => {
+// shellQuote 는 macOS·Linux 의 /bin/sh 훅 명령에만 쓴다. Windows 는 cmdQuote 로 .cmd 를 넘긴다.
+test("shellQuote: 공백·작은따옴표·$ 가 든 경로도 셸에서 그대로 한 인자다", { skip: process.platform === "win32" && "POSIX 셸(/bin/sh) 전용" }, () => {
   for (const p of ["/Users/a/Library/Application Support/Sudal/codex-hooks/x.sh", "/tmp/it's here/x.sh", "/tmp/$(touch pwned)/`id`/x.sh"]) {
     assert.equal(execFileSync("/bin/sh", ["-c", `printf %s ${shellQuote(p)}`], { encoding: "utf8" }), p);
   }

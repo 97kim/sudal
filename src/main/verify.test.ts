@@ -22,7 +22,9 @@ test("VerifyRunner: 명령을 순서대로 돌리고 실패하면 뒤는 건너�
   const events: VerifyEvent[] = [];
   const runner = new VerifyRunner((_tab, e) => events.push(e));
   const cwd = mkdtempSync(join(tmpdir(), "verify-"));
-  const r = await runner.start({ tabId: "t1", cwd, commands: ["echo one", "echo err >&2; exit 3", "echo never"], env: { ...process.env } });
+  // Windows 는 cmd.exe 로 돈다 — ; 는 명령 구분자가 아니다
+  const failing = process.platform === "win32" ? "echo err 1>&2 & exit 3" : "echo err >&2; exit 3";
+  const r = await runner.start({ tabId: "t1", cwd, commands: ["echo one", failing, "echo never"], env: { ...process.env } });
   assert.ok(r.ok);
   if (!r.ok) return;
   assert.equal(runner.running("t1"), r.runId);

@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { brewUpgrade, caskVersion, downloadProgress, runBrew, compareVersions, fetchLatestRelease, versionOfDownload, type UpdateProgress } from "./app-update";
 
+// Homebrew 업그레이드는 macOS 에서만 쓴다(Windows 는 winDownloadUpdate). 가짜 brew 도 sh 스크립트·POSIX 신호에 기댄다.
+const MAC_ONLY = process.platform === "win32" && "Homebrew 업그레이드는 macOS 전용";
+
 test("버전은 자리마다 숫자로 비교한다", () => {
   assert.ok(compareVersions("0.9.30", "0.9.29") > 0);
   assert.ok(compareVersions("0.10.0", "0.9.99") > 0);
@@ -36,21 +39,21 @@ function fakeBrewEnv(installed: string | null): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOMEBREW_CACHE: join(dir, "cache") };
 }
 
-test("brew upgrade 가 성공해도 설치 버전이 목표에 못 미치면 실패", async () => {
+test("brew upgrade 가 성공해도 설치 버전이 목표에 못 미치면 실패", { skip: MAC_ONLY }, async () => {
   const r = await brewUpgrade(fakeBrewEnv("0.9.29"), "0.9.30");
   assert.equal(r.ok, false);
   assert.match(!r.ok ? r.error : "", /0\.9\.30.*0\.9\.29/);
 });
 
-test("목표 버전에 닿으면 설치 버전을 돌려준다", async () => {
+test("목표 버전에 닿으면 설치 버전을 돌려준다", { skip: MAC_ONLY }, async () => {
   assert.deepEqual(await brewUpgrade(fakeBrewEnv("0.9.30"), "0.9.30"), { ok: true, version: "0.9.30" });
 });
 
-test("cask 로 설치하지 않았으면 caskVersion 은 null", async () => {
+test("cask 로 설치하지 않았으면 caskVersion 은 null", { skip: MAC_ONLY }, async () => {
   assert.equal(await caskVersion(fakeBrewEnv(null)), null);
 });
 
-test("시간 초과면 다른 프로세스 그룹의 자손까지 끝낸 뒤 돌려준다", async () => {
+test("시간 초과면 다른 프로세스 그룹의 자손까지 끝낸 뒤 돌려준다", { skip: MAC_ONLY }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "fake-brew-"));
   // set -m: 백그라운드 작업이 자기 프로세스 그룹을 갖는다(Homebrew 의 pgroup: true 와 같은 상황)
   writeFileSync(join(dir, "brew"), "#!/bin/sh\nset -m\nsleep 30 &\necho $!\nwait\n");
@@ -63,7 +66,7 @@ test("시간 초과면 다른 프로세스 그룹의 자손까지 끝낸 뒤 돌
   assert.throws(() => process.kill(pid, 0), "자손 sleep 이 남아 있다");
 });
 
-test("TERM 을 무시하는 자손이 있으면 KILL 로 끝낸 뒤 돌려준다", async () => {
+test("TERM 을 무시하는 자손이 있으면 KILL 로 끝낸 뒤 돌려준다", { skip: MAC_ONLY }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "fake-brew-"));
   // 자손은 별도 그룹 + TERM 무시 + 출력 파이프를 물지 않는다 → brew 만 먼저 끝나 close 가 온다
   writeFileSync(join(dir, "brew"), "#!/bin/sh\nset -m\nsh -c 'trap \"\" TERM; exec sleep 30' >/dev/null 2>&1 &\necho $!\nwait\n");
@@ -87,10 +90,10 @@ async function assertCleanedUp(script: string) {
   assert.throws(() => process.kill(pid, 0), "남은 프로세스가 있다");
 }
 
-test("brew 자신이 TERM 을 무시해 close 가 오지 않아도 KILL 로 끝내고 돌려준다", () =>
+test("brew 자신이 TERM 을 무시해 close 가 오지 않아도 KILL 로 끝내고 돌려준다", { skip: MAC_ONLY }, () =>
   assertCleanedUp("trap '' TERM\necho $$\nsleep 30"));
 
-test("TERM 을 무시하는 자손이 출력 파이프를 물고 있어도 KILL 로 끝내고 돌려준다", () =>
+test("TERM 을 무시하는 자손이 출력 파이프를 물고 있어도 KILL 로 끝내고 돌려준다", { skip: MAC_ONLY }, () =>
   assertCleanedUp("set -m\nsh -c 'trap \"\" TERM; exec sleep 30' &\necho $!\nwait"));
 
 test("릴리즈에 붙은 DMG 의 크기를 함께 준다(진행률의 분모)", async () => {
@@ -135,21 +138,21 @@ function fakeDownloadingBrew(version: string): { env: NodeJS.ProcessEnv } {
   return { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } };
 }
 
-test("업그레이드하는 동안 확인 → 내려받기(%) → 설치 순서로 알린다", async () => {
+test("업그레이드하는 동안 확인 → 내려받기(%) → 설치 순서로 알린다", { skip: MAC_ONLY }, async () => {
   const seen: UpdateProgress[] = [];
   const r = await brewUpgrade(fakeDownloadingBrew("0.9.30").env, "0.9.30", { dmgSize: 1000, pollMs: 50, onProgress: (p) => seen.push(p) });
   assert.deepEqual(r, { ok: true, version: "0.9.30" });
   assert.deepEqual(seen, [{ phase: "checking" }, { phase: "downloading", percent: 50 }, { phase: "installing" }]);
 });
 
-test("확인한 뒤 더 새 버전이 올라와 brew 가 그것을 받으면, 크기가 맞지 않으니 퍼센트 없이 단계만 알린다", async () => {
+test("확인한 뒤 더 새 버전이 올라와 brew 가 그것을 받으면, 크기가 맞지 않으니 퍼센트 없이 단계만 알린다", { skip: MAC_ONLY }, async () => {
   const seen: UpdateProgress[] = [];
   const r = await brewUpgrade(fakeDownloadingBrew("0.9.31").env, "0.9.30", { dmgSize: 1000, pollMs: 50, onProgress: (p) => seen.push(p) });
   assert.deepEqual(r, { ok: true, version: "0.9.31" });
   assert.deepEqual(seen, [{ phase: "checking" }, { phase: "downloading" }, { phase: "installing" }]);
 });
 
-test("brew 가 캐시 경로를 주지 않으면 퍼센트 없이 내려받는 중으로만 알린다", async () => {
+test("brew 가 캐시 경로를 주지 않으면 퍼센트 없이 내려받는 중으로만 알린다", { skip: MAC_ONLY }, async () => {
   const seen: UpdateProgress[] = [];
   const r = await brewUpgrade(fakeBrewEnv("0.9.30"), "0.9.30", { dmgSize: 1000, pollMs: 50, onProgress: (p) => seen.push(p) });
   assert.equal(r.ok, true);

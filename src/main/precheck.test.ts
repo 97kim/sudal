@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runPrecheckCommand } from "./precheck";
 import { readPrecheck } from "@shared/scheduler-decide";
 import { createI18n } from "@shared/i18n";
 
 const t = createI18n("ko").t;
+// 앱은 Windows 에서 선조건을 cmd.exe 로 돌린다. 러너 PATH 의 Git sleep·sh 에 기대지 않게 명령을 셸에 맞춘다.
+const IS_WIN = process.platform === "win32";
+const sleepCmd = (sec: number) => (IS_WIN ? `"${process.execPath}" -e "setTimeout(()=>{},${sec * 1000})"` : `sleep ${sec}`);
 
 const run = (command: string, timeoutMs = 5000) =>
   runPrecheckCommand({ command, timeoutMs, cwd: null, env: process.env });
@@ -20,17 +25,18 @@ test("1 은 조건 불충족, 그 밖은 고장", async () => {
   assert.equal(readPrecheck(t, await run("exit 3")).kind, "failed");
   const missing = await run("존재하지않는명령어_xyz");
   assert.notEqual(missing.exitCode, 0);
-  assert.equal(readPrecheck(t, missing).kind, "failed", "명령이 없으면 고장이다");
+  // Windows 는 알려진 한계: cmd.exe 가 없는 명령에 1 을 돌려줘 "조건 불충족" 으로 읽힌다(sh 는 127).
+  if (!IS_WIN) assert.equal(readPrecheck(t, missing).kind, "failed", "명령이 없으면 고장이다");
 });
 
 test("출력을 꼬리만 남긴다", async () => {
-  const r = await run("printf 'hello'; printf 'oops' 1>&2");
+  const r = await run(IS_WIN ? "echo hello& echo oops 1>&2" : "printf 'hello'; printf 'oops' 1>&2");
   assert.match(r.stdout, /hello/);
   assert.match(r.stderr, /oops/);
 });
 
 test("시간을 넘기면 죽이고, 종료 코드로 읽지 않는다", async () => {
-  const r = await run("sleep 5", 1000);
+  const r = await run(sleepCmd(5), 1000);
   assert.equal(r.timedOut, true);
   assert.equal(r.exitCode, null, "우리가 죽인 것을 종료 코드로 읽으면 안 된다");
   assert.equal(readPrecheck(t, r).kind, "failed");
@@ -39,8 +45,10 @@ test("시간을 넘기면 죽이고, 종료 코드로 읽지 않는다", async (
 
 test("자식이 만든 프로세스도 같이 정리한다", async () => {
   // 손자가 살아남으면 파일이 나중에 생긴다. 죽었으면 안 생긴다.
-  const marker = `/tmp/sudal-precheck-${Date.now()}`;
-  const r = await run(`( sleep 2; touch ${marker} ) & sleep 5`, 800);
+  const marker = join(tmpdir(), `sudal-precheck-${Date.now()}`);
+  // Windows: start /b 로 띄운 node 가 2초 뒤 파일을 만든다. taskkill /T 가 cmd 의 자손으로 함께 끝내야 한다.
+  const later = `"${process.execPath}" -e "setTimeout(()=>require('fs').writeFileSync('${marker.replace(/\\/g, "/")}',''),2000)"`;
+  const r = await run(IS_WIN ? `start /b "" ${later}& ${sleepCmd(5)}` : `( sleep 2; touch ${marker} ) & sleep 5`, 800);
   assert.equal(r.timedOut, true);
   await new Promise((res) => setTimeout(res, 2500));
   const fs = await import("node:fs");

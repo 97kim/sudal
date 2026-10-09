@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, utimesSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, utimesSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SubagentActivityEvent } from "@shared/chat-events";
@@ -15,14 +15,19 @@ const mkRoot = () => {
   return { root, day };
 };
 
-test("findCompanionRollout: cwd 일치 + since 이후 + 앱 자신(originator sudal)·제외 id 는 건너뜀", () => {
+test("findCompanionRollout: cwd 일치 + since 이후 + 앱 자신(originator sudal)·제외 id 는 건너뜀", async () => {
   const { root, day } = mkRoot();
   const cwd = "/repo/x";
   const old = join(day, "rollout-old.jsonl");
   writeFileSync(old, meta("s-old", cwd));
   const past = (Date.now() - 60_000) / 1000;
   utimesSync(old, past, past);
-  const since = Date.now() - 5000;
+  let since = Date.now() - 5000;
+  // Windows 는 utimes 로 생성 시각(birthtime)이 당겨지지 않는다 — old 가 since 보다 확실히 앞서도록 잠시 기다린다
+  if (statSync(old).birthtimeMs >= since - 2000) {
+    await new Promise((r) => setTimeout(r, 2100));
+    since = Date.now();
+  }
   writeFileSync(join(day, "rollout-other-cwd.jsonl"), meta("s-other", "/repo/y"));
   writeFileSync(join(day, "rollout-own.jsonl"), meta("s-own", cwd, "sudal"));
   writeFileSync(join(day, "rollout-excluded.jsonl"), meta("s-ex", cwd));
