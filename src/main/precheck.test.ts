@@ -25,8 +25,10 @@ test("1 은 조건 불충족, 그 밖은 고장", async () => {
   assert.equal(readPrecheck(t, await run("exit 3")).kind, "failed");
   const missing = await run("존재하지않는명령어_xyz");
   assert.notEqual(missing.exitCode, 0);
-  // Windows 는 알려진 한계: cmd.exe 가 없는 명령에 1 을 돌려줘 "조건 불충족" 으로 읽힌다(sh 는 127).
-  if (!IS_WIN) assert.equal(readPrecheck(t, missing).kind, "failed", "명령이 없으면 고장이다");
+  // Windows 의 cmd.exe 는 없는 명령에 1 로 끝나 "조건 불충족" 으로 읽혔다 — windowsPrecheckCommand 가 9009 를 낸다
+  assert.equal(readPrecheck(t, missing).kind, "failed", "명령이 없으면 고장이다");
+  // 프로그램이 1 로 끝나면(exit 가 아니라) 그대로 조건 불충족이다
+  assert.equal(readPrecheck(t, await run(`"${process.execPath}" -e "process.exit(1)"`)).kind, "skip");
 });
 
 test("출력을 꼬리만 남긴다", async () => {

@@ -60,7 +60,7 @@ export function runPrecheckCommand(input: { command: string; timeoutMs: number; 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(input.command, {
+      child = spawn(IS_WIN ? windowsPrecheckCommand(input.command) : input.command, {
         // Windows 는 cmd.exe. detached 는 새 콘솔 창을 띄우니 끄고, 트리 정리는 taskkill /T 가 맡는다.
         shell: IS_WIN ? true : "/bin/sh",
         cwd: input.cwd ?? undefined,
@@ -92,4 +92,14 @@ export function runPrecheckCommand(input: { command: string; timeoutMs: number; 
       finish(timedOut ? null : code, timedOut ? null : signal ? mt("session.error.signalExit", { signal }) : null);
     });
   });
+}
+
+/**
+ * cmd.exe 는 없는 명령을 만나면 ERRORLEVEL 을 9009 로 두지만, cmd /c 자체는 1 로 끝난다.
+ * 1 은 "조건 불충족(건너뜀)" 이라 오타 난 선조건이 고장으로 보이지 않고 조용히 건너뛰어졌다.
+ * 마지막 ERRORLEVEL 을 그대로 종료 코드로 내게 꼬리를 붙인다. %^errorlevel% 은 처음 읽을 때 풀리지 않고
+ * call 이 실행할 때 푼다(그래야 앞 명령이 끝난 뒤의 값이다). 앞 명령이 exit 로 끝나면 꼬리는 돌지 않는다.
+ */
+export function windowsPrecheckCommand(command: string): string {
+  return `${command} & call exit %^errorlevel%`;
 }
