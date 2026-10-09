@@ -14,6 +14,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,4 +23,5 @@ jobs:
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn typecheck
-      - run: yarn test
+      # 멈추는 테스트가 있으면 전체가 끝나지 않는다 — 테스트마다 제한을 걸어 이름과 함께 실패로 남긴다
+      - run: yarn test --test-timeout=120000
