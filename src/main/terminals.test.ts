@@ -35,9 +35,9 @@ test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에
   for (let i = 0; i < 200 && data.length === 0; i++) await wait(50);
   await wait(500);
   // 입력한 글자에는 계산 결과가 없다 — 출력에 있으면 셸이 실제로 계산한 것이다
-  // (Windows 기본 셸은 PowerShell, 없으면 cmd — cmd 는 set /a 가 42 를 찍는다)
-  const input = !IS_WIN ? "echo PTY_$((6*7))\n" : isCmd ? "set /a 6*7\r" : 'Write-Output ("PTY_" + (6*7))\r';
-  const expected = isCmd ? /\b42\b/ : /PTY_42/;
+  // (Windows 기본 셸은 PowerShell, 없으면 cmd — cmd 는 set /a 가 계산 결과를 찍는다. 프롬프트 경로와 겹치지 않을 긴 수를 쓴다)
+  const input = !IS_WIN ? "echo PTY_$((6*7))\n" : isCmd ? "set /a 424242*1000+42\r" : 'Write-Output ("PTY_" + (6*7))\r';
+  const expected = isCmd ? /424242042/ : /PTY_42/;
   assert.equal(tm.write("t1", input), true);
   for (let i = 0; i < 200 && !expected.test(data.join("")); i++) await wait(50); // 로그인 셸 기동 대기
   assert.match(data.join(""), expected);
