@@ -166,12 +166,14 @@ test("listManagedWorktrees: worktree 폴더의 worktree 를 원본 저장소·�
   assert.ok(c.ok);
   if (!c.ok) return;
   writeFileSync(join(c.worktree.path, "new.txt"), "x\n");
+  // 몇 바이트짜리 파일만 있으면 Windows(NTFS)는 MFT 안에 담아 할당 크기가 0 이다 — 크기가 보일 만한 파일을 하나 둔다
+  writeFileSync(join(c.worktree.path, "big.bin"), Buffer.alloc(50_000, 1));
   const list = await listManagedWorktrees(env, [wtRoot, join(root, "없는-폴더")]);
   assert.equal(list.length, 1);
   assert.equal(list[0].path, c.worktree.path);
   assert.equal(list[0].repo, repo);
   assert.equal(list[0].branch, "sudal/feat");
-  assert.equal(list[0].dirty, 1);
+  assert.equal(list[0].dirty, 2);
   assert.ok((list[0].sizeKb ?? 0) > 0);
 });
 
