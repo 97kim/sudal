@@ -39,9 +39,15 @@ test("1 은 조건 불충족, 그 밖은 고장", async () => {
   assert.equal(readPrecheck(t, r).kind, "failed");
 });
 
-test("windowsPrecheckCommand: 따옴표가 홀수면 꼬리를 붙이지 않고, 끝 공백을 남기지 않는다", () => {
-  assert.equal(windowsPrecheckCommand("echo hi  "), "echo hi& call exit %^errorlevel%");
+test("windowsPrecheckCommand: 따옴표 안이나 ^ 로 끝나면 꼬리를 붙이지 않고, 공백을 더하지 않는다", () => {
+  assert.equal(windowsPrecheckCommand("echo hi"), "echo hi& call exit %^errorlevel%");
+  assert.equal(windowsPrecheckCommand("echo hi  "), "echo hi  & call exit %^errorlevel%");
   assert.equal(windowsPrecheckCommand('node -e "process.exit(0)'), 'node -e "process.exit(0)');
+  assert.equal(windowsPrecheckCommand("echo hi^"), "echo hi^");
+  // 이스케이프된 따옴표는 따옴표가 아니다
+  assert.equal(windowsPrecheckCommand('없는명령_xyz ^"'), '없는명령_xyz ^"& call exit %^errorlevel%');
+  // 따옴표 안의 ^ 는 그냥 글자다
+  assert.equal(windowsPrecheckCommand('echo "a^"'), 'echo "a^"& call exit %^errorlevel%');
   assert.deepEqual(Object.keys(withoutErrorlevelVar({ errorLevel: "1", PATH: "x" })), ["PATH"]);
 });
 
