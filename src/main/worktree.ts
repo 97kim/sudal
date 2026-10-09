@@ -205,14 +205,17 @@ function diskUsageKb(path: string): Promise<number | null> {
 }
 
 /**
- * 폴더 아래 파일 크기의 합(KB, 올림). 링크·정션은 따라가지 않는다(worktree 밖을 셀 수 있다).
- * du -sk 는 디스크에 잡힌 공간이고 이것은 파일 크기의 합이라 값이 조금 다르다 — 정리 화면에서 "대략 이만큼" 을 보이는 데는 충분하다.
+ * 폴더 아래 파일이 디스크에서 차지하는 공간(KB). 링크·정션은 따라가지 않는다(worktree 밖을 셀 수 있다).
+ * 정리 화면의 크기는 "지우면 확보되는 공간" 으로 읽힌다. macOS 의 du -sk 와 뜻을 맞추려고 파일마다 할당 단위(4KB)로 올림하고,
+ * 하드 링크는 한 번만 센다. 작은 파일이 많은 node_modules 에서 파일 크기를 그냥 더하면 실제보다 한참 작게 나온다.
  * du 처럼 시간 제한을 둔다: deadline 을 넘기면 null(크기를 보이지 않는다). 파일을 읽는 도중에도 확인한다.
  * 지워지는 중인 파일(ENOENT)은 건너뛰지만, 읽지 못한 폴더·파일(권한 등)이 있으면 null — 작은 값으로 보이면 오해한다.
  */
 export async function walkSizeKb(root: string, deadline: number): Promise<number | null> {
   const BATCH = 64;
+  const CLUSTER = 4096;
   let bytes = 0;
+  const seen = new Set<string>();
   const stack = [root];
   const gone = (e: unknown) => (e as NodeJS.ErrnoException)?.code === "ENOENT";
   try {
@@ -237,7 +240,14 @@ export async function walkSizeKb(root: string, deadline: number): Promise<number
         const sizes = await Promise.all(
           files.slice(i, i + BATCH).map((f) =>
             fs.promises.lstat(f).then(
-              (st) => st.size,
+              (st) => {
+                if (st.nlink > 1 && st.ino) {
+                  const key = `${st.dev}:${st.ino}`;
+                  if (seen.has(key)) return 0;
+                  seen.add(key);
+                }
+                return Math.ceil(st.size / CLUSTER) * CLUSTER;
+              },
               (e) => {
                 if (gone(e)) return 0;
                 throw e;
