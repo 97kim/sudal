@@ -205,34 +205,53 @@ function diskUsageKb(path: string): Promise<number | null> {
 }
 
 /**
- * 폴더 아래 파일 크기의 합(KB, 올림). 링크는 따라가지 않는다(worktree 밖을 셀 수 있다).
- * du 처럼 시간 제한을 둔다 — node_modules 가 큰 worktree 는 deadline 을 넘기면 null(크기를 보이지 않는다).
+ * 폴더 아래 파일 크기의 합(KB, 올림). 링크·정션은 따라가지 않는다(worktree 밖을 셀 수 있다).
+ * du -sk 는 디스크에 잡힌 공간이고 이것은 파일 크기의 합이라 값이 조금 다르다 — 정리 화면에서 "대략 이만큼" 을 보이는 데는 충분하다.
+ * du 처럼 시간 제한을 둔다: deadline 을 넘기면 null(크기를 보이지 않는다). 파일을 읽는 도중에도 확인한다.
+ * 지워지는 중인 파일(ENOENT)은 건너뛰지만, 읽지 못한 폴더·파일(권한 등)이 있으면 null — 작은 값으로 보이면 오해한다.
  */
 export async function walkSizeKb(root: string, deadline: number): Promise<number | null> {
+  const BATCH = 64;
   let bytes = 0;
   const stack = [root];
-  while (stack.length > 0) {
-    if (Date.now() > deadline) return null;
-    const dir = stack.pop() as string;
-    let entries: fs.Dirent[];
-    try {
-      entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) stack.push(p);
-      else if (e.isFile()) {
-        try {
-          bytes += (await fs.promises.lstat(p)).size;
-        } catch {
-          /* 그사이 지워졌다 */
-        }
+  const gone = (e: unknown) => (e as NodeJS.ErrnoException)?.code === "ENOENT";
+  try {
+    while (stack.length > 0) {
+      if (Date.now() > deadline) return null;
+      const dir = stack.pop() as string;
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch (e) {
+        if (gone(e)) continue;
+        throw e;
+      }
+      const files: string[] = [];
+      for (const e of entries) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) stack.push(p);
+        else if (e.isFile()) files.push(p);
+      }
+      for (let i = 0; i < files.length; i += BATCH) {
+        if (Date.now() > deadline) return null;
+        const sizes = await Promise.all(
+          files.slice(i, i + BATCH).map((f) =>
+            fs.promises.lstat(f).then(
+              (st) => st.size,
+              (e) => {
+                if (gone(e)) return 0;
+                throw e;
+              },
+            ),
+          ),
+        );
+        for (const n of sizes) bytes += n;
       }
     }
+  } catch {
+    return null;
   }
-  return Math.ceil(bytes / 1024);
+  return Date.now() > deadline ? null : Math.ceil(bytes / 1024);
 }
 
 function runInput(cwd: string, args: string[], env: NodeJS.ProcessEnv, input: string): Promise<Run> {

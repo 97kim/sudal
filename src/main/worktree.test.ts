@@ -183,5 +183,8 @@ test("walkSizeKb: 파일 크기를 더해 KB 로 올림하고, 시간을 넘기�
   writeFileSync(join(dir, "sub", "b.bin"), Buffer.alloc(600));
   assert.equal(await walkSizeKb(dir, Date.now() + 10_000), 3);
   assert.equal(await walkSizeKb(dir, Date.now() - 1), null);
+  // 없는 폴더는 지워지는 중으로 보고 0, 폴더가 아닌 곳을 읽으면(읽기 실패) null
+  assert.equal(await walkSizeKb(join(dir, "없음"), Date.now() + 10_000), 0);
+  assert.equal(await walkSizeKb(join(dir, "a.bin"), Date.now() + 10_000), null);
   rmSync(dir, { recursive: true, force: true });
 });

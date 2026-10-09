@@ -38,7 +38,8 @@ test("TerminalManager: 셸을 띄워 입출력하고, 재오픈은 기존 셸에
   assert.equal(tm.write("t1", "x"), false);
 });
 
-test("TerminalManager: 없는 cwd 는 ok:false 로 알린다", { skip: POSIX_ONLY }, () => {
+// 셸을 띄우기 전에 cwd 를 확인하고 돌아가므로 Windows 에서도 돈다
+test("TerminalManager: 없는 cwd 는 ok:false 로 알린다", () => {
   const tm = new TerminalManager({ onData: () => {}, onExit: () => {} });
   const r = tm.open("t2", "/nonexistent/dir/for/test", { PATH: "/usr/bin:/bin", SHELL: "/bin/sh" }, 80, 24);
   assert.equal(r.ok, false);

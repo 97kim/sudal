@@ -64,7 +64,7 @@ export function runPrecheckCommand(input: { command: string; timeoutMs: number; 
         // Windows 는 cmd.exe. detached 는 새 콘솔 창을 띄우니 끄고, 트리 정리는 taskkill /T 가 맡는다.
         shell: IS_WIN ? true : "/bin/sh",
         cwd: input.cwd ?? undefined,
-        env: input.env,
+        env: IS_WIN ? withoutErrorlevelVar(input.env) : input.env,
         detached: !IS_WIN,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -99,7 +99,18 @@ export function runPrecheckCommand(input: { command: string; timeoutMs: number; 
  * 1 은 "조건 불충족(건너뜀)" 이라 오타 난 선조건이 고장으로 보이지 않고 조용히 건너뛰어졌다.
  * 마지막 ERRORLEVEL 을 그대로 종료 코드로 내게 꼬리를 붙인다. %^errorlevel% 은 처음 읽을 때 풀리지 않고
  * call 이 실행할 때 푼다(그래야 앞 명령이 끝난 뒤의 값이다). 앞 명령이 exit 로 끝나면 꼬리는 돌지 않는다.
+ * - & 앞에 공백을 두지 않는다 — echo 출력·리다이렉션 내용 끝에 공백이 붙는다.
+ * - 따옴표가 홀수면 꼬리가 마지막 인수 안으로 들어가 명령의 뜻이 바뀐다(node -e "… 가 문법 오류가 된다). 그때는 붙이지 않는다.
+ * - %errorlevel% 은 같은 이름의 환경 변수가 있으면 그 값을 읽는다 — 띄울 때 env 에서 뺀다(withoutErrorlevelVar).
  */
 export function windowsPrecheckCommand(command: string): string {
-  return `${command} & call exit %^errorlevel%`;
+  if ((command.match(/"/g)?.length ?? 0) % 2 === 1) return command;
+  return `${command.replace(/\s+$/, "")}& call exit %^errorlevel%`;
+}
+
+/** env 에서 ERRORLEVEL 변수를 뺀다(Windows 의 env 이름은 대소문자를 가리지 않는다). */
+export function withoutErrorlevelVar(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = { ...env };
+  for (const k of Object.keys(out)) if (k.toUpperCase() === "ERRORLEVEL") delete out[k];
+  return out;
 }

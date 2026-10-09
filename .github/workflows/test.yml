@@ -3,9 +3,17 @@ name: test
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 같은 브랜치에 새로 올리면 이전 실행은 그만둔다
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -21,6 +29,13 @@ jobs:
         with:
           node-version: 22
           cache: yarn
+      # postinstall 이 받는 Electron 바이너리(100MB 남짓)를 버전별로 캐시한다
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       - run: yarn install --frozen-lockfile
       - run: yarn typecheck
       # 멈추는 테스트가 있으면 전체가 끝나지 않는다 — 테스트마다 제한을 걸어 이름과 함께 실패로 남긴다

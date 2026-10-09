@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runPrecheckCommand } from "./precheck";
+import { runPrecheckCommand, windowsPrecheckCommand, withoutErrorlevelVar } from "./precheck";
 import { readPrecheck } from "@shared/scheduler-decide";
 import { createI18n } from "@shared/i18n";
 
@@ -27,8 +27,22 @@ test("1 은 조건 불충족, 그 밖은 고장", async () => {
   assert.notEqual(missing.exitCode, 0);
   // Windows 의 cmd.exe 는 없는 명령에 1 로 끝나 "조건 불충족" 으로 읽혔다 — windowsPrecheckCommand 가 9009 를 낸다
   assert.equal(readPrecheck(t, missing).kind, "failed", "명령이 없으면 고장이다");
-  // 프로그램이 1 로 끝나면(exit 가 아니라) 그대로 조건 불충족이다
-  assert.equal(readPrecheck(t, await run(`"${process.execPath}" -e "process.exit(1)"`)).kind, "skip");
+  // exit 가 아니라 프로그램이 끝낸 코드도 그대로다(꼬리가 바꾸지 않는다)
+  const node = (code: number) => `"${process.execPath}" -e "process.exit(${code})"`;
+  assert.equal(readPrecheck(t, await run(node(0))).kind, "run");
+  assert.equal(readPrecheck(t, await run(node(1))).kind, "skip");
+  assert.equal((await run(node(3))).exitCode, 3);
+  assert.equal((await run(`${node(1)} && echo never`)).exitCode, 1);
+  assert.equal((await run(`${node(3)} || ${node(0)}`)).exitCode, 0);
+  // 같은 이름의 환경 변수가 있어도 실제 종료 코드를 읽는다
+  const r = await runPrecheckCommand({ command: "존재하지않는명령어_xyz", timeoutMs: 5000, cwd: null, env: { ...process.env, ERRORLEVEL: "0" } });
+  assert.equal(readPrecheck(t, r).kind, "failed");
+});
+
+test("windowsPrecheckCommand: 따옴표가 홀수면 꼬리를 붙이지 않고, 끝 공백을 남기지 않는다", () => {
+  assert.equal(windowsPrecheckCommand("echo hi  "), "echo hi& call exit %^errorlevel%");
+  assert.equal(windowsPrecheckCommand('node -e "process.exit(0)'), 'node -e "process.exit(0)');
+  assert.deepEqual(Object.keys(withoutErrorlevelVar({ errorLevel: "1", PATH: "x" })), ["PATH"]);
 });
 
 test("출력을 꼬리만 남긴다", async () => {
