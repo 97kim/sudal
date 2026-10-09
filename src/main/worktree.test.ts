@@ -95,7 +95,6 @@ test("worktreePatch → applyPatch: 커밋·수정·새 파일을 한 패치로 
   const { mkdtempSync, writeFileSync, readFileSync, existsSync: exists } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { worktreeCreate, worktreePatch, applyPatch, worktreeSnapshot } = await import("./worktree");
-  const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   const repo = mkdtempSync(join(tmpdir(), "wt-patch-"));
   const g = (...a: string[]) => execFileSync("git", a, { cwd: repo, env, encoding: "utf8" });
   g("init", "-q", "-b", "main");
@@ -173,5 +172,7 @@ test("listManagedWorktrees: worktree 폴더의 worktree 를 원본 저장소·�
   assert.equal(list[0].repo, repo);
   assert.equal(list[0].branch, "sudal/feat");
   assert.equal(list[0].dirty, 1);
-  assert.ok((list[0].sizeKb ?? 0) > 0);
+  // Windows 에는 du 가 없어 크기를 재지 않는다(null — 화면에 크기를 보이지 않는다)
+  if (process.platform === "win32") assert.equal(list[0].sizeKb, null);
+  else assert.ok((list[0].sizeKb ?? 0) > 0);
 });
