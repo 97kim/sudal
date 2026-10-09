@@ -184,7 +184,8 @@ test("walkSizeKb: 디스크에 할당된 크기를 더하고(하드 링크는 �
   // 기대값도 같은 할당 크기에서 — 파일 시스템마다 할당 단위가 달라 숫자를 박지 않는다
   const allocated = (p: string) => lstatSync(p).blocks * 512;
   const expected = Math.ceil((allocated(join(dir, "a.bin")) + allocated(join(dir, "sub", "b.bin"))) / 1024);
-  assert.ok(expected >= 69, `할당 크기가 파일 크기보다 작다: ${expected}KB`);
+  // 압축된 파일 시스템이면 파일 크기보다 작을 수 있어 하한은 0 만 본다
+  assert.ok(expected > 0);
   assert.equal(await walkSizeKb(dir, Date.now() + 10_000), expected);
   linkSync(join(dir, "a.bin"), join(dir, "sub", "a-link.bin"));
   assert.equal(await walkSizeKb(dir, Date.now() + 10_000), expected, "하드 링크는 다시 세지 않는다");
