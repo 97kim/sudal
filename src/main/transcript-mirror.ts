@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ChatEvent, TokenUsage } from "@shared/chat-events";
 import { toolResultText } from "./claude-events";
+import { sameCwd } from "@shared/any-path";
 
 export interface MirrorState {
   /** turn_result 를 이미 낸 Claude message.id (블록마다 한 줄이라 중복 방지). */
@@ -390,7 +391,6 @@ export function findCodexRollout(
   }
   // 파일 이름만 보면 되는 id 검색은 넓게, mtime·cwd 를 봐야 하는 검색은 최근 날짜만(매 초 폴링이라 싸게).
   const scan = opts.sessionId ? days : days.slice(0, 4);
-  const norm = (p: string) => p.replace(/\/+$/, "");
   let best: { file: string; mtime: number } | null = null;
   for (const dir of scan) {
     let files: string[];
@@ -422,7 +422,8 @@ export function findCodexRollout(
       if (best && st.mtimeMs <= best.mtime) continue;
       if (opts.cwd) {
         const meta = readCodexRolloutMeta(file);
-        if (!meta?.cwd || norm(meta.cwd) !== norm(opts.cwd)) continue;
+        // Windows 는 대소문자·\ 표기가 탭 경로와 달라 못 찾으면 다음 메시지가 새 세션이 됐다
+        if (!meta?.cwd || !sameCwd(meta.cwd, opts.cwd)) continue;
       }
       best = { file, mtime: st.mtimeMs };
     }

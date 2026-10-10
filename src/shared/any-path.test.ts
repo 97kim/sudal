@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { basenameAny, dirnameAny, isAbsoluteAny, isUnderAny, joinAny, relativeAny, samePath, trimSep } from "./any-path";
+import { basenameAny, dirnameAny, isAbsoluteAny, isUnderAny, joinAny, relativeAny, sameCwd, samePath, trimSep } from "./any-path";
 import { formatShortcut } from "./shortcut";
 
 test("any-path: macOS·Windows 표기 모두", () => {
@@ -47,4 +47,13 @@ test("any-path: macOS 경로의 \\ 는 구분자가 아니라 이름의 글자�
   assert.equal(isUnderAny("/repo/a\\b.ts", "/repo/a"), false);
   // / 없이 \ 만 쓴 상대 경로는 Windows 표기로 본다
   assert.equal(basenameAny("src\\a.ts"), "a.ts");
+});
+
+test("sameCwd: 다른 프로그램이 적은 Windows 작업 경로를 대소문자·구분자·긴 경로 접두어와 상관없이 같게 본다", () => {
+  assert.equal(sameCwd("C:\\Users\\김수달\\repo", "c:/users/김수달/repo/"), true);
+  assert.equal(sameCwd("\\\\?\\C:\\Users\\a\\repo", "C:\\Users\\a\\repo"), true);
+  assert.equal(sameCwd("C:\\Users\\a\\repo", "C:\\Users\\a\\repo2"), false);
+  // macOS 경로는 대소문자를 구분한다(기존 동작)
+  assert.equal(sameCwd("/Users/a/Repo", "/Users/a/repo"), false);
+  assert.equal(sameCwd("/Users/a/repo/", "/Users/a/repo"), true);
 });

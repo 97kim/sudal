@@ -71,6 +71,15 @@ export function samePath(a: string, b: string): boolean {
   return pathKey(a) === pathKey(b);
 }
 
+/**
+ * 다른 프로그램이 기록한 작업 경로(Codex rollout 의 session_meta.cwd 등)가 이 경로와 같은가.
+ * Windows 는 대소문자·구분자에 더해 긴 경로 접두어(\\?\)가 붙어 올 수 있다.
+ */
+export function sameCwd(a: string, b: string): boolean {
+  const strip = (p: string) => p.replace(/^\\\\\?\\/, "");
+  return samePath(strip(a), strip(b));
+}
+
 /** child 가 parent 자신이거나 그 안에 있는지. */
 export function isUnderAny(child: string, parent: string): boolean {
   const c = pathKey(child);

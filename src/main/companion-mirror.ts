@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { parsePsTree, processCwd } from "./cli-watch";
 import type { ChatEvent, SubagentActivityEvent } from "@shared/chat-events";
 import { TranscriptWatcher, mapCodexRolloutLine, readCodexRolloutMeta } from "./transcript-mirror";
+import { sameCwd } from "@shared/any-path";
 
 export interface CompanionMirrorOptions {
   codexRoot: string;
@@ -80,7 +81,6 @@ export function findCompanionRollout(root: string, opts: { cwd: string; since: n
   } catch {
     return null;
   }
-  const norm = (p: string) => p.replace(/\/+$/, "");
   let best: { file: string; birth: number } | null = null;
   for (const dir of days) {
     let files: string[];
@@ -101,7 +101,7 @@ export function findCompanionRollout(root: string, opts: { cwd: string; since: n
       if (birth < opts.since - 2000) continue;
       if (best && birth <= best.birth) continue;
       const meta = readCodexRolloutMeta(file);
-      if (!meta?.cwd || norm(meta.cwd) !== norm(opts.cwd)) continue;
+      if (!meta?.cwd || !sameCwd(meta.cwd, opts.cwd)) continue;
       if (meta.originator === OWN_ORIGINATOR) continue;
       if (meta.sessionId && opts.exclude.has(meta.sessionId)) continue;
       best = { file, birth };
