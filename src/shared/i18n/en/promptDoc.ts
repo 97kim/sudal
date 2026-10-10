@@ -56,6 +56,7 @@ export const promptDoc: DeepPartial<typeof ko> = {
     terminalRecent: "Terminal {{title}} (recent output)",
     element: {
       head: "Browser element · {{url}}",
+      source: "Source: {{source}}",
       selector: "Selector: {{selector}}",
       text: "Text: {{text}}",
       styles: "Computed styles: {{styles}}",

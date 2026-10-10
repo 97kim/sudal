@@ -55,6 +55,7 @@ export const promptDoc = {
     terminalRecent: "터미널 {{title}} (최근 출력)",
     element: {
       head: "브라우저 요소 · {{url}}",
+      source: "소스: {{source}}",
       selector: "선택자: {{selector}}",
       text: "텍스트: {{text}}",
       styles: "계산된 스타일: {{styles}}",

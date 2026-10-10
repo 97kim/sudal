@@ -23,6 +23,21 @@ export interface PickedElement {
   rect: { x: number; y: number; width: number; height: number };
   /** 화면 배율(스크린샷 자르기용). */
   dpr: number;
+  /** 개발 서버에서 찾은 이 요소의 소스 위치. 배포본·남의 사이트에는 없다. */
+  source?: ElementSource;
+}
+
+/**
+ * 요소를 만든 코드 위치. file 은 페이지가 아는 그대로(절대 경로·/src/… URL 경로 등)라 렌더러가 저장소 파일로 다시 찾는다.
+ * line 은 믿을 수 있을 때만 — React 19 처럼 번들 기준 줄만 알 수 있으면 비워 둔다.
+ */
+export interface ElementSource {
+  file: string;
+  line?: number;
+  column?: number;
+  /** 그 JSX 를 쓴 컴포넌트(React 의 owner, Vue 컴포넌트 이름). */
+  component?: string;
+  via: "attr" | "react" | "react-stack" | "svelte" | "vue";
 }
 
 /** 선택 결과의 상한 — 페이지가 보내는 값이므로 크기를 자른다. */
@@ -35,6 +50,52 @@ export const PICK_LIMITS = { html: 4000, text: 200, selector: 300, coord: 20000 
 export function pickerScript(nonce: string): string {
   return PICKER_SCRIPT.replace("__NONCE__", JSON.stringify(nonce));
 }
+
+/**
+ * 개발 모드 프레임워크가 요소에 달아 두는 디버그 정보로 소스 위치를 찾는 페이지 코드(sourceOf). 못 찾으면 null — 배포본은 원래 없다.
+ * 주입 스크립트 안에 들어가고, 테스트는 이것만 떼어 가짜 요소로 돌린다.
+ */
+export const SOURCE_FN = `
+const cleanFile = (f) => {
+  f = String(f || "").replace(/^webpack-internal:\\/\\/\\/(\\([^)]*\\)\\/)?/, "").replace(/^webpack:\\/\\/[^/]*\\//, "").replace(/^https?:\\/\\/[^/]+/, "").replace(/[?#].*$/, "").replace(/^\\/@fs\\//, "/");
+  try { f = decodeURIComponent(f); } catch {}
+  return f.slice(0, 500);
+};
+const ups = (el, fn) => { for (let n = el, i = 0; n && n.nodeType === 1 && i < 8; n = n.parentElement, i++) { const r = fn(n); if (r) return r; } return null; };
+const sourceOf = (el) => {
+  const attr = ups(el, (n) => {
+    const a = n.getAttribute("data-insp-path") || n.getAttribute("data-v-inspector");
+    const m = a && /^(.*?):(\\d+)(?::(\\d+))?(?::.*)?$/.exec(a);
+    return m ? { file: cleanFile(m[1]), line: +m[2], column: m[3] ? +m[3] : undefined, via: "attr" } : null;
+  });
+  if (attr) return attr;
+  const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
+  if (key) {
+    const nameOf = (f) => { const t = f && f.type; return t && typeof t !== "string" ? (t.displayName || t.name || undefined) : undefined; };
+    for (let f = el[key], i = 0; f && i < 40; f = f.return, i++) {
+      const s = f._debugSource;
+      if (s && s.fileName) return { file: cleanFile(s.fileName), line: s.lineNumber, column: s.columnNumber, component: nameOf(f._debugOwner), via: "react" };
+      // React 19: _debugSource 가 없어지고 JSX 를 부른 자리의 호출 스택만 남는다. 줄은 번들 기준이라 파일만 쓴다.
+      const st = f._debugStack && f._debugStack.stack;
+      if (st) for (const line of String(st).split("\\n").slice(1)) {
+        const m = /((?:https?|webpack-internal|file):\\/\\/[^\\s)]+?):\\d+:\\d+\\)?\\s*$/.exec(line);
+        if (!m) continue;
+        const file = cleanFile(m[1]);
+        if (/node_modules|\\/\\.vite\\/deps\\/|react-dom|jsx-dev-runtime|jsx-runtime|\\/_next\\/static\\/chunks\\//.test(file)) continue;
+        return { file, component: nameOf(f._debugOwner), via: "react-stack" };
+      }
+    }
+  }
+  // Svelte 의 줄·칸은 0부터 센다.
+  const sv = ups(el, (n) => { const loc = n.__svelte_meta && n.__svelte_meta.loc; return loc && loc.file ? { file: cleanFile(loc.file), line: (loc.line | 0) + 1, column: (loc.column | 0) + 1, via: "svelte" } : null; });
+  if (sv) return sv;
+  return ups(el, (n) => {
+    const c = n.__vueParentComponent;
+    const f = (c && c.type && c.type.__file) || (n.__vue__ && n.__vue__.$options && n.__vue__.$options.__file);
+    return f ? { file: cleanFile(f), component: (c && c.type && (c.type.name || c.type.__name)) || undefined, via: "vue" } : null;
+  });
+};
+`;
 
 const PICKER_SCRIPT = `(() => {
   const MARK = ${JSON.stringify(PICK_MARK)} + __NONCE__ + ":";
@@ -73,8 +134,11 @@ const PICKER_SCRIPT = `(() => {
     const r = el.getBoundingClientRect();
     let html = el.outerHTML || "";
     if (html.length > 2000) html = html.slice(0, 2000) + "…";
-    return { selector: selectorOf(el), tag: el.tagName.toLowerCase(), html, text: (el.innerText || el.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 200), styles, rect: { x: r.left, y: r.top, width: r.width, height: r.height }, dpr: w.devicePixelRatio || 1 };
+    let source = null;
+    try { source = sourceOf(el); } catch {}
+    return { selector: selectorOf(el), tag: el.tagName.toLowerCase(), html, text: (el.innerText || el.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 200), styles, rect: { x: r.left, y: r.top, width: r.width, height: r.height }, dpr: w.devicePixelRatio || 1, source };
   };
+${SOURCE_FN}
   const place = (el) => {
     const r = el.getBoundingClientRect();
     Object.assign(box.style, { display: "block", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
@@ -141,6 +205,7 @@ export function parsePickMessage(message: string, nonce: string): { kind: "picke
         styles,
         rect: { x: num(raw.rect.x), y: num(raw.rect.y), width: Math.max(0, num(raw.rect.width)), height: Math.max(0, num(raw.rect.height)) },
         dpr: typeof raw.dpr === "number" && Number.isFinite(raw.dpr) && raw.dpr > 0 ? raw.dpr : 1,
+        ...(parseSource(raw.source) ? { source: parseSource(raw.source) } : {}),
       },
     };
   } catch {
@@ -148,10 +213,35 @@ export function parsePickMessage(message: string, nonce: string): { kind: "picke
   }
 }
 
+const SOURCE_VIA = new Set(["attr", "react", "react-stack", "svelte", "vue"]);
+/** 페이지가 보낸 소스 위치를 믿을 만한 모양만 남긴다. */
+function parseSource(v: unknown): ElementSource | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.file !== "string" || !o.file.trim() || o.file.includes("\0") || typeof o.via !== "string" || !SOURCE_VIA.has(o.via)) return undefined;
+  const pos = (n: unknown) => (typeof n === "number" && Number.isInteger(n) && n > 0 && n < 1_000_000 ? n : undefined);
+  const line = pos(o.line);
+  return {
+    file: o.file.slice(0, 500),
+    ...(line ? { line } : {}),
+    ...(line && pos(o.column) ? { column: pos(o.column) } : {}),
+    ...(typeof o.component === "string" && /^[\w$.]{1,80}$/.test(o.component) ? { component: o.component } : {}),
+    via: o.via as ElementSource["via"],
+  };
+}
+
+/** "src/a.tsx:42 (<Button>)" — 첨부와 알림에 쓰는 소스 위치 한 줄. file 은 저장소에서 다시 찾은 경로로 바꿔 넣을 수 있다. */
+export function formatSource(src: ElementSource, file = src.file): string {
+  return `${file}${src.line ? `:${src.line}` : ""}${src.component ? ` (<${src.component}>)` : ""}`;
+}
+
 /** 입력창에 붙일 텍스트: 어디의 무엇인지 + HTML 펜스 + 계산된 스타일 + 크기. 스크린샷은 이미지 첨부로 따로 간다. */
-export function formatElementAttachment(t: TFunction, el: PickedElement, url: string): string {
+export function formatElementAttachment(t: TFunction, el: PickedElement, url: string, sourceFile?: string): string {
   const fence = el.html.includes("```") ? "````" : "```";
-  const lines = [t("promptDoc.attach.element.head", { url }), t("promptDoc.attach.element.selector", { selector: el.selector })];
+  const lines = [t("promptDoc.attach.element.head", { url })];
+  // 소스 위치가 있으면 맨 앞 — 모델이 코드를 찾는 단계를 건너뛸 수 있다.
+  if (el.source) lines.push(t("promptDoc.attach.element.source", { source: formatSource(el.source, sourceFile) }));
+  lines.push(t("promptDoc.attach.element.selector", { selector: el.selector }));
   if (el.text) lines.push(t("promptDoc.attach.element.text", { text: el.text }));
   lines.push(`${fence}html`, el.html.trim(), fence);
   const styles = Object.entries(el.styles);
