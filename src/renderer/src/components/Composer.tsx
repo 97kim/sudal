@@ -106,7 +106,12 @@ export function Composer({
     return onComposerDraftAppend(draftKey, (block, imgs) => {
       setText((cur) => appendToDraft(cur, block));
       if (imgs && imgs.length > 0)
-        setImages((prev) => [...prev, ...imgs.map((img) => ({ ...img, dataUrl: `data:${img.mime};base64,${img.base64}` }))].slice(0, MAX_IMAGES));
+        setImages((prev) => {
+          const all = [...prev, ...imgs.map((img) => ({ ...img, dataUrl: `data:${img.mime};base64,${img.base64}` }))];
+          // 넘치는 건 버리되 말없이 버리지 않는다 — 붙여 넣기·끌어다 놓기와 같은 경고를 띄운다.
+          if (all.length > MAX_IMAGES) setImageLimit(true);
+          return all.slice(0, MAX_IMAGES);
+        });
       requestAnimationFrame(() => {
         const el = ref.current;
         if (!el) return;

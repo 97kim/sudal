@@ -208,6 +208,8 @@ export const panel: DeepPartial<typeof ko> = {
       remove: "Remove",
       placeholder: "What should change here…",
       hint: "⇧-click to pick more",
+      preparing: "Preparing…",
+      shotsTrimmed: "Screenshots added for the first {{count}} only",
       send_one: "Add {{count}} to input",
       send_other: "Add {{count}} to input",
       sent_one: "Added {{count}} element with notes",

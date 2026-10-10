@@ -9,7 +9,7 @@ import { browserTabLabel, openEditorFile } from "../editor-tabs";
 import { useLocateFile } from "./FileViewer";
 import { relativeAny } from "@shared/any-path";
 import type { ChatImageDto } from "@shared/ipc";
-import { PICKER_CLEAR_MARKS_SCRIPT, PICKER_STOP_SCRIPT, formatNotesAttachment, pickerUnmarkScript, type PickedElement, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
+import { PICKER_STOP_SCRIPT, formatNotesAttachment, pickerRelabelScript, type PickedElement, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
 import { DIAG_MAX_CONSOLE, formatDiagnostics, pushCapped, type ConsoleLine } from "@shared/browser-diagnostics";
 import { DEFAULT_VIEWPORT, VIEWPORTS, nextZoom, type ViewportId, viewportById, zoomLevelToPercent } from "../browser-viewport";
 import { frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "@shared/browser-history";
@@ -35,6 +35,8 @@ function addHistory(url: string): void {
 
 /** 메모 모음에 담을 수 있는 요소 수. 많아지면 한 번에 보내는 요청이 흐려진다. */
 const TRAY_MAX = 10;
+/** 입력창이 받는 이미지 수(Composer 의 MAX_IMAGES)와 같다. */
+const NOTES_MAX_IMAGES = 4;
 
 // 보기 폭은 앱 전체에 하나 — 폰 폭으로 확인하던 중이면 새 탭도 그 폭으로 연다.
 const VIEWPORT_KEY = "browser.viewport";
@@ -171,7 +173,8 @@ export function BrowserPane({
   type Toast = { text: string; detail?: string; hint?: string; error?: boolean; action?: { label: string; run: () => void } };
   const [toast, setToast] = useState<Toast | null>(null);
   // ⇧+클릭으로 모은 요소와 요소마다의 메모. 보내면 한 덩어리로 입력창에 붙는다.
-  type TrayItem = { id: string; element: PickedElement; url: string; images?: ChatImageDto[]; shown?: string; memo: string };
+  // pending: 고른 순간 자리만 잡아 두고 스크린샷·소스 위치를 채우는 중 — 순서가 고른 순서대로 남는다.
+  type TrayItem = { id: string; element: PickedElement; url: string; images?: ChatImageDto[]; shown?: string; memo: string; mark?: number; pending: boolean };
   const [tray, setTray] = useState<TrayItem[]>([]);
   const trayRef = useRef(tray);
   trayRef.current = tray;
@@ -218,7 +221,11 @@ export function BrowserPane({
   };
   const stopPick = () => {
     setPicking(false);
-    void view.current?.executeJavaScript(PICKER_STOP_SCRIPT).catch(() => {});
+    try {
+      void view.current?.executeJavaScript(PICKER_STOP_SCRIPT).catch(() => {});
+    } catch {
+      /* 붙기 전엔 즉시 던진다 — 끌 것도 없다 */
+    }
   };
   const paneFocus = usePaneFocusRef();
   // 앱 쪽에 포커스가 있을 때의 esc 도 취소로(페이지 안 esc 는 주입 스크립트가 처리)
@@ -262,6 +269,8 @@ export function BrowserPane({
         setPicking(false);
         nonceRef.current = "";
       }
+      const slot = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      if (toTray) setTray((list) => [...list, { id: slot, element: picked, url, memo: "", mark: picked.mark, pending: true }].slice(0, TRAY_MAX));
       void (async () => {
         let images: ChatImageDto[] | undefined;
         // 요소 영역만 잘라 스크린샷(뷰포트 좌표 = capturePage 좌표). 화면 밖·0 크기는 건너뛴다
@@ -297,7 +306,8 @@ export function BrowserPane({
           }
         }
         if (toTray) {
-          setTray((list) => [...list, { id: `${Date.now()}-${list.length}`, element: picked, url: pageUrl, images, shown, memo: "" }].slice(0, TRAY_MAX));
+          // 그사이 보냈거나 비웠거나 뺐으면 자리가 없다 — 되살리지 않는다.
+          setTray((list) => list.map((x) => (x.id === slot ? { ...x, url: pageUrl, images, shown, pending: false } : x)));
           return;
         }
         onAttachRef.current?.(formatElementAttachment(tRef.current, picked, pageUrl, shown), images);
@@ -693,25 +703,39 @@ export function BrowserPane({
     kvSet(ZOOM_KEY, Object.keys(zooms).length ? JSON.stringify(zooms) : null);
   };
 
-  const runInPage = (code: string) => void view.current?.executeJavaScript(code).catch(() => {});
-  const clearTray = () => {
-    setTray([]);
-    runInPage(PICKER_CLEAR_MARKS_SCRIPT);
+  // 함정: 웹뷰가 붙기(dom-ready) 전엔 executeJavaScript 가 Promise 거절이 아니라 즉시 던진다 — 그대로 두면
+  // effect 안에서 던져 화면 전체가 무너진다. 그래서 try 로 감싼다.
+  const runInPage = (code: string) => {
+    try {
+      void view.current?.executeJavaScript(code).catch(() => {});
+    } catch {
+      /* 아직 붙기 전 — 페이지에 그릴 것도 없다 */
+    }
   };
-  const removeTrayItem = (i: number) => {
-    setTray((list) => list.filter((_, k) => k !== i));
-    runInPage(pickerUnmarkScript(i));
-  };
+  const clearTray = () => setTray([]);
+  const removeTrayItem = (i: number) => setTray((list) => list.filter((_, k) => k !== i));
+  // 페이지의 번호 테두리를 모음 순서대로 다시 매기고, 모음에서 빠진 것은 지운다(비면 모두 지움).
+  const trayMarks = tray.map((x) => x.mark ?? 0).join(",");
+  useEffect(() => {
+    if (!attached) return;
+    runInPage(pickerRelabelScript(trayMarks ? trayMarks.split(",").map(Number) : []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trayMarks, attached]);
   const sendTray = () => {
     const list = trayRef.current;
-    if (list.length === 0) return;
+    if (list.length === 0 || list.some((x) => x.pending)) return;
+    // 입력창은 이미지를 4장까지만 받는다 — 앞의 것만 스크린샷을 붙이고, 넘치면 알린다(말없이 버리지 않게).
+    const shots = list.flatMap((x) => x.images ?? []);
     onAttachRef.current?.(
       formatNotesAttachment(tRef.current, list.map((x) => ({ element: x.element, url: x.url, memo: x.memo, sourceFile: x.shown }))),
-      list.flatMap((x) => x.images ?? []),
+      shots.slice(0, NOTES_MAX_IMAGES),
     );
     if (pickingRef.current) stopPick();
     clearTray();
-    showToast({ text: tRef.current("panel.browser.notes.sent", { count: list.length }), hint: tRef.current("panel.browser.toastNext") });
+    showToast({
+      text: tRef.current("panel.browser.notes.sent", { count: list.length }),
+      hint: shots.length > NOTES_MAX_IMAGES ? tRef.current("panel.browser.notes.shotsTrimmed", { count: NOTES_MAX_IMAGES }) : tRef.current("panel.browser.toastNext"),
+    });
   };
 
   const retry = () => {
@@ -1266,8 +1290,13 @@ export function BrowserPane({
             </div>
             <div className="flex items-center gap-2 border-t border-line px-3 py-2">
               <span className="flex-1 text-[11px] text-muted-2">{t("panel.browser.notes.hint")}</span>
-              <button onClick={sendTray} className="rounded-md bg-accent px-3 py-1 text-[11.5px] font-semibold text-bg hover:opacity-90" data-browser-notes-send>
-                {t("panel.browser.notes.send", { count: tray.length })}
+              <button
+                onClick={sendTray}
+                disabled={tray.some((x) => x.pending)}
+                className="rounded-md bg-accent px-3 py-1 text-[11.5px] font-semibold text-bg hover:opacity-90 disabled:opacity-50"
+                data-browser-notes-send
+              >
+                {tray.some((x) => x.pending) ? t("panel.browser.notes.preparing") : t("panel.browser.notes.send", { count: tray.length })}
               </button>
             </div>
           </div>

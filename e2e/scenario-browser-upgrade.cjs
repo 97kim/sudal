@@ -12,6 +12,7 @@
 //  K) 에이전트가 조작하면 화면에 "조작 중" 이 뜨고, 사람이 멈추면 명령이 거절되고, 다시 허용하면 된다
 //  K-2) 멈춤은 같은 채팅의 다른 브라우저 탭에도 보인다
 //  L) ⇧+클릭으로 여러 요소를 모아 메모를 달고 한 번에 입력창으로 보낸다
+//  L-2) 실제 마우스 ⇧+클릭은 한 번에 하나, 선택을 다시 켜도 번호가 이어지고, 빼면 다시 매긴다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
@@ -312,6 +313,31 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   const marksOff = Number(await wvm(`document.querySelectorAll("[data-sudal-pick-mark]").length`));
   const okText = /### 1\. 제목을 키워 줘/.test(sent) && /### 2\. \(메모 없음\)/.test(sent) && /### 3\. 버튼을 둥글게/.test(sent) && /브라우저 요소 3개/.test(sent);
   res("L (⇧+클릭 메모 모음)", notes === 3 && marksOn === 3 && stillOn === "on" && okText && trayGone && marksOff === 0, JSON.stringify({ notes, marksOn, stillOn, okText, trayGone, marksOff, sent: sent.slice(0, 80) }));
+  // L-2: 진짜 마우스 ⇧+클릭(누름 뒤 클릭이 따라온다) — 한 번에 하나만 담기고, 다시 켜도 번호가 이어진다
+  const realShift = async (id) => {
+    const r = JSON.parse(await wvm(`JSON.stringify((() => { const b = document.getElementById("${id}").getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })())`));
+    await ev(({ x, y }) => { const w = [...document.querySelectorAll("webview")].find((w) => w.offsetParent); w.focus(); w.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1, modifiers: ["shift"] }); w.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1, modifiers: ["shift"] }); }, r);
+    await sleep(900);
+  };
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  await realShift("m1");
+  await realShift("m2");
+  const twoNotes = await ev(() => [...document.querySelectorAll("[data-browser-note]")].filter((x) => x.offsetParent).length);
+  const twoMarks = Number(await wvm(`document.querySelectorAll("[data-sudal-pick-mark]").length`));
+  await page.keyboard.press("Escape");
+  await ev(() => document.querySelector("[data-browser-pick][data-browser-pick='on']")?.click());
+  await sleep(300);
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  await realShift("m3");
+  const labels3 = await wvm(`JSON.stringify([...document.querySelectorAll("[data-sudal-pick-mark]")].map((m) => m.textContent))`);
+  await ev(() => [...document.querySelectorAll("[data-browser-note]")].find((x) => x.offsetParent)?.querySelector("button")?.click());
+  await sleep(500);
+  const labelsAfter = await wvm(`JSON.stringify([...document.querySelectorAll("[data-sudal-pick-mark]")].map((m) => m.textContent))`);
+  await ev(() => [...document.querySelectorAll("[data-browser-notes-clear]")].find((x) => x.offsetParent)?.click());
+  if (await ev(() => [...document.querySelectorAll("[data-browser-pick]")].find((x) => x.offsetParent)?.getAttribute("data-browser-pick")) === "on") await page.click("[data-browser-pick] >> visible=true");
+  res("L-2 (실제 마우스 ⇧+클릭 · 다시 켜도 번호 유지 · 빼면 번호 다시)", twoNotes === 2 && twoMarks === 2 && labels3 === '["1","2","3"]' && labelsAfter === '["1","2"]', JSON.stringify({ twoNotes, twoMarks, labels3, labelsAfter }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

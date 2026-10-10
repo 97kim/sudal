@@ -27,6 +27,8 @@ export interface PickedElement {
   source?: ElementSource;
   /** ⇧ 를 누른 채 골랐다 — 바로 붙이지 않고 메모 모음에 쌓는다(선택 모드는 계속 켜져 있다). */
   multi?: boolean;
+  /** 그 요소에 남긴 번호 테두리의 id. 앱이 이 id 로 번호를 다시 매기거나 지운다. */
+  mark?: number;
 }
 
 /**
@@ -105,7 +107,9 @@ const PICKER_SCRIPT = `(() => {
   const CANCEL = ${JSON.stringify(PICK_CANCEL_MARK)};
   const PROPS = ${JSON.stringify(ELEMENT_STYLE_PROPS)};
   const w = window;
-  if (w.__sudalPick) { w.__sudalPick.stop(); if (w.__sudalPick.dispose) w.__sudalPick.dispose(); }
+  // 다시 주입해도(선택을 다시 켬) 앞서 남긴 번호 테두리는 이어받는다 — 모음에 남은 요소의 테두리가 사라지면 안 된다.
+  const prev = w.__sudalPick;
+  if (prev) { prev.stop(); if (prev.dispose) prev.dispose(); }
   const box = document.createElement("div");
   box.setAttribute("data-sudal-pick-box", "");
   Object.assign(box.style, { position: "fixed", pointerEvents: "none", zIndex: "2147483647", border: "2px solid #6366f1", background: "rgba(99,102,241,0.12)", borderRadius: "3px", display: "none", boxSizing: "border-box" });
@@ -169,8 +173,9 @@ ${SOURCE_FN}
     document.removeEventListener("keydown", onKey, true);
   };
   // ⇧+클릭으로 모은 요소에 남기는 번호 테두리. 문서 좌표에 두어 스크롤해도 요소를 따라간다.
-  const marks = [];
-  const renumber = () => marks.forEach((m, i) => { m.badge.textContent = String(i + 1); });
+  // 번호는 앱의 메모 모음 순서를 따른다(relabel). 여기서는 id 만 정한다.
+  const marks = (prev && prev.marks) || [];
+  let markSeq = (prev && prev.markSeq && prev.markSeq()) || 0;
   const mark = (el) => {
     const r = el.getBoundingClientRect();
     const frame = document.createElement("div");
@@ -180,15 +185,16 @@ ${SOURCE_FN}
     Object.assign(badge.style, { position: "absolute", right: "-9px", top: "-9px", minWidth: "18px", height: "18px", borderRadius: "9px", background: "#6366f1", color: "#fff", font: "700 10px/18px -apple-system, system-ui, sans-serif", textAlign: "center", padding: "0 4px", boxSizing: "border-box" });
     frame.appendChild(badge);
     document.documentElement.appendChild(frame);
-    marks.push({ frame, badge });
-    renumber();
+    const id = ++markSeq;
+    badge.textContent = String(marks.length + 1);
+    marks.push({ id, frame, badge });
+    return id;
   };
   const pick = (el, multi) => {
     box.style.display = "none"; tip.style.display = "none";
-    console.log(MARK + JSON.stringify({ ...info(el), multi: !!multi }));
-    swallowUntil = Date.now() + 1000;
-    if (multi) mark(el);
-    else stop();
+    const id = multi ? mark(el) : undefined;
+    console.log(MARK + JSON.stringify({ ...info(el), multi: !!multi, ...(id ? { mark: id } : {}) }));
+    if (!multi) stop();
   };
   const targetOf = (e) => (e.target && e.target.nodeType === 1 && e.target !== box && e.target !== tip && e.target !== shield ? e.target : cur);
   // 고르는 건 막의 mousedown 에서 — 그 자리 밑의 요소를 고른다.
@@ -196,7 +202,10 @@ ${SOURCE_FN}
     if (!active || e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
     const el = under(e.clientX, e.clientY) || cur;
-    if (el && el !== document.documentElement && el !== document.body) pick(el, e.shiftKey);
+    if (!el || el === document.documentElement || el === document.body) return;
+    // 마우스로 고르면 뒤이어 같은 손짓의 click 이 온다 — ⇧ 로 선택이 계속 켜져 있어도 그걸로 또 고르지 않게 삼킨다.
+    swallowUntil = Date.now() + 1000;
+    pick(el, e.shiftKey);
   };
   // 막이 휠을 받으면 안쪽 스크롤 영역(목록·사이드바)이 안 움직인다 — 그 자리 밑에서 위로 올라가며
   // 그 방향으로 더 갈 수 있는 영역을 찾아 대신 스크롤한다. 없으면 막지 않아 문서 전체가 스크롤된다.
@@ -226,13 +235,15 @@ ${SOURCE_FN}
   shield.addEventListener("wheel", onWheel, { passive: false });
   // 프로그램으로 일으킨 click(마우스 없이 el.click())도 받고, 고른 직후의 진짜 click 은 삼킨다.
   const onClick = (e) => {
+    if (Date.now() < swallowUntil) {
+      e.preventDefault(); e.stopPropagation();
+      swallowUntil = 0;
+      return;
+    }
     if (active) {
       e.preventDefault(); e.stopPropagation();
       const el = targetOf(e);
       if (el) pick(el, e.shiftKey);
-    } else if (Date.now() < swallowUntil) {
-      e.preventDefault(); e.stopPropagation();
-      swallowUntil = 0;
     }
   };
   const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stop(); console.log(CANCEL); } };
@@ -244,20 +255,25 @@ ${SOURCE_FN}
   };
   // click 리스너는 꺼진 뒤에도 남는다 — 고른 직후의 클릭을 삼켜야 해서(swallowUntil 이 지나면 아무것도 안 한다).
   document.addEventListener("click", onClick, true);
-  const clearMarks = () => { marks.splice(0).forEach((m) => m.frame.remove()); };
-  const unmark = (i) => { const [m] = marks.splice(i, 1); if (m) { m.frame.remove(); renumber(); } };
-  w.__sudalPick = { start, stop, clearMarks, unmark, dispose: () => { document.removeEventListener("click", onClick, true); clearMarks(); shield.remove(); box.remove(); tip.remove(); } };
+  // ids 순서대로 1, 2, 3… 을 매기고, 목록에 없는 테두리는 지운다(빈 목록이면 모두 지움).
+  const relabel = (ids) => {
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const at = ids.indexOf(marks[i].id);
+      if (at === -1) { marks[i].frame.remove(); marks.splice(i, 1); }
+      else marks[i].badge.textContent = String(at + 1);
+    }
+  };
+  w.__sudalPick = { start, stop, relabel, marks, markSeq: () => markSeq, dispose: () => { document.removeEventListener("click", onClick, true); shield.remove(); box.remove(); tip.remove(); } };
   start();
   return "started";
 })()`;
 
 /** 페이지 취소 스크립트(요소 선택 끄기). */
 export const PICKER_STOP_SCRIPT = `(() => { if (window.__sudalPick) window.__sudalPick.stop(); return "stopped"; })()`;
-/** ⇧+클릭으로 남긴 번호 테두리를 모두 지운다. */
-export const PICKER_CLEAR_MARKS_SCRIPT = `(() => { if (window.__sudalPick && window.__sudalPick.clearMarks) window.__sudalPick.clearMarks(); return "cleared"; })()`;
-/** i 번째(0부터) 테두리를 지우고 나머지 번호를 다시 매긴다. */
-export function pickerUnmarkScript(i: number): string {
-  return `(() => { if (window.__sudalPick && window.__sudalPick.unmark) window.__sudalPick.unmark(${Math.max(0, Math.floor(i))}); return "ok"; })()`;
+/** 번호 테두리를 메모 모음 순서(ids)대로 다시 매기고, 없는 것은 지운다. 빈 배열이면 모두 지운다. */
+export function pickerRelabelScript(ids: number[]): string {
+  const safe = ids.filter((n) => Number.isInteger(n) && n > 0);
+  return `(() => { if (window.__sudalPick && window.__sudalPick.relabel) window.__sudalPick.relabel(${JSON.stringify(safe)}); return "ok"; })()`;
 }
 
 /** 메모 모음을 한 번에 입력창으로: 번호·메모를 머리로 달고, 요소마다 평소 첨부를 이어 붙인다. */
@@ -293,6 +309,7 @@ export function parsePickMessage(message: string, nonce: string): { kind: "picke
         dpr: typeof raw.dpr === "number" && Number.isFinite(raw.dpr) && raw.dpr > 0 ? raw.dpr : 1,
         ...(parseSource(raw.source) ? { source: parseSource(raw.source) } : {}),
         ...(raw.multi === true ? { multi: true } : {}),
+        ...(typeof raw.mark === "number" && Number.isInteger(raw.mark) && raw.mark > 0 ? { mark: raw.mark } : {}),
       },
     };
   } catch {
