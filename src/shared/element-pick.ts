@@ -185,10 +185,14 @@ ${SOURCE_FN}
   const canScroll = (n, dx, dy) => {
     const cs = getComputedStyle(n);
     const y = dy !== 0 && /(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight && (dy > 0 ? n.scrollTop + n.clientHeight < n.scrollHeight - 1 : n.scrollTop > 0);
-    const x = dx !== 0 && /(auto|scroll|overlay)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth && (dx > 0 ? n.scrollLeft + n.clientWidth < n.scrollWidth - 1 : n.scrollLeft > 0);
+    // 오른쪽에서 왼쪽으로 쓰는(RTL) 영역은 scrollLeft 가 0(오른쪽 끝)에서 음수로 간다.
+    const max = n.scrollWidth - n.clientWidth;
+    const [lo, hi] = cs.direction === "rtl" ? [-max, 0] : [0, max];
+    const x = dx !== 0 && /(auto|scroll|overlay)/.test(cs.overflowX) && max > 0 && (dx > 0 ? n.scrollLeft < hi - 1 : n.scrollLeft > lo + 1);
     return y || x;
   };
   const onWheel = (e) => {
+    if (e.ctrlKey || e.metaKey) return; // 확대·축소(핀치 포함)는 브라우저에 맡긴다
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const dx = e.deltaX * k, dy = e.deltaY * k;
     for (let n = under(e.clientX, e.clientY); n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
