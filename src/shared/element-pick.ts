@@ -111,7 +111,7 @@ const PICKER_SCRIPT = `(() => {
   Object.assign(tip.style, { position: "fixed", pointerEvents: "none", zIndex: "2147483647", font: "11px/1.4 -apple-system, system-ui, sans-serif", background: "#18202a", color: "#fff", padding: "2px 6px", borderRadius: "4px", display: "none", maxWidth: "60vw", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
   // 선택 중엔 페이지 전체를 투명한 막으로 덮어 마우스를 막이 받는다. 브라우저는 비활성(disabled) 버튼에
   // mousedown·click 을 보내지 않아 요소에 직접 리스너를 걸면 그런 버튼을 못 고른다 — 막 아래 요소는 elementsFromPoint 로 찾는다.
-  // 클릭도 막에 떨어지므로 링크가 열리거나 폼이 제출되지 않는다. 휠은 막을 지나 페이지가 스크롤된다.
+  // 클릭도 막에 떨어지므로 링크가 열리거나 폼이 제출되지 않는다. 휠은 막 밑의 스크롤 영역에 대신 넘긴다(onWheel).
   const shield = document.createElement("div");
   shield.setAttribute("data-sudal-pick-shield", "");
   Object.assign(shield.style, { position: "fixed", inset: "0", zIndex: "2147483646", background: "transparent", cursor: "crosshair", display: "none" });
@@ -180,8 +180,28 @@ ${SOURCE_FN}
     const el = under(e.clientX, e.clientY) || cur;
     if (el && el !== document.documentElement && el !== document.body) pick(el);
   };
+  // 막이 휠을 받으면 안쪽 스크롤 영역(목록·사이드바)이 안 움직인다 — 그 자리 밑에서 위로 올라가며
+  // 그 방향으로 더 갈 수 있는 영역을 찾아 대신 스크롤한다. 없으면 막지 않아 문서 전체가 스크롤된다.
+  const canScroll = (n, dx, dy) => {
+    const cs = getComputedStyle(n);
+    const y = dy !== 0 && /(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight && (dy > 0 ? n.scrollTop + n.clientHeight < n.scrollHeight - 1 : n.scrollTop > 0);
+    const x = dx !== 0 && /(auto|scroll|overlay)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth && (dx > 0 ? n.scrollLeft + n.clientWidth < n.scrollWidth - 1 : n.scrollLeft > 0);
+    return y || x;
+  };
+  const onWheel = (e) => {
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+    const dx = e.deltaX * k, dy = e.deltaY * k;
+    for (let n = under(e.clientX, e.clientY); n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      if (!canScroll(n, dx, dy)) continue;
+      e.preventDefault();
+      n.scrollBy(dx, dy);
+      if (cur) place(cur);
+      return;
+    }
+  };
   shield.addEventListener("mousemove", onMove);
   shield.addEventListener("mousedown", onDown);
+  shield.addEventListener("wheel", onWheel, { passive: false });
   // 프로그램으로 일으킨 click(마우스 없이 el.click())도 받고, 고른 직후의 진짜 click 은 삼킨다.
   const onClick = (e) => {
     if (active) {
