@@ -1052,9 +1052,15 @@ export interface SudalApi {
 /** 에이전트의 브라우저 조작 한 번(시작·끝·오류). point 는 click 이 누른 자리(페이지 화면 좌표). */
 export interface BrowserAgentDto {
   tabId: string;
+  /** 명령 번호 — 시작과 끝을 짝짓는다. pause 알림은 0. */
+  id: number;
+  /** 명령이 향한 웹뷰. 브라우저가 없을 때(오류)나 pause 알림엔 없다. */
+  webContentsId?: number;
   op: string;
   detail: string;
-  phase: "start" | "done" | "error";
+  /** pause: 사람이 멈춤을 바꿨다(paused 에 지금 상태). */
+  phase: "start" | "done" | "error" | "pause";
+  paused?: boolean;
   point?: { x: number; y: number };
   at: number;
 }

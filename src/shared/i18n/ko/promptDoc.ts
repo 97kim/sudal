@@ -61,6 +61,11 @@ export const promptDoc = {
       styles: "계산된 스타일: {{styles}}",
       size: "크기: {{w}}×{{h}} @ ({{x}}, {{y}})",
     },
+    notes: {
+      head: "브라우저 요소 {{count}}개 — 번호마다 요청이 있어요",
+      item: "### {{n}}. {{memo}}",
+      noMemo: "(메모 없음)",
+    },
     diag: {
       head: "브라우저 진단 — {{url}}",
       title: "제목: {{title}}",

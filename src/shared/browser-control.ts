@@ -112,7 +112,8 @@ export function clickScript(t: TFunction, target: { selector?: string; text?: st
     return { error: ${needTarget} };
   }
   if (!visible(el)) return { error: ${notVisible}.replace("{{selector}}", () => sel(el)) };
-  el.scrollIntoView({ block: "center" });
+  // 즉시 스크롤 — 페이지가 scroll-behavior: smooth 면 아래에서 재는 좌표가 스크롤 전 자리가 된다.
+  el.scrollIntoView({ block: "center", behavior: "instant" });
   // 누른 자리 — 화면이 "여기를 눌렀다" 를 잠깐 표시한다.
   const b = el.getBoundingClientRect();
   el.click();

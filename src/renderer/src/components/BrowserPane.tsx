@@ -9,7 +9,7 @@ import { browserTabLabel, openEditorFile } from "../editor-tabs";
 import { useLocateFile } from "./FileViewer";
 import { relativeAny } from "@shared/any-path";
 import type { ChatImageDto } from "@shared/ipc";
-import { PICKER_STOP_SCRIPT, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
+import { PICKER_CLEAR_MARKS_SCRIPT, PICKER_STOP_SCRIPT, formatNotesAttachment, pickerUnmarkScript, type PickedElement, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
 import { DIAG_MAX_CONSOLE, formatDiagnostics, pushCapped, type ConsoleLine } from "@shared/browser-diagnostics";
 import { DEFAULT_VIEWPORT, VIEWPORTS, nextZoom, type ViewportId, viewportById, zoomLevelToPercent } from "../browser-viewport";
 import { frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "@shared/browser-history";
@@ -32,6 +32,9 @@ function addHistory(url: string): void {
   historyCache = next;
   kvSet(HISTORY_KEY, JSON.stringify(next));
 }
+
+/** 메모 모음에 담을 수 있는 요소 수. 많아지면 한 번에 보내는 요청이 흐려진다. */
+const TRAY_MAX = 10;
 
 // 보기 폭은 앱 전체에 하나 — 폰 폭으로 확인하던 중이면 새 탭도 그 폭으로 연다.
 const VIEWPORT_KEY = "browser.viewport";
@@ -154,7 +157,8 @@ export function BrowserPane({
   const [agentPoint, setAgentPoint] = useState<{ x: number; y: number; at: number } | null>(null);
   const [agentPaused, setAgentPaused] = useState(false);
   const [, setTick] = useState(0);
-  const agentInflight = useRef(0);
+  // 이 웹뷰에서 시작한 명령 번호 — 끝 알림은 여기 있는 것만 센다.
+  const agentInflight = useRef(new Set<number>());
   const agentIdle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onOpenTabRef = useRef(onOpenTab);
   onOpenTabRef.current = onOpenTab;
@@ -166,6 +170,11 @@ export function BrowserPane({
   // 요소 선택·진단 첨부 결과. 페이지를 밀지 않게 웹뷰 위에 떠 있다가 사라진다.
   type Toast = { text: string; detail?: string; hint?: string; error?: boolean; action?: { label: string; run: () => void } };
   const [toast, setToast] = useState<Toast | null>(null);
+  // ⇧+클릭으로 모은 요소와 요소마다의 메모. 보내면 한 덩어리로 입력창에 붙는다.
+  type TrayItem = { id: string; element: PickedElement; url: string; images?: ChatImageDto[]; shown?: string; memo: string };
+  const [tray, setTray] = useState<TrayItem[]>([]);
+  const trayRef = useRef(tray);
+  trayRef.current = tray;
   // 리스너가 오래 남으므로 최신 값을 ref 로 건넨다.
   const locate = useLocateFile();
   const locateRef = useRef(locate);
@@ -241,10 +250,18 @@ export function BrowserPane({
         return;
       }
       if (!pickingRef.current) return;
-      setPicking(false);
-      nonceRef.current = "";
-      if (r.kind === "cancel") return;
+      if (r.kind === "cancel") {
+        setPicking(false);
+        nonceRef.current = "";
+        return;
+      }
       const picked = r.element;
+      // ⇧+클릭은 메모 모음에 쌓고 선택 모드를 그대로 둔다. 모음에 이미 뭔가 있으면 그냥 클릭도 모음에 더하고 끝낸다.
+      const toTray = picked.multi === true || trayRef.current.length > 0;
+      if (!picked.multi) {
+        setPicking(false);
+        nonceRef.current = "";
+      }
       void (async () => {
         let images: ChatImageDto[] | undefined;
         // 요소 영역만 잘라 스크린샷(뷰포트 좌표 = capturePage 좌표). 화면 밖·0 크기는 건너뛴다
@@ -278,6 +295,10 @@ export function BrowserPane({
             // cwd 가 링크 경로면 실제 경로와 어긋나 상대 경로가 안 나온다 — 그땐 절대 경로로 보여 준다.
             shown = relativeAny(abs, cwd) || abs;
           }
+        }
+        if (toTray) {
+          setTray((list) => [...list, { id: `${Date.now()}-${list.length}`, element: picked, url: pageUrl, images, shown, memo: "" }].slice(0, TRAY_MAX));
+          return;
         }
         onAttachRef.current?.(formatElementAttachment(tRef.current, picked, pageUrl, shown), images);
         // 선택자는 입력창에 이미 들어갔다 — 여기엔 사람이 알아볼 소스 위치, 없으면 태그와 글만.
@@ -470,23 +491,35 @@ export function BrowserPane({
   useEffect(
     () =>
       window.sudal.browser.onAgent((ev) => {
-        // 에이전트 명령은 그 채팅 탭에서 지금 보이는 브라우저로 간다(main 의 등록 기준과 같다).
-        if (!visibleRef.current || ev.tabId !== chatTabIdRef.current) return;
-        agentInflight.current = Math.max(0, agentInflight.current + (ev.phase === "start" ? 1 : -1));
+        if (ev.tabId !== chatTabIdRef.current) return;
+        if (ev.phase === "pause") {
+          setAgentPaused(ev.paused === true);
+          return;
+        }
+        // 이 웹뷰로 향한 명령만. 시작을 못 본 끝(다른 탭에서 시작한 것)은 버린다.
+        if (ev.webContentsId === undefined || ev.webContentsId !== wcIdRef.current) return;
+        if (ev.phase === "start") agentInflight.current.add(ev.id);
+        else if (!agentInflight.current.delete(ev.id)) return;
         const line: AgentLine = { op: ev.op, detail: ev.detail, at: ev.at, ok: ev.phase === "start" ? undefined : ev.phase === "done" };
         setAgent((a) => ({ active: true, now: line, feed: ev.phase === "start" ? a.feed : [line, ...a.feed].slice(0, 4) }));
         if (ev.point) setAgentPoint({ ...ev.point, at: ev.at });
         if (agentIdle.current) clearTimeout(agentIdle.current);
         // 한동안 명령이 없으면 표시를 내린다. 기다리는 명령(wait)이 남아 있으면 계속 둔다.
-        if (agentInflight.current === 0) agentIdle.current = setTimeout(() => setAgent((a) => ({ ...a, active: false })), 5000);
+        if (agentInflight.current.size === 0) agentIdle.current = setTimeout(() => setAgent((a) => ({ ...a, active: false })), 5000);
       }),
     [],
   );
   // 앱을 껐다 켜기 전까지 멈춤은 main 이 들고 있다 — 다시 마운트돼도 같은 상태를 보인다.
   useEffect(() => {
-    if (!chatTabId) return;
+    if (!chatTabId || !visible) return;
     void window.sudal.browser.agentPause(chatTabId).then(setAgentPaused).catch(() => {});
-  }, [chatTabId]);
+  }, [chatTabId, visible]);
+  // 숨으면 이 칸이 세던 명령은 더 이상 이 칸으로 오지 않는다 — 표시와 셈을 비운다.
+  useEffect(() => {
+    if (visible) return;
+    agentInflight.current.clear();
+    setAgent((a) => (a.active ? { ...a, active: false } : a));
+  }, [visible]);
   // 누른 자리 표시는 잠깐만, 최근 동작의 "N초 전" 은 표시가 떠 있는 동안 1초마다 다시 센다.
   useEffect(() => {
     if (!agentPoint) return;
@@ -658,6 +691,27 @@ export function BrowserPane({
     if (level === 0) delete zooms[host];
     else zooms[host] = level;
     kvSet(ZOOM_KEY, Object.keys(zooms).length ? JSON.stringify(zooms) : null);
+  };
+
+  const runInPage = (code: string) => void view.current?.executeJavaScript(code).catch(() => {});
+  const clearTray = () => {
+    setTray([]);
+    runInPage(PICKER_CLEAR_MARKS_SCRIPT);
+  };
+  const removeTrayItem = (i: number) => {
+    setTray((list) => list.filter((_, k) => k !== i));
+    runInPage(pickerUnmarkScript(i));
+  };
+  const sendTray = () => {
+    const list = trayRef.current;
+    if (list.length === 0) return;
+    onAttachRef.current?.(
+      formatNotesAttachment(tRef.current, list.map((x) => ({ element: x.element, url: x.url, memo: x.memo, sourceFile: x.shown }))),
+      list.flatMap((x) => x.images ?? []),
+    );
+    if (pickingRef.current) stopPick();
+    clearTray();
+    showToast({ text: tRef.current("panel.browser.notes.sent", { count: list.length }), hint: tRef.current("panel.browser.toastNext") });
   };
 
   const retry = () => {
@@ -1166,6 +1220,57 @@ export function BrowserPane({
             style={{ left: view.current.offsetLeft + agentPoint.x * (zoomLevelToPercent(zoom) / 100), top: view.current.offsetTop + agentPoint.y * (zoomLevelToPercent(zoom) / 100) }}
             data-browser-agent-point
           />
+        )}
+        {tray.length > 0 && url && (
+          <div className="absolute bottom-2 left-2 right-2 z-30 overflow-hidden rounded-xl border border-line bg-panel-2 text-[11.5px] shadow-2xl" data-browser-notes>
+            <div className="flex items-center gap-2 px-3 py-2">
+              <span className="flex-1 font-semibold text-fg">{t("panel.browser.notes.title", { count: tray.length })}</span>
+              <button onClick={clearTray} className="text-[11px] text-muted hover:text-fg" data-browser-notes-clear>
+                {t("panel.browser.notes.clear")}
+              </button>
+            </div>
+            <div className="max-h-[40vh] overflow-y-auto">
+              {tray.map((it, i) => (
+                <div key={it.id} className="flex items-start gap-2.5 border-t border-line px-3 py-1.5" data-browser-note={i + 1}>
+                  <span className="mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full bg-accent-tint text-[10px] font-bold text-accent">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mono truncate text-[10.5px] text-muted">
+                      {it.element.source ? formatSource(it.element.source, it.shown) : `<${it.element.tag}> ${it.element.text.slice(0, 40)}`}
+                    </div>
+                    <input
+                      value={it.memo}
+                      onChange={(e) => {
+                        const memo = e.target.value;
+                        setTray((list) => list.map((x, k) => (k === i ? { ...x, memo } : x)));
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.nativeEvent.isComposing || e.keyCode === 229 || e.key !== "Enter") return;
+                        e.preventDefault();
+                        // 다음 메모로, 마지막이면 보낸다.
+                        const next = e.currentTarget.closest("[data-browser-notes]")?.querySelectorAll("input")[i + 1] as HTMLInputElement | undefined;
+                        if (next) next.focus();
+                        else sendTray();
+                      }}
+                      placeholder={t("panel.browser.notes.placeholder")}
+                      className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1 text-[11.5px] text-fg outline-none placeholder:text-muted-2 focus:border-accent/50"
+                      style={{ userSelect: "text" }}
+                      data-browser-note-memo
+                    />
+                  </div>
+                  <button onClick={() => removeTrayItem(i)} className="mt-0.5 rounded p-0.5 text-muted-2 hover:text-fg" title={t("panel.browser.notes.remove")}>
+                    <Icon name="x" size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 border-t border-line px-3 py-2">
+              <span className="flex-1 text-[11px] text-muted-2">{t("panel.browser.notes.hint")}</span>
+              <button onClick={sendTray} className="rounded-md bg-accent px-3 py-1 text-[11.5px] font-semibold text-bg hover:opacity-90" data-browser-notes-send>
+                {t("panel.browser.notes.send", { count: tray.length })}
+              </button>
+            </div>
+          </div>
         )}
         {toast && (
           <div className={`${toast.action ? "" : "pointer-events-none"} absolute bottom-3 left-1/2 z-20 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-lg border border-line bg-panel-2 py-1.5 pl-3 pr-1.5 text-[11.5px] shadow-xl`} data-browser-pick-msg role="status">

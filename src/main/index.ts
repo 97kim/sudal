@@ -753,7 +753,8 @@ async function startControlServer() {
       openFile: (tabId, path, line) => deliverControlOpen({ kind: "file", tabId, path, line }),
       openBrowser: (tabId, url) => deliverControlOpen({ kind: "browser", tabId, url }),
       runInBrowser: (tabId, script) => runInBrowser(tabId, script),
-      browserActivity: (tabId, ev) => sendAll(IPC.browserAgent, { tabId, ...ev, at: Date.now() }),
+      // 대상 웹뷰를 함께 싣는다 — 같은 채팅의 다른 브라우저 탭이 남의 명령을 세지 않게.
+      browserActivity: (tabId, ev) => sendAll(IPC.browserAgent, { tabId, webContentsId: browserViews.get(tabId)?.id, ...ev, at: Date.now() }),
       browserPaused: (tabId) => pausedBrowserAgents.has(tabId),
       captureBrowser: (tabId, rect) => captureBrowser(tabId, rect),
       pressInBrowser: (tabId, events) => pressInBrowser(tabId, events),
@@ -2649,9 +2650,13 @@ function registerIpc() {
   });
   ipcMain.handle(IPC.browserAgentPause, (_e, tabId: unknown, paused: unknown) => {
     if (typeof tabId !== "string") return false;
+    const was = pausedBrowserAgents.has(tabId);
     if (paused === true) pausedBrowserAgents.add(tabId);
     else if (paused === false) pausedBrowserAgents.delete(tabId);
-    return pausedBrowserAgents.has(tabId);
+    const now = pausedBrowserAgents.has(tabId);
+    // 같은 채팅의 다른 브라우저 탭(숨어 있어도 마운트돼 있다)도 같은 상태를 보이게 알린다.
+    if (was !== now) sendAll(IPC.browserAgent, { tabId, id: 0, op: "", detail: "", phase: "pause", paused: now, at: Date.now() });
+    return now;
   });
   ipcMain.handle(IPC.browserProbe, (_e, url: unknown) => (typeof url === "string" ? probeUrl(url) : false));
   ipcMain.handle(IPC.browserCancelDownload, (_e, id: unknown) => (typeof id === "string" ? cancelDownload(id) : false));

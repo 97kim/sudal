@@ -192,6 +192,7 @@ function browserDetail(p: Params): string {
 }
 
 export interface BrowserActivity {
+  id: number;
   op: string;
   detail: string;
   phase: "start" | "done" | "error";
@@ -200,6 +201,7 @@ export interface BrowserActivity {
 }
 
 export class ControlServer {
+  private activitySeq = 0;
   private server: Server | null = null;
   /** 실제로 연 소켓 경로(긴 userData 경로면 tmp 의 짧은 경로로 대체된다). start 뒤에 유효. */
   socketPath: string;
@@ -330,15 +332,17 @@ export class ControlServer {
     if (this.deps.browserPaused?.(tab.id)) throw new ControlError(mt("cli.control.browserPaused"), "paused");
     const op = method.slice("browser.".length);
     const detail = browserDetail(params);
-    this.deps.browserActivity?.(tab.id, { op, detail, phase: "start" });
+    // 화면이 시작과 끝을 짝지어 셀 수 있게 명령마다 번호를 단다.
+    const id = ++this.activitySeq;
+    this.deps.browserActivity?.(tab.id, { id, op, detail, phase: "start" });
     try {
       const r = await this.dispatchCore(method, params, signal);
       const clicked = (r as { clicked?: { x?: unknown; y?: unknown } }).clicked;
       const point = clicked && typeof clicked.x === "number" && typeof clicked.y === "number" ? { x: clicked.x, y: clicked.y } : undefined;
-      this.deps.browserActivity?.(tab.id, { op, detail, phase: "done", ...(point ? { point } : {}) });
+      this.deps.browserActivity?.(tab.id, { id, op, detail, phase: "done", ...(point ? { point } : {}) });
       return r;
     } catch (e) {
-      this.deps.browserActivity?.(tab.id, { op, detail, phase: "error" });
+      this.deps.browserActivity?.(tab.id, { id, op, detail, phase: "error" });
       throw e;
     }
   }

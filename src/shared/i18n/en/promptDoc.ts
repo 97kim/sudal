@@ -62,6 +62,11 @@ export const promptDoc: DeepPartial<typeof ko> = {
       styles: "Computed styles: {{styles}}",
       size: "Size: {{w}}×{{h}} @ ({{x}}, {{y}})",
     },
+    notes: {
+      head: "{{count}} browser elements — each number has its own request",
+      item: "### {{n}}. {{memo}}",
+      noMemo: "(no note)",
+    },
     diag: {
       head: "Browser diagnostics — {{url}}",
       title: "Title: {{title}}",

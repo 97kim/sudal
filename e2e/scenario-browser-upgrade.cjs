@@ -10,6 +10,8 @@
 //  I-3) 비활성(disabled) 버튼도 실제 마우스로 고를 수 있고, 고른 링크는 열리지 않는다
 //  I-4) 선택 중에도 안쪽 스크롤 영역이 휠로 움직인다(막이 휠을 대신 넘긴다)
 //  K) 에이전트가 조작하면 화면에 "조작 중" 이 뜨고, 사람이 멈추면 명령이 거절되고, 다시 허용하면 된다
+//  K-2) 멈춤은 같은 채팅의 다른 브라우저 탭에도 보인다
+//  L) ⇧+클릭으로 여러 요소를 모아 메모를 달고 한 번에 입력창으로 보낸다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
@@ -68,6 +70,7 @@ const srv = http.createServer((req, res) => {
   if (req.url === "/outside") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>outside</title><button id="o" data-insp-path="/etc/hosts:1" style="margin:40px">밖</button>`); }
   if (req.url === "/disabled") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>disabled</title><button id="d" disabled style="margin:40px;padding:12px 24px">비활성 버튼</button><br><a id="l" href="/other" style="margin:40px">다른 곳</a>`); }
   if (req.url === "/inner") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>inner</title><div id="box" style="margin:20px;height:150px;width:240px;overflow:auto;border:1px solid #999">${Array.from({ length: 40 }, (_, i) => `<p>줄 ${i + 1}</p>`).join("")}</div>`); }
+  if (req.url === "/multi") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>multi</title><h1 id="m1">제목</h1><p id="m2">본문 글</p><button id="m3">버튼</button>`); }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -276,6 +279,39 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   const again = cli("browser", "read", "--tab", tab);
   try { fs.rmSync(path.join(os.homedir(), "Downloads", fileName)); } catch {}
   res("K (에이전트 조작 표시 · 멈추기 · 다시 허용)", barOn && /click/.test(nowText) && feedOn && agentRefused.error?.code === "paused" && pausedShown && again.ok === true, JSON.stringify({ barOn, nowText, feedOn, refused: agentRefused.error?.code, pausedShown, again: again.ok }));
+  // K-2: 멈춤은 같은 채팅의 다른 브라우저 탭에도 보여야 다시 허용할 수 있다
+  await ev(() => [...document.querySelectorAll("[data-browser-agent-stop]")].find((x) => x.offsetParent)?.click());
+  cli("browser", "click", "--tab", tab, "--text", "새 탭 링크"); // 멈춤 중이라 거절된다 — 표시가 남은 채로
+  cli("browser", "open", "--tab", tab, "--url", base + "/other");
+  const otherPaused = await waitFor(() => [...document.querySelectorAll("[data-browser-agent]")].some((x) => x.offsetParent && x.getAttribute("data-browser-agent") === "paused"), null, 4000);
+  await ev(() => [...document.querySelectorAll("[data-browser-agent-resume]")].find((x) => x.offsetParent)?.click());
+  await sleep(400);
+  const resumedOk = cli("browser", "read", "--tab", tab).ok === true;
+  res("K-2 (다른 브라우저 탭에도 멈춤이 보임)", otherPaused && resumedOk, JSON.stringify({ otherPaused, resumedOk }));
+
+  // L
+  cli("browser", "open", "--tab", tab, "--url", base + "/multi");
+  await sleep(1500);
+  await ev(() => { const ta = [...document.querySelectorAll("[data-composer] textarea")].find((x) => x.offsetParent); if (ta) { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, ""); ta.dispatchEvent(new Event("input", { bubbles: true })); } });
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  const wvm = (code) => ev((c) => [...document.querySelectorAll("webview")].find((w) => w.offsetParent)?.executeJavaScript(c), code);
+  for (const id of ["m1", "m2", "m3"]) {
+    await wvm(`document.getElementById("${id}").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }))`);
+    await sleep(900);
+  }
+  const notes = await ev(() => [...document.querySelectorAll("[data-browser-note]")].filter((x) => x.offsetParent).length);
+  const marksOn = Number(await wvm(`document.querySelectorAll("[data-sudal-pick-mark]").length`));
+  const stillOn = await ev(() => [...document.querySelectorAll("[data-browser-pick]")].find((x) => x.offsetParent)?.getAttribute("data-browser-pick"));
+  const memos = ["제목을 키워 줘", "", "버튼을 둥글게"];
+  for (let i = 0; i < 3; i++) await page.locator("[data-browser-note-memo] >> visible=true").nth(i).fill(memos[i]);
+  await ev(() => [...document.querySelectorAll("[data-browser-notes-send]")].find((x) => x.offsetParent)?.click());
+  await sleep(700);
+  const sent = await ev(() => [...document.querySelectorAll("[data-composer] textarea")].find((x) => x.offsetParent)?.value ?? "");
+  const trayGone = await ev(() => ![...document.querySelectorAll("[data-browser-notes]")].some((x) => x.offsetParent));
+  const marksOff = Number(await wvm(`document.querySelectorAll("[data-sudal-pick-mark]").length`));
+  const okText = /### 1\. 제목을 키워 줘/.test(sent) && /### 2\. \(메모 없음\)/.test(sent) && /### 3\. 버튼을 둥글게/.test(sent) && /브라우저 요소 3개/.test(sent);
+  res("L (⇧+클릭 메모 모음)", notes === 3 && marksOn === 3 && stillOn === "on" && okText && trayGone && marksOff === 0, JSON.stringify({ notes, marksOn, stillOn, okText, trayGone, marksOff, sent: sent.slice(0, 80) }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

@@ -25,6 +25,8 @@ export interface PickedElement {
   dpr: number;
   /** 개발 서버에서 찾은 이 요소의 소스 위치. 배포본·남의 사이트에는 없다. */
   source?: ElementSource;
+  /** ⇧ 를 누른 채 골랐다 — 바로 붙이지 않고 메모 모음에 쌓는다(선택 모드는 계속 켜져 있다). */
+  multi?: boolean;
 }
 
 /**
@@ -166,11 +168,27 @@ ${SOURCE_FN}
     box.style.display = "none"; tip.style.display = "none"; shield.style.display = "none";
     document.removeEventListener("keydown", onKey, true);
   };
-  const pick = (el) => {
+  // ⇧+클릭으로 모은 요소에 남기는 번호 테두리. 문서 좌표에 두어 스크롤해도 요소를 따라간다.
+  const marks = [];
+  const renumber = () => marks.forEach((m, i) => { m.badge.textContent = String(i + 1); });
+  const mark = (el) => {
+    const r = el.getBoundingClientRect();
+    const frame = document.createElement("div");
+    frame.setAttribute("data-sudal-pick-mark", "");
+    Object.assign(frame.style, { position: "absolute", left: r.left + scrollX - 3 + "px", top: r.top + scrollY - 3 + "px", width: r.width + 6 + "px", height: r.height + 6 + "px", border: "2px solid #6366f1", borderRadius: "5px", background: "rgba(99,102,241,0.08)", pointerEvents: "none", zIndex: "2147483645", boxSizing: "border-box" });
+    const badge = document.createElement("div");
+    Object.assign(badge.style, { position: "absolute", right: "-9px", top: "-9px", minWidth: "18px", height: "18px", borderRadius: "9px", background: "#6366f1", color: "#fff", font: "700 10px/18px -apple-system, system-ui, sans-serif", textAlign: "center", padding: "0 4px", boxSizing: "border-box" });
+    frame.appendChild(badge);
+    document.documentElement.appendChild(frame);
+    marks.push({ frame, badge });
+    renumber();
+  };
+  const pick = (el, multi) => {
     box.style.display = "none"; tip.style.display = "none";
-    console.log(MARK + JSON.stringify(info(el)));
+    console.log(MARK + JSON.stringify({ ...info(el), multi: !!multi }));
     swallowUntil = Date.now() + 1000;
-    stop();
+    if (multi) mark(el);
+    else stop();
   };
   const targetOf = (e) => (e.target && e.target.nodeType === 1 && e.target !== box && e.target !== tip && e.target !== shield ? e.target : cur);
   // 고르는 건 막의 mousedown 에서 — 그 자리 밑의 요소를 고른다.
@@ -178,7 +196,7 @@ ${SOURCE_FN}
     if (!active || e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
     const el = under(e.clientX, e.clientY) || cur;
-    if (el && el !== document.documentElement && el !== document.body) pick(el);
+    if (el && el !== document.documentElement && el !== document.body) pick(el, e.shiftKey);
   };
   // 막이 휠을 받으면 안쪽 스크롤 영역(목록·사이드바)이 안 움직인다 — 그 자리 밑에서 위로 올라가며
   // 그 방향으로 더 갈 수 있는 영역을 찾아 대신 스크롤한다. 없으면 막지 않아 문서 전체가 스크롤된다.
@@ -211,7 +229,7 @@ ${SOURCE_FN}
     if (active) {
       e.preventDefault(); e.stopPropagation();
       const el = targetOf(e);
-      if (el) pick(el);
+      if (el) pick(el, e.shiftKey);
     } else if (Date.now() < swallowUntil) {
       e.preventDefault(); e.stopPropagation();
       swallowUntil = 0;
@@ -226,13 +244,30 @@ ${SOURCE_FN}
   };
   // click 리스너는 꺼진 뒤에도 남는다 — 고른 직후의 클릭을 삼켜야 해서(swallowUntil 이 지나면 아무것도 안 한다).
   document.addEventListener("click", onClick, true);
-  w.__sudalPick = { start, stop, dispose: () => { document.removeEventListener("click", onClick, true); shield.remove(); box.remove(); tip.remove(); } };
+  const clearMarks = () => { marks.splice(0).forEach((m) => m.frame.remove()); };
+  const unmark = (i) => { const [m] = marks.splice(i, 1); if (m) { m.frame.remove(); renumber(); } };
+  w.__sudalPick = { start, stop, clearMarks, unmark, dispose: () => { document.removeEventListener("click", onClick, true); clearMarks(); shield.remove(); box.remove(); tip.remove(); } };
   start();
   return "started";
 })()`;
 
 /** 페이지 취소 스크립트(요소 선택 끄기). */
 export const PICKER_STOP_SCRIPT = `(() => { if (window.__sudalPick) window.__sudalPick.stop(); return "stopped"; })()`;
+/** ⇧+클릭으로 남긴 번호 테두리를 모두 지운다. */
+export const PICKER_CLEAR_MARKS_SCRIPT = `(() => { if (window.__sudalPick && window.__sudalPick.clearMarks) window.__sudalPick.clearMarks(); return "cleared"; })()`;
+/** i 번째(0부터) 테두리를 지우고 나머지 번호를 다시 매긴다. */
+export function pickerUnmarkScript(i: number): string {
+  return `(() => { if (window.__sudalPick && window.__sudalPick.unmark) window.__sudalPick.unmark(${Math.max(0, Math.floor(i))}); return "ok"; })()`;
+}
+
+/** 메모 모음을 한 번에 입력창으로: 번호·메모를 머리로 달고, 요소마다 평소 첨부를 이어 붙인다. */
+export function formatNotesAttachment(t: TFunction, items: { element: PickedElement; url: string; memo: string; sourceFile?: string }[]): string {
+  const head = t("promptDoc.attach.notes.head", { count: items.length });
+  const body = items.map((it, i) =>
+    [t("promptDoc.attach.notes.item", { n: i + 1, memo: it.memo.trim() || t("promptDoc.attach.notes.noMemo") }), formatElementAttachment(t, it.element, it.url, it.sourceFile)].join("\n"),
+  );
+  return [head, ...body].join("\n\n");
+}
 
 /** console-message 한 줄 → 선택 결과 / 취소 / 무관. nonce 가 다르면 무관으로 본다(페이지의 위조·옛 세션). 값은 상한으로 자른다. */
 export function parsePickMessage(message: string, nonce: string): { kind: "picked"; element: PickedElement } | { kind: "cancel" } | null {
@@ -257,6 +292,7 @@ export function parsePickMessage(message: string, nonce: string): { kind: "picke
         rect: { x: num(raw.rect.x), y: num(raw.rect.y), width: Math.max(0, num(raw.rect.width)), height: Math.max(0, num(raw.rect.height)) },
         dpr: typeof raw.dpr === "number" && Number.isFinite(raw.dpr) && raw.dpr > 0 ? raw.dpr : 1,
         ...(parseSource(raw.source) ? { source: parseSource(raw.source) } : {}),
+        ...(raw.multi === true ? { multi: true } : {}),
       },
     };
   } catch {
