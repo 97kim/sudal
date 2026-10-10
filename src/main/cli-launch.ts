@@ -45,13 +45,36 @@ export function launchSpec(
   args: string[],
   platform: NodeJS.Platform = process.platform,
   readText: (p: string) => string | null = readTextOrNull,
+  exists: (p: string) => boolean = fs.existsSync,
 ): LaunchSpec {
   if (platform !== "win32" || !isBatchFile(binPath)) return { command: binPath, args };
   const text = readText(binPath);
   const target = text ? parseCmdShimTarget(text, binPath) : null;
   if (target && /\.exe$/i.test(target)) return { command: target, args };
-  if (target && /\.(c|m)?js$/i.test(target)) return { command: "node", args: [target, ...args] };
+  if (target && /\.(c|m)?js$/i.test(target)) {
+    // npm shim 처럼 shim 옆의 node.exe 를 먼저 쓴다(nvm·Volta 처럼 node 를 함께 두는 설치)
+    const local = path.win32.join(path.win32.dirname(binPath), "node.exe");
+    return { command: exists(local) ? local : "node", args: [target, ...args] };
+  }
   return { command: quoteCmdArg(binPath), args: args.map(quoteCmdArg), shell: true };
+}
+
+/**
+ * node-pty 에 넘길 실행 파일의 절대 경로. node-pty(ConPTY)는 상대 이름을 탭 env 가 아니라 앱 프로세스의 Path 에서,
+ * 확장자도 붙이지 않고 찾는다 — launchSpec 이 준 "node" 가 node.exe 를 못 찾아 "File not found: node" 로 터미널 모드가 열리지 않았다.
+ * 넘길 env 의 PATH 에서 확장자(.exe 먼저)를 붙여 미리 찾는다. 못 찾으면 그대로 둔다(node-pty 가 이유를 알린다).
+ */
+export function resolvePtyCommand(command: string, pathValue: string, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = fs.existsSync): string {
+  if (platform !== "win32" || path.win32.isAbsolute(command)) return command;
+  const dirs = pathValue.split(";").filter(Boolean);
+  const hasExt = /\.[a-z0-9]+$/i.test(command);
+  for (const ext of hasExt ? [""] : [".exe", ".com"]) {
+    for (const dir of dirs) {
+      const full = path.win32.join(dir, command + ext);
+      if (exists(full)) return full;
+    }
+  }
+  return command;
 }
 
 /**

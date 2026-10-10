@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { claudeExecutableFor, launchSpec, parseCmdShimTarget, quoteCmdArg } from "./cli-launch";
+import { claudeExecutableFor, launchSpec, parseCmdShimTarget, quoteCmdArg, resolvePtyCommand } from "./cli-launch";
 
 // npm cmd-shim 이 만드는 실제 모양(node 로 도는 .js 대상)
 const NODE_SHIM = `@ECHO off
@@ -80,4 +80,21 @@ test("claudeExecutableFor: .cmd 는 .exe·.js 대상만, 못 찾으면 null", ()
   // SDK 는 .cjs 를 node 로 돌리지 않는다
   assert.equal(claudeExecutableFor(SHIM, "win32", () => '"%dp0%\\x\\cli.cjs" %*'), null);
   assert.equal(claudeExecutableFor(SHIM, "win32", () => null), null);
+});
+
+test("launchSpec: npm shim 옆에 node.exe 가 있으면 그것으로 띄운다", () => {
+  const spec = launchSpec(SHIM, ["a"], "win32", () => NODE_SHIM, (p) => p.toLowerCase().endsWith("\\npm\\node.exe"));
+  assert.match(spec.command, /\\npm\\node\.exe$/i);
+});
+
+test("resolvePtyCommand: node-pty 가 못 찾는 상대 이름을 탭 PATH 에서 .exe 까지 붙여 절대 경로로", () => {
+  const PATH = "C:\\nvm\\v22;C:\\Windows\\System32";
+  const has = (p: string) => p === "C:\\nvm\\v22\\node.exe" || p === "C:\\Windows\\System32\\cmd.exe";
+  assert.equal(resolvePtyCommand("node", PATH, "win32", has), "C:\\nvm\\v22\\node.exe");
+  assert.equal(resolvePtyCommand("cmd.exe", PATH, "win32", has), "C:\\Windows\\System32\\cmd.exe");
+  // 이미 절대 경로거나 못 찾으면 그대로(node-pty 가 이유를 알린다)
+  assert.equal(resolvePtyCommand("C:\\x\\claude.exe", PATH, "win32", has), "C:\\x\\claude.exe");
+  assert.equal(resolvePtyCommand("없음", PATH, "win32", has), "없음");
+  // macOS 는 손대지 않는다
+  assert.equal(resolvePtyCommand("node", "/usr/bin", "darwin", () => true), "node");
 });
