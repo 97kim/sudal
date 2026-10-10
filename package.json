@@ -1,6 +1,6 @@
 {
   "name": "sudal",
-  "version": "0.11.23",
+  "version": "0.11.24",
   "description": "A macOS studio for coding agents. Run Claude Code and Codex in tabs, delegate, compare, and pick what to keep.",
   "repository": {
     "type": "git",
