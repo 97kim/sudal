@@ -272,6 +272,11 @@ const MODIFIERS: Record<string, "shift" | "control" | "alt" | "meta"> = {
 };
 /** char 도 보내야 기본 동작(폼 제출·공백 입력)이 일어나는 키. Tab·화살표·Escape 는 keyDown 에서 처리된다. */
 const CHAR_OF: Record<string, string> = { Enter: "\r", Space: " " };
+/** Shift 를 누른 채 친 글자. char 이벤트는 받은 글자를 그대로 넣으므로 윗글자를 직접 줘야 한다(미국 자판 기준). */
+const SHIFTED: Record<string, string> = {
+  "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+  "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": '"', ",": "<", ".": ">", "/": "?", "`": "~",
+};
 
 /**
  * "Enter", "ArrowDown", "Shift+Tab", "Control+a", "a" → keyDown·(char)·keyUp. 모르는 키면 null.
@@ -292,7 +297,8 @@ export function keyInputEvents(key: string): KeyInput[] | null {
   const keyCode = named ?? single;
   if (!keyCode) return null;
   const mods = modifiers.length ? { modifiers } : {};
-  const ch = named ? CHAR_OF[named] : single;
+  const shift = modifiers.includes("shift");
+  const ch = named ? CHAR_OF[named] : single && shift ? (SHIFTED[single] ?? single.toUpperCase()) : single;
   const sendChar = ch !== undefined && modifiers.every((m) => m === "shift");
   return [
     { type: "keyDown", keyCode, ...mods },

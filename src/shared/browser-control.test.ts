@@ -135,3 +135,12 @@ test("콘솔 고르기: 등급·개수·이름", () => {
   assert.deepEqual(pickConsole(lines, { level: "error", limit: 1 }), [{ ts: 4, level: "error", text: "err2" }]);
   assert.deepEqual(pickConsole(lines, { level: "warn" })[0], { ts: 2, level: "warn", text: "warn", source: "a.js", line: 3 });
 });
+
+test("keyInputEvents: Shift 조합은 윗글자를 입력한다", () => {
+  const ch = (k: string) => keyInputEvents(k)?.find((e) => e.type === "char")?.keyCode;
+  assert.equal(ch("Shift+a"), "A");
+  assert.equal(ch("Shift+1"), "!");
+  assert.equal(ch("Shift+/"), "?");
+  assert.equal(ch("a"), "a");
+  assert.equal(ch("Control+a"), undefined);
+});

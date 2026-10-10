@@ -152,6 +152,7 @@ export const cli: DeepPartial<typeof ko> = {
     keyRequired: "--key is required (e.g. Enter, Escape, Tab, ArrowDown, Shift+Tab).",
     keyInvalid: "Unknown key: {{key}}. Use names like Enter, Escape, Tab, ArrowDown, Shift+Tab, or a.",
     outAbsolute: "--out must be an absolute path.",
+    outExists: "{{path}} already exists. Pass a different --out path.",
     levelInvalid: "--level must be warn or error.",
     limitInvalid: "--limit must be an integer of 1 or more.",
     timeoutInvalid: "--timeout is in milliseconds (integer).",

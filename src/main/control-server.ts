@@ -599,7 +599,13 @@ export class ControlServer {
         const r = selector ? await this.deps.runInBrowser(tab.id, rectScript(mt, selector)) : undefined;
         const shot = await this.deps.captureBrowser(tab.id, r?.rect as BrowserRect | undefined);
         mkdirSync(dirname(out), { recursive: true });
-        writeFileSync(out, shot.png);
+        // wx: 있는 파일(심볼릭 링크 포함)은 덮지 않는다 — --out 을 잘못 주면 설정 파일이 PNG 로 망가진다.
+        try {
+          writeFileSync(out, shot.png, { flag: "wx" });
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new ControlError(mt("cli.control.outExists", { path: out }));
+          throw e;
+        }
         return { tab: tab.id, ok: true, path: out, width: shot.width, height: shot.height, ...(r ? { selector: r.selector, clipped: r.clipped } : {}) };
       }
       case "browser.scroll": {

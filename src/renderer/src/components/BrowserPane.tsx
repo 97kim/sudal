@@ -321,6 +321,8 @@ export function BrowserPane({
     el.addEventListener("update-target-url", onTarget);
     el.addEventListener("focus", onFocus);
     el.addEventListener("dom-ready", onAttach);
+    // did-attach 는 첫 페이지를 불러오기 전에 온다 — dom-ready 만 기다리면 첫 페이지의 window.open·바로 받기 이벤트를 놓친다.
+    el.addEventListener("did-attach", onAttach);
     el.addEventListener("did-navigate", sync);
     el.addEventListener("did-navigate-in-page", sync);
     el.addEventListener("page-title-updated", onTitle);
@@ -332,6 +334,7 @@ export function BrowserPane({
       el.removeEventListener("update-target-url", onTarget);
       el.removeEventListener("focus", onFocus);
       el.removeEventListener("dom-ready", onAttach);
+      el.removeEventListener("did-attach", onAttach);
       el.removeEventListener("did-navigate", sync);
       el.removeEventListener("did-navigate-in-page", sync);
       el.removeEventListener("page-title-updated", onTitle);
@@ -380,6 +383,15 @@ export function BrowserPane({
     if (!visible || !el || !attached || !pageRef.current) return;
     setZoom(applyHostZoom(el, pageRef.current));
   }, [visible, attached]);
+
+  useEffect(() => {
+    const onZoom = (e: Event) => {
+      const { host, level } = (e as CustomEvent<{ host: string; level: number }>).detail;
+      if (host && host === hostOf(pageRef.current)) setZoom(level);
+    };
+    window.addEventListener("sudal:browser-zoom", onZoom);
+    return () => window.removeEventListener("sudal:browser-zoom", onZoom);
+  }, []);
 
   // 빈 탭은 주소창부터
   useEffect(() => {
@@ -526,6 +538,8 @@ export function BrowserPane({
     }
     const host = hostOf(url);
     if (!host) return;
+    // Chromium 은 같은 호스트의 다른 웹뷰(분할 화면)도 같이 확대한다 — 그쪽 표시도 맞추게 알린다.
+    window.dispatchEvent(new CustomEvent("sudal:browser-zoom", { detail: { host, level } }));
     const zooms = readZooms();
     if (level === 0) delete zooms[host];
     else zooms[host] = level;
