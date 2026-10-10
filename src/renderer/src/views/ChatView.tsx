@@ -199,9 +199,11 @@ export function ChatView({
   );
   const attachTerminal = async () => {
     setAttachError(null);
+    // CLI 를 띄운 뒤에 패널을 연다. 먼저 열면 패널이 아직 빈 터미널 목록을 받고 기본 셸을 만들어,
+    // CLI 탭 옆에 셸(Windows 는 PowerShell)이 하나 더 생겼다(CLI 를 띄우는 데 오래 걸리는 Windows 에서 매번).
+    const r = await window.sudal.chat.attachTerminal(tabId);
     setTerminalMounted(true);
     setTerminalOpen(true);
-    const r = await window.sudal.chat.attachTerminal(tabId);
     if (r.ok) setConfig(r.snapshot);
     else setAttachError(r.error);
   };

@@ -205,9 +205,11 @@ export class TerminalManager {
           LANG: env.LANG || "ko_KR.UTF-8",
         },
       });
+      // 탭 이름은 실행 파일 이름만: Windows 의 codex.cmd·claude.exe 는 확장자를 뗀다
+      const name = path.basename(file).replace(/\.(cmd|bat|exe)$/i, "");
       const entry: Entry = {
         pty,
-        shell: `${path.basename(file)} ${args.join(" ")}`.trim(),
+        shell: `${name} ${args.join(" ")}`.trim(),
         kind: "command",
         backlog: "",
         cwd,
@@ -218,7 +220,7 @@ export class TerminalManager {
       this.deps.onOpen?.({
         id: tabId,
         kind: "command",
-        title: path.basename(file),
+        title: name,
       });
       this.deps.log?.(
         `command ${tabId} pid=${pty.pid} ${entry.shell} cwd=${cwd}`,
