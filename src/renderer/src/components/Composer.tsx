@@ -22,7 +22,7 @@ import {
   type SnippetDto,
 } from "@shared/snippets";
 import { Icon } from "./Icon";
-import { clearComposerDraft, loadComposerDraft, onComposerDraftAppend, saveComposerDraft } from "../composer-draft";
+import { clearComposerDraft, loadComposerDraft, loadComposerFiles, onComposerDraftAppend, onComposerFilesDrop, saveComposerDraft, saveComposerFiles, withAttachedFiles, type ComposerFile } from "../composer-draft";
 import { appendToDraft } from "@shared/attachments";
 
 /** "/" 팔레트 한 줄: 스니펫(본문을 입력창에 넣음) 또는 슬래시 커맨드(이름을 넣음). */
@@ -95,6 +95,17 @@ export function Composer({
     if (draftKey) saveComposerDraft(draftKey, text);
   }, [draftKey, text]);
   const [images, setImages] = useState<Pending[]>([]);
+  // 이미지가 아닌 첨부(파일·폴더) — 경로만 들고 있다가 보낼 때 글 끝에 목록으로 붙는다. 탭을 옮겨도 남는다.
+  const [files, setFiles] = useState<ComposerFile[]>(() => (draftKey ? loadComposerFiles(draftKey) : []));
+  const filesKey = useRef(draftKey);
+  useEffect(() => {
+    if (filesKey.current === draftKey) return;
+    filesKey.current = draftKey;
+    setFiles(draftKey ? loadComposerFiles(draftKey) : []);
+  }, [draftKey]);
+  useEffect(() => {
+    if (draftKey && filesKey.current === draftKey) saveComposerFiles(draftKey, files);
+  }, [draftKey, files]);
   const [error, setError] = useState<string | null>(null);
   // 문구는 값으로 두고 그릴 때 번역한다
   const [imageLimit, setImageLimit] = useState(false);
@@ -224,14 +235,14 @@ export function Composer({
   // 턴 진행 중에도 보낼 수 있다: main 이 프롬프트 큐에 넣고 턴이 끝나면 자동 전송한다.
   const submit = useCallback(async () => {
     const trimmed = text.trim();
-    if ((!trimmed && images.length === 0) || disabled) return;
+    if ((!trimmed && images.length === 0 && files.length === 0) || disabled) return;
     setError(null);
     setImageLimit(false);
     // CLI 의 /clear 를 앱의 대화 비우기로 잇는다. 그냥 흘려보내면 CLI 는 제 맥락만 비우고,
     // 화면은 앱이 따로 쌓아 둔 기록으로 그려지므로 아무것도 달라지지 않는다.
     // 커맨드 목록에 clear 가 있다고 비켜서지 않는다 — SDK 가 주는 159개 안에 들어 있어서,
     // 그걸 보고 물러나면 이 가로채기가 영영 동작하지 않는다(처음 만들 때 그렇게 걸렸다).
-    if (trimmed === "/clear" && images.length === 0 && onClear) {
+    if (trimmed === "/clear" && images.length === 0 && files.length === 0 && onClear) {
       if (draftKey) clearComposerDraft(draftKey);
       setText("");
       onClear();
@@ -239,17 +250,21 @@ export function Composer({
     }
     try {
       await onSend(
-        trimmed,
+        withAttachedFiles(trimmed, files, t("chat.composer.attachedFiles")),
         images.map(({ name, mime, base64 }) => ({ name, mime, base64 })),
       );
       // 보내는 사이 다른 탭으로 갔으면 이 컴포넌트는 이미 내려가 setText 의 효과가 없다 — 초안은 모듈에서 직접 비운다.
-      if (draftKey) clearComposerDraft(draftKey);
+      if (draftKey) {
+        clearComposerDraft(draftKey);
+        saveComposerFiles(draftKey, []);
+      }
       setText("");
       setImages([]);
+      setFiles([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [text, images, disabled, onSend, draftKey, onClear]);
+  }, [text, images, files, disabled, onSend, draftKey, onClear, t]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // 한국어 IME 조합 중 Enter 는 조합 확정이지 전송이 아니다.
@@ -338,33 +353,32 @@ export function Composer({
     // 안쪽 요소로 옮겨 갈 때도 leave 가 온다. 영역 밖으로 나갈 때만 끈다.
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
   };
+  // 끌어다 놓은 것: 이미지는 이미지로 첨부하고, 그 밖의 파일·폴더는 파일 카드로 붙인다.
+  // 채팅 화면 다른 곳에 놓은 것도 여기로 온다(ChatView → dropComposerFiles).
+  const takeFiles = (list: File[]) => {
+    addFiles(list);
+    // 경로가 없는 것(웹 페이지에서 끈 이미지 등)은 위 addFiles 로만 다룬다.
+    const picked = list
+      .filter((f) => !IMAGE_MIMES.has(f.type))
+      .map((f) => ({ path: window.sudal.files.pathFor(f), name: f.name }))
+      .filter((f) => !!f.path);
+    if (picked.length === 0) return;
+    setFiles((cur) => [...cur, ...picked.filter((f) => !cur.some((c) => c.path === f.path))].slice(0, 20));
+    requestAnimationFrame(() => ref.current?.focus());
+  };
+  const takeFilesRef = useRef(takeFiles);
+  takeFilesRef.current = takeFiles;
+  useEffect(() => (draftKey ? onComposerFilesDrop(draftKey, (list) => takeFilesRef.current(list)) : undefined), [draftKey]);
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     setDropping(false);
     if (disabled || !hasFiles(e)) return;
     e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    addFiles(files);
-    // 경로가 없는 것(웹 페이지에서 끈 이미지 등)은 위 addFiles 로만 다룬다.
-    const paths = files
-      .filter((f) => !IMAGE_MIMES.has(f.type))
-      .map((f) => window.sudal.files.pathFor(f))
-      .filter(Boolean);
-    if (paths.length === 0) return;
-    const el = ref.current;
-    const start = el?.selectionStart ?? text.length;
-    const end = el?.selectionEnd ?? text.length;
-    const before = text.slice(0, start);
-    const after = text.slice(end);
-    const insert = (before && !/\s$/.test(before) ? " " : "") + paths.join(" ") + (after && !/^\s/.test(after) ? " " : "");
-    setText(before + insert + after);
-    requestAnimationFrame(() => {
-      if (!el) return;
-      el.focus();
-      el.selectionStart = el.selectionEnd = before.length + insert.length;
-    });
+    // 채팅 화면 쪽 놓기 처리가 또 받지 않게.
+    e.stopPropagation();
+    takeFiles(Array.from(e.dataTransfer.files));
   };
 
-  const canSend = !disabled && (text.trim().length > 0 || images.length > 0);
+  const canSend = !disabled && (text.trim().length > 0 || images.length > 0 || files.length > 0);
 
   return (
     // @container: 채팅 열이 좁아지면(에디터·오른쪽 패널을 함께 열었을 때) 툴바 글자를 숨기고 아이콘만 남겨 줄바꿈으로 깨지지 않게 한다.
@@ -474,6 +488,19 @@ export function Composer({
                   className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-line text-fg"
                 >
                   <Icon name="x" size={9} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-4 pt-3" data-composer-files>
+            {files.map((f) => (
+              <div key={f.path} className="flex max-w-[260px] items-center gap-1.5 rounded-md border border-line bg-panel-2 py-1 pl-2 pr-1 text-[11.5px]" title={f.path} data-composer-file={f.name}>
+                <Icon name={/\.[a-z0-9]{1,8}$/i.test(f.name) ? "file" : "folder"} size={12} className="shrink-0 text-muted" />
+                <span className="min-w-0 truncate text-fg">{f.name}</span>
+                <button onClick={() => setFiles((cur) => cur.filter((c) => c.path !== f.path))} className="shrink-0 rounded p-0.5 text-muted hover:text-fg" title={t("chat.composer.removeFile")}>
+                  <Icon name="x" size={10} />
                 </button>
               </div>
             ))}

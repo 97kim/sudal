@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hydrateKv, kvGet } from "./kv-store";
-import { clearComposerDraft, flushComposerDrafts, loadComposerDraft, pruneComposerDrafts, saveComposerDraft } from "./composer-draft";
+import { clearComposerDraft, dropComposerFiles, flushComposerDrafts, loadComposerDraft, loadComposerFiles, onComposerFilesDrop, pruneComposerDrafts, saveComposerDraft, saveComposerFiles, withAttachedFiles } from "./composer-draft";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const stored = (tabId: string) => kvGet(`composerDraft.${tabId}`);
@@ -41,4 +41,35 @@ test("입력창 초안: 탭별로 저장·복원하고, 빈 글·너무 긴 글�
   saveComposerDraft("kept", "마지막 입력");
   flushComposerDrafts();
   assert.equal(stored("kept"), "마지막 입력");
+});
+
+test("첨부 파일: 보낼 글 끝에 목록으로, 경로는 백틱으로 감싼다(띄어쓰기·백틱도 한 덩어리)", () => {
+  assert.equal(withAttachedFiles("이거 봐 줘", [], "첨부한 파일:"), "이거 봐 줘");
+  assert.equal(
+    withAttachedFiles("이거 봐 줘", [{ path: "/Users/me/My Report.pdf", name: "My Report.pdf" }, { path: "/tmp/a`b.txt", name: "a`b.txt" }], "첨부한 파일:"),
+    "이거 봐 줘\n\n첨부한 파일:\n- `/Users/me/My Report.pdf`\n- `/tmp/a\\`b.txt`",
+  );
+  // 글 없이 파일만 보내도 된다
+  assert.equal(withAttachedFiles("", [{ path: "/a", name: "a" }], "첨부한 파일:"), "첨부한 파일:\n- `/a`");
+});
+
+test("첨부 파일: 탭별로 저장·복원하고, 모양이 틀린 저장값은 버리고, 지운 탭은 정리한다", () => {
+  hydrateKv({ "composerFiles.bad": "{oops", "composerFiles.old": JSON.stringify([{ path: "/x", name: "x" }]) }, () => {});
+  assert.deepEqual(loadComposerFiles("bad"), []);
+  saveComposerFiles("t1", [{ path: "/a.ts", name: "a.ts" }]);
+  assert.deepEqual(loadComposerFiles("t1"), [{ path: "/a.ts", name: "a.ts" }]);
+  saveComposerFiles("t1", []);
+  assert.equal(kvGet("composerFiles.t1"), null);
+  pruneComposerDrafts(new Set(["t1"]));
+  assert.equal(kvGet("composerFiles.old"), null);
+});
+
+test("채팅 화면에 놓은 파일은 그 탭 입력창으로만 간다", () => {
+  const got: string[] = [];
+  const off = onComposerFilesDrop("t1", (files) => got.push(...files.map((f) => f.name)));
+  assert.equal(dropComposerFiles("t2", [new File(["x"], "a.png")]), false, "입력창이 없는 탭");
+  assert.equal(dropComposerFiles("t1", [new File(["x"], "b.txt")]), true);
+  off();
+  assert.equal(dropComposerFiles("t1", [new File(["x"], "c.txt")]), false);
+  assert.deepEqual(got, ["b.txt"]);
 });

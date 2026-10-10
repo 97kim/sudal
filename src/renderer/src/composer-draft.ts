@@ -48,6 +48,57 @@ export function clearComposerDraft(tabId: string): void {
 export function pruneComposerDrafts(liveTabIds: Set<string>): void {
   for (const tabId of [...cache.keys()]) if (!liveTabIds.has(tabId)) clearComposerDraft(tabId);
   for (const k of kvKeys(KEY_PREFIX)) if (!liveTabIds.has(k.slice(KEY_PREFIX.length))) kvSet(k, null);
+  for (const k of kvKeys(FILES_PREFIX)) if (!liveTabIds.has(k.slice(FILES_PREFIX.length))) kvSet(k, null);
+}
+
+// ===== 첨부한 파일(이미지 말고): 경로만 들고 있다가 보낼 때 글 끝에 목록으로 붙인다 =====
+// 경로뿐이라 작아서 보존한다 — 탭을 옮기거나 앱을 껐다 켜도 남는다.
+export interface ComposerFile {
+  path: string;
+  name: string;
+}
+const FILES_PREFIX = "composerFiles.";
+const MAX_FILES = 20;
+
+export function loadComposerFiles(tabId: string): ComposerFile[] {
+  try {
+    const v = JSON.parse(kvGet(FILES_PREFIX + tabId) ?? "[]");
+    return Array.isArray(v) ? v.filter((f): f is ComposerFile => !!f && typeof f.path === "string" && typeof f.name === "string").slice(0, MAX_FILES) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveComposerFiles(tabId: string, files: ComposerFile[]): void {
+  kvSet(FILES_PREFIX + tabId, files.length ? JSON.stringify(files.slice(0, MAX_FILES)) : null);
+}
+
+/** 보낼 글: 쓴 글 끝에 첨부 파일 목록을 붙인다. 경로는 백틱으로 감싸 띄어쓰기가 든 경로도 한 덩어리로 읽힌다. */
+export function withAttachedFiles(text: string, files: ComposerFile[], head: string): string {
+  if (files.length === 0) return text;
+  const list = files.map((f) => `- \`${f.path.replace(/`/g, "\\`")}\``).join("\n");
+  return `${text ? `${text}\n\n` : ""}${head}\n${list}`;
+}
+
+// ===== 채팅 화면 어디에 놓든 그 탭의 입력창으로 =====
+type DropListener = (files: File[]) => void;
+const dropListeners = new Map<string, Set<DropListener>>();
+
+/** 채팅 화면에 놓은 파일을 그 탭의 입력창에 넘긴다. 입력창이 없으면(내려가 있음) false. */
+export function dropComposerFiles(tabId: string, files: File[]): boolean {
+  const ls = dropListeners.get(tabId);
+  if (!ls || ls.size === 0) return false;
+  for (const l of ls) l(files);
+  return true;
+}
+
+export function onComposerFilesDrop(tabId: string, listener: DropListener): () => void {
+  let set = dropListeners.get(tabId);
+  if (!set) dropListeners.set(tabId, (set = new Set()));
+  set.add(listener);
+  return () => {
+    set!.delete(listener);
+  };
 }
 
 /** 종료 직전·테스트용: 모아 둔 저장을 지금 쓴다. */

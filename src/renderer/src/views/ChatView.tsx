@@ -31,7 +31,7 @@ import { shortenHome } from "@shared/path-display";
 import { LocateFileContext, OpenFileContext, type LocateFile, type OpenFile } from "../components/FileViewer";
 import { EditorPane } from "../components/EditorPane";
 import { isBrowserTab, openBrowserTab, openEditorFile, setEditorPaneVisible, setLastPane, useEditorTabs } from "../editor-tabs";
-import { appendComposerDraft, loadComposerDraft } from "../composer-draft";
+import { appendComposerDraft, dropComposerFiles, loadComposerDraft } from "../composer-draft";
 import { loadTerminalDock, loadTerminalOpen, loadTerminalWidth, requestCliFocus, saveTerminalDock, saveTerminalOpen, saveTerminalWidth, TERMINAL_DOCK_EVENT, type TerminalDock } from "../terminal-panes";
 import { RunInTerminalContext, requestTerminalRun } from "../terminal-run";
 import { Icon } from "../components/Icon";
@@ -115,6 +115,7 @@ export function ChatView({
   const editorTabs = useEditorTabs(tabId);
   const openFile = useCallback<OpenFile>((path, at) => openEditorFile(tabId, path, at), [tabId]);
   // 에디터 선택·터미널 출력 → 입력창(마운트돼 있으면 바로 잇고 포커스, 아니면 초안에)
+  const [dropOver, setDropOver] = useState(false);
   const attachToChat = useCallback((block: string, images?: ChatImageDto[]) => appendComposerDraft(tabId, block, images), [tabId]);
   const [editorWidth, setEditorWidth] = useState(() => {
     try {
@@ -457,7 +458,31 @@ export function ChatView({
     <OpenFileContext.Provider value={openFile}>
     <LocateFileContext.Provider value={locateFile}>
     <RunInTerminalContext.Provider value={cwd ? runInTerminal : null}>
-      <div className="relative flex h-full flex-col">
+      <div
+        className="relative flex h-full flex-col"
+        // 파일을 채팅 화면 어디에 놓든 이 탭의 입력창에 첨부한다(입력창 위에 놓은 것은 입력창이 먼저 받는다).
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          if (!dropOver) setDropOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropOver(false);
+        }}
+        onDrop={(e) => {
+          setDropOver(false);
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          dropComposerFiles(tabId, Array.from(e.dataTransfer.files));
+        }}
+        data-chat-drop={dropOver ? "over" : undefined}
+      >
+        {dropOver && (
+          <div className="pointer-events-none absolute inset-2 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-panel/85 text-[13px] font-medium text-accent">
+            {t("chat.composer.dropHint")}
+          </div>
+        )}
         {/* 타이틀바 줄: 세션 제목·경로·모델과 버튼. 제목 중심 56px = 사이드바 로고 줄. 탭 스트립은 이 아래. */}
         {/* 헤더 폭이 800px 보다 좁으면(분할 칸·좁은 창) 버튼 글자를 숨기고 아이콘만 남긴다 — 글자는 툴팁. 안 그러면 오른쪽 버튼이 잘린다. */}
         <header className="@container/chathead drag flex h-[52px] shrink-0 items-center gap-3 overflow-hidden px-6 mac:h-[68px] mac:pt-4">
