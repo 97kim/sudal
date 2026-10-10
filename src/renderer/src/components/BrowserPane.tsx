@@ -134,7 +134,14 @@ export function BrowserPane({
   const inputRef = useRef<HTMLInputElement>(null);
   // 요소 선택 모드: 페이지에 스크립트를 주입해 마우스를 올리면 테두리, 클릭하면 console-message 로 요소 정보가 온다
   const [picking, setPicking] = useState(false);
-  const [pickMsg, setPickMsg] = useState<string | null>(null);
+  // 요소 선택·진단 첨부 결과. 페이지를 밀지 않게 웹뷰 위에 떠 있다가 사라진다.
+  const [toast, setToast] = useState<{ text: string; detail?: string; error?: boolean } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = (next: { text: string; detail?: string; error?: boolean } | null) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(next);
+    if (next) toastTimer.current = setTimeout(() => setToast(null), next.error ? 6000 : 3000);
+  };
   const onAttachRef = useRef(onAttach);
   onAttachRef.current = onAttach;
   const pickingRef = useRef(false);
@@ -156,13 +163,13 @@ export function BrowserPane({
   const startPick = async () => {
     const el = view.current;
     if (!el || !url) return;
-    setPickMsg(null);
+    showToast(null);
     try {
       nonceRef.current = Math.random().toString(36).slice(2) + Date.now().toString(36);
       await el.executeJavaScript(pickerScript(nonceRef.current));
       setPicking(true);
     } catch (e) {
-      setPickMsg(t("panel.browser.pickFailed", { error: e instanceof Error ? e.message : String(e) }));
+      showToast({ text: t("panel.browser.pickFailed"), detail: e instanceof Error ? e.message : String(e), error: true });
     }
   };
   const stopPick = () => {
@@ -223,8 +230,12 @@ export function BrowserPane({
           /* 무시 */
         }
         onAttachRef.current?.(formatElementAttachment(tRef.current, picked, pageUrl), images);
-        setPickMsg(tRef.current(images ? "panel.browser.pickedWithShot" : "panel.browser.picked", { selector: picked.selector }));
-        setTimeout(() => setPickMsg(null), 4000);
+        // 선택자는 입력창에 이미 들어갔다 — 여기엔 사람이 알아볼 태그와 글만.
+        const words = picked.text.replace(/\s+/g, " ").trim();
+        showToast({
+          text: tRef.current(images ? "panel.browser.pickedWithShot" : "panel.browser.picked"),
+          detail: `<${picked.tag}>${words ? ` ${words.length > 32 ? `${words.slice(0, 32)}…` : words}` : ""}`,
+        });
       })();
     };
     el.addEventListener("console-message", onConsole);
@@ -491,8 +502,10 @@ export function BrowserPane({
         images,
       );
       const errs = consoleRef.current.filter((c) => c.level >= 2).length;
-      setPickMsg(t(images ? "panel.browser.diagAttachedWithShot" : "panel.browser.diagAttached", { errors: errs, failures: net.length }));
-      setTimeout(() => setPickMsg(null), 4000);
+      showToast({
+        text: t(images ? "panel.browser.diagAttachedWithShot" : "panel.browser.diagAttached"),
+        detail: t("panel.browser.diagDetail", { errors: errs, failures: net.length }),
+      });
     } finally {
       setDiagBusy(false);
     }
@@ -879,11 +892,6 @@ export function BrowserPane({
           </button>
         </div>
       )}
-      {pickMsg && (
-        <div className="border-b border-line bg-accent-tint px-3 py-1 text-[11px] text-accent" data-browser-pick-msg>
-          {pickMsg}
-        </div>
-      )}
       <div className={`relative min-h-0 flex-1 ${viewport === "full" ? "bg-white" : "flex justify-center bg-inset"}`} data-browser-viewport-active={viewport}>
         {bar !== "off" && (
           <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-[2px]" data-browser-progress={bar}>
@@ -938,6 +946,13 @@ export function BrowserPane({
             ) : (
               <span className="mono text-[10.5px] text-muted-2">{t("panel.browser.emptyExamples")}</span>
             )}
+          </div>
+        )}
+        {toast && (
+          <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-lg border border-line bg-panel px-3 py-1.5 text-[11.5px] shadow-xl" data-browser-pick-msg role="status">
+            <Icon name={toast.error ? "alert" : "check"} size={12} className={`shrink-0 ${toast.error ? "text-err" : "text-accent"}`} />
+            <span className="shrink-0 text-fg">{toast.text}</span>
+            {toast.detail && <span className="mono min-w-0 truncate text-[10.5px] text-muted">{toast.detail}</span>}
           </div>
         )}
         {error && url && (
