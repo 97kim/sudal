@@ -218,6 +218,8 @@ export class OtterWindow {
   private create() {
     // 우클릭 메뉴로 끄면 pointerleave 없이 창이 사라진다 — 새 창은 마우스가 안 올라간 상태에서 시작한다.
     this.hovering = false;
+    // 끄는 중에 창이 닫히면 dragEnd 가 오지 않는다 — 옛 끌기 위치로 튀지 않게 비운다
+    this.dragAt = null;
     const pos = this.deps.loadPosition() ?? defaultPosition();
     const win = new BrowserWindow({
       width: WIDTH,
