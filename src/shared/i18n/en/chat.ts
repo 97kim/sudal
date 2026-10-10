@@ -137,7 +137,6 @@ export const chat: DeepPartial<typeof ko> = {
     external: "Connected to a CLI started in the terminal. The conversation shows up here after the first message. Quit with /exit in the terminal to return to the chat.",
     mirrored: "The conversation continues in the terminal CLI and is also shown here. Quit with /exit in the terminal, or press ‘Back to chat’ above.",
     show: "Show terminal",
-    starting: "Opening the CLI in the terminal…",
     controlled: "The terminal is controlling the session",
   },
   composerHint: {

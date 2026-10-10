@@ -32,7 +32,7 @@ import { LocateFileContext, OpenFileContext, type LocateFile, type OpenFile } fr
 import { EditorPane } from "../components/EditorPane";
 import { isBrowserTab, openBrowserTab, openEditorFile, setEditorPaneVisible, setLastPane, useEditorTabs } from "../editor-tabs";
 import { appendComposerDraft, loadComposerDraft } from "../composer-draft";
-import { loadTerminalDock, loadTerminalOpen, loadTerminalWidth, saveTerminalDock, saveTerminalOpen, saveTerminalWidth, TERMINAL_DOCK_EVENT, type TerminalDock } from "../terminal-panes";
+import { loadTerminalDock, loadTerminalOpen, loadTerminalWidth, requestCliFocus, saveTerminalDock, saveTerminalOpen, saveTerminalWidth, TERMINAL_DOCK_EVENT, type TerminalDock } from "../terminal-panes";
 import { RunInTerminalContext, requestTerminalRun } from "../terminal-run";
 import { Icon } from "../components/Icon";
 import { scApp } from "../platform";
@@ -197,17 +197,16 @@ export function ChatView({
       }),
     [toggleTerminal, focused],
   );
+  // CLI 를 띄우는 중. 이때 패널이 빈 터미널 목록을 받아 기본 셸을 만들면 CLI 탭 옆에 셸(Windows 는 PowerShell)이
+  // 하나 더 생긴다 — CLI 를 띄우는 데 오래 걸리는 Windows 에서 매번 그랬다. 패널에 셸을 만들지 말라고 알린다(holdShell).
   const [attaching, setAttaching] = useState(false);
   const attachTerminal = async () => {
     setAttachError(null);
-    // CLI 를 띄운 뒤에 패널을 연다. 먼저 열면 패널이 아직 빈 터미널 목록을 받고 기본 셸을 만들어,
-    // CLI 탭 옆에 셸(Windows 는 PowerShell)이 하나 더 생겼다(CLI 를 띄우는 데 오래 걸리는 Windows 에서 매번).
-    // 기다리는 사이 다른 채팅 탭으로 가면 이 화면이 내려가 아래 setState 가 버려진다 — 열림은 미리 저장해 둔다.
-    saveTerminalOpen(tabId, true);
+    requestCliFocus(tabId);
     setAttaching(true);
-    const r = await window.sudal.chat.attachTerminal(tabId).finally(() => setAttaching(false));
     setTerminalMounted(true);
     setTerminalOpen(true);
+    const r = await window.sudal.chat.attachTerminal(tabId).finally(() => setAttaching(false));
     if (r.ok) setConfig(r.snapshot);
     else setAttachError(r.error);
   };
@@ -816,6 +815,8 @@ export function ChatView({
                 open={terminalOpen}
                 onClose={() => setTerminalOpen(false)}
                 onAttach={attachToChat}
+                // 터미널이 세션을 쥐었으면(앱은 CLI 를 띄우기 전에 바꿔 둔다 — 다른 탭에 다녀와도 남는다) 셸을 만들지 않는다
+                holdShell={attaching || terminalControlled}
                 dock={terminalDock}
                 onWidth={setTerminalWidth}
               />
@@ -904,7 +905,7 @@ export function ChatView({
               </div>
             )}
 
-            {(terminalControlled || attachError || attaching) && (
+            {(terminalControlled || attachError) && (
               <div
                 className={`mx-6 mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] ${
                   attachError
@@ -923,9 +924,7 @@ export function ChatView({
                 />
                 <span className="min-w-0 flex-1 truncate">
                   {attachError ??
-                    (attaching && !terminalControlled ? (
-                      t("chat.terminalBanner.starting")
-                    ) : attention ? (
+                    (attention ? (
                       <>
                         {t("chat.terminalBanner.attention")}{" "}
                         <span className="font-medium">{attention.tool}</span>

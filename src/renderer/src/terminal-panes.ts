@@ -122,3 +122,13 @@ export function pruneTerminalState(liveTabIds: Set<string>): void {
   for (const prefix of [LAYOUT_PREFIX, OPEN_PREFIX])
     for (const k of kvKeys(prefix)) if (!liveTabIds.has(k.slice(prefix.length))) kvSet(k, null);
 }
+
+// "터미널에서 이어가기" 를 막 눌렀다: CLI 탭이 생기면 그것을 고른다. 패널이 그 사이 내려갔다(다른 채팅 탭) 다시 떠도
+// 남아 있도록 화면 밖(모듈)에 둔다. 그 밖의 복원에서는 사용자가 고른 탭을 그대로 둔다.
+const cliFocus = new Set<string>();
+export function requestCliFocus(tabId: string): void {
+  cliFocus.add(tabId);
+}
+export function takeCliFocus(tabId: string): boolean {
+  return cliFocus.delete(tabId);
+}

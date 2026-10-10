@@ -19,7 +19,7 @@ import { Icon } from "./Icon";
 import { onThemeChange } from "../theme";
 import { formatTerminalAttachment } from "@shared/attachments";
 import { findFileRefs } from "@shared/file-refs";
-import { loadTerminalLayout, removePane, saveTerminalLayout, selectPane, TERMINAL_MIN_WIDTH, type SplitDir, type TerminalDock } from "../terminal-panes";
+import { loadTerminalLayout, removePane, saveTerminalLayout, selectPane, takeCliFocus, TERMINAL_MIN_WIDTH, type SplitDir, type TerminalDock } from "../terminal-panes";
 import { cellRangeFor, createLocateCache, pickCandidate, type CellLike } from "../terminal-links";
 import { canDeliver, forgetTerminalGate, noteDelivered, onTerminalRun, peekTerminalRun, pendingTerminalRuns, pickShellTarget, promptEpoch, takeTerminalRun } from "../terminal-run";
 import { linkTargetFor, setLinkOpenMode } from "../link-open";
@@ -57,10 +57,13 @@ export function TerminalPanel({
   onAttach,
   dock = "bottom",
   onWidth,
+  holdShell = false,
 }: {
   tabId: string;
   cwd: string;
   open: boolean;
+  /** 터미널 목록이 비어도 기본 셸을 만들지 않는다 — 곧 CLI 탭이 붙는다(터미널에서 이어가기). */
+  holdShell?: boolean;
   onClose: () => void;
   /** 채팅 아래(높이 조절) 또는 오른쪽(폭 조절). 오른쪽 폭은 ChatView 가 격자 열로 정한다. */
   dock?: TerminalDock;
@@ -116,6 +119,8 @@ export function TerminalPanel({
     onAttach(terminalAttachment(tr, term, title));
   };
 
+  const holdShellRef = useRef(holdShell);
+  holdShellRef.current = holdShell;
   // main 에 이미 떠 있는 터미널(채팅 탭 전환 전에 만든 것)을 복원한다. 없으면 셸 하나를 만든다.
   useEffect(() => {
     let alive = true;
@@ -126,7 +131,8 @@ export function TerminalPanel({
         kind: t.kind,
         title: t.title,
       }));
-      if (restored.length === 0)
+      // 비었으면 셸 하나를 만든다. CLI 를 띄우는 중이면 기다린다(아래 효과가 끝까지 비면 만든다).
+      if (restored.length === 0 && !holdShellRef.current)
         restored.push({ id: `${prefix}t1`, kind: "shell", title: "" });
       const layout = loadTerminalLayout(
         tabId,
@@ -138,9 +144,9 @@ export function TerminalPanel({
         { minHeight: MIN_HEIGHT, maxHeight: maxHeight() },
       );
       setTabs(restored);
-      // CLI 가 떠 있으면 그것을 보인다 — 이 채팅의 세션을 쥔 쪽이다. 저장된 선택이 예전 셸이어도
-      // (셸을 쓰다 접고 다른 탭에 다녀온 뒤 이어가기) 셸이 보여 CLI 가 숨어 있었다.
-      setActive(restored.find((t) => t.kind === "command")?.id ?? layout.active);
+      // 이어가기를 막 눌렀으면 CLI 를 보인다(그 사이 패널이 내려갔다 떠서 onOpened 를 놓쳤어도). 그 밖에는 고른 탭 그대로.
+      const cli = restored.find((t) => t.kind === "command");
+      setActive(cli && takeCliFocus(tabId) ? cli.id : layout.active);
       setSplit(layout.split);
       setHeight(layout.height);
       setRatio(layout.ratio);
@@ -158,7 +164,10 @@ export function TerminalPanel({
               )
             : [...prev, { id: info.id, kind: info.kind, title: info.title }],
         );
-        if (info.kind === "command") setActive(info.id);
+        if (info.kind === "command") {
+          takeCliFocus(tabId);
+          setActive(info.id);
+        }
       },
     );
     return () => {
@@ -166,6 +175,14 @@ export function TerminalPanel({
       offOpened();
     };
   }, [tabId, prefix]);
+
+  // 셸을 미뤄 뒀는데 CLI 가 오지 않았다(띄우기 실패·터미널 모드 끝): 빈 패널로 두지 않고 셸 하나를 만든다.
+  useEffect(() => {
+    if (!loaded || holdShell || tabs.length > 0) return;
+    const id = `${prefix}t1`;
+    setTabs([{ id, kind: "shell", title: "" }]);
+    setActive(id);
+  }, [loaded, holdShell, tabs.length, prefix]);
 
   // 배치는 바뀔 때마다 저장한다. 채팅 탭을 오가면 이 컴포넌트가 다시 마운트되기 때문이다.
   useEffect(() => {
