@@ -260,14 +260,13 @@ export function BrowserPane({
         let abs: string | null = null;
         let shown: string | undefined;
         if (src) {
-          const { cwd, locate: find } = locateRef.current;
-          const hits = cwd ? await find(src.file).catch(() => [] as string[]) : [];
-          // 경로는 페이지가 준 값이다 — 저장소 밖(/etc/hosts, ../ 등)은 열지 않는다. 찾기 결과는 링크까지 푼 실제 경로라
-          // 저장소 안 링크가 밖을 가리켜도 여기서 걸린다. relativeAny 는 Windows 구분자·대소문자도 맞춘다.
-          const rel = cwd && hits.length === 1 ? relativeAny(hits[0], cwd) : null;
-          if (rel) {
+          const { cwd } = locateRef.current;
+          // 경로는 페이지가 준 값이다 — 저장소 밖(/etc/hosts, ../, 밖을 가리키는 링크)은 main 이 inside 로 걸러 준다.
+          const hits = cwd ? await window.sudal.files.locate(cwd, src.file, true).catch(() => [] as string[]) : [];
+          if (cwd && hits.length === 1) {
             abs = hits[0];
-            shown = rel;
+            // cwd 가 링크 경로면 실제 경로와 어긋나 상대 경로가 안 나온다 — 그땐 절대 경로로 보여 준다.
+            shown = relativeAny(abs, cwd) || abs;
           }
         }
         onAttachRef.current?.(formatElementAttachment(tRef.current, picked, pageUrl, shown), images);

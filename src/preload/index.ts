@@ -257,7 +257,7 @@ const api: SudalApi = {
       ipcRenderer.invoke(IPC.fileRename, cwd, from, to),
     remove: (cwd: string, path: string) => ipcRenderer.invoke(IPC.fileDelete, cwd, path),
     list: (dir: string) => ipcRenderer.invoke(IPC.fileList, dir),
-    locate: (cwd: string, ref: string) => ipcRenderer.invoke(IPC.fileLocate, cwd, ref),
+    locate: (cwd: string, ref: string, inside?: boolean) => ipcRenderer.invoke(IPC.fileLocate, cwd, ref, inside === true),
     // Electron 32 부터 File.path 가 없어졌다. 경로는 preload 의 webUtils 로만 얻는다.
     pathFor: (file: File) => webUtils.getPathForFile(file),
     remoteImage: (url: string) => ipcRenderer.invoke(IPC.fileRemoteImage, url),

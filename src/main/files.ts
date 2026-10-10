@@ -355,7 +355,19 @@ async function isFile(p: string): Promise<boolean> {
  * 순서: 절대 경로·cwd 기준 상대 경로가 그대로 있으면 그것 하나 → 저장소 파일 목록에서 뒤쪽 경로가 일치하는 것(긴 꼬리부터,
  * 대소문자 그대로 → 무시). 여러 개면 루트에 가까운 것부터 최대 20개.
  */
-export async function locateFiles(cwd: string, requested: string, env: NodeJS.ProcessEnv): Promise<string[]> {
+/**
+ * inside: 결과를 링크까지 푼 실제 경로로 바꾸고, 저장소(실제 경로) 밖이면 버린다. 경로를 믿을 수 없는 곳(웹 페이지가 준
+ * 소스 위치)에서 쓴다 — 저장소 안 링크가 /etc/hosts 를 가리키면 기본 검색은 링크 경로를 그대로 돌려준다.
+ */
+export async function locateFiles(cwd: string, requested: string, env: NodeJS.ProcessEnv, opts: { inside?: boolean } = {}): Promise<string[]> {
+  const found = await locateRaw(cwd, requested, env);
+  if (!opts.inside || found.length === 0) return found;
+  const root = await realishDeep(await repoRoot(cwd, env));
+  const real = await Promise.all(found.map((f) => realishDeep(f)));
+  return [...new Set(real)].filter((f) => f !== root && isWithin(root, f));
+}
+
+async function locateRaw(cwd: string, requested: string, env: NodeJS.ProcessEnv): Promise<string[]> {
   let raw = requested.trim().split("\\").join("/");
   if (raw.startsWith("~/")) raw = join(homedir(), raw.slice(2));
   if (!raw || raw.includes("\0")) return [];

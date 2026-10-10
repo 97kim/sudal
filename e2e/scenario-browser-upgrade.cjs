@@ -218,9 +218,10 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await page.click("[data-browser-pick] >> visible=true");
   await sleep(400);
   await ev(() => [...document.querySelectorAll("webview")].find((w) => w.offsetParent)?.executeJavaScript('document.getElementById("o").click()'));
-  await waitFor(() => [...document.querySelectorAll("[data-browser-pick-msg]")].some((x) => x.offsetParent && x.textContent.includes("hosts")), null, 6000);
+  // 알림이 떠야 선택이 실제로 처리된 것 — 안 뜨면 버튼이 없는 게 당연해 검사가 무의미하다.
+  const outsideToast = await waitFor(() => [...document.querySelectorAll("[data-browser-pick-msg]")].some((x) => x.offsetParent && x.textContent.includes("hosts")), null, 6000);
   const outsideBtn = await ev(() => [...document.querySelectorAll("[data-browser-open-source]")].some((x) => x.offsetParent));
-  res("I-2 (저장소 밖 경로는 열기 버튼 없음)", !outsideBtn, JSON.stringify({ outsideBtn }));
+  res("I-2 (저장소 밖 경로는 열기 버튼 없음)", outsideToast && !outsideBtn, JSON.stringify({ outsideToast, outsideBtn }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

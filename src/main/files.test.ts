@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { locateFiles, looksBinary, readFileView, listDirectory, writeFileView } from "./files";
@@ -288,4 +288,22 @@ test("locateFiles: git 이 아닌 디렉토리는 걷되 node_modules 는 건너
   assert.equal(r.length, 1);
   assert.ok(r[0].endsWith(join("lib", "util.py")));
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("locateFiles inside: 밖을 가리키는 링크·절대 경로는 버리고, 저장소 안 파일은 실제 경로로", { skip: process.platform === "win32" }, async () => {
+  const dir = repo();
+  const outside = mkdtempSync(join(tmpdir(), "wb-outside-"));
+  writeFileSync(join(outside, "hosts"), "secret\n");
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "src", "App.tsx"), "x\n");
+  symlinkSync(join(outside, "hosts"), join(dir, "src", "hosts"));
+  git(dir, "add", ".");
+  git(dir, "commit", "-qm", "files");
+  // 기본 검색은 링크 경로를 그대로 준다 — inside 는 그걸 풀어 저장소 밖이면 버린다
+  assert.equal((await locateFiles(dir, "/src/hosts", env)).length, 1);
+  assert.deepEqual(await locateFiles(dir, "/src/hosts", env, { inside: true }), []);
+  assert.deepEqual(await locateFiles(dir, join(outside, "hosts"), env, { inside: true }), []);
+  assert.deepEqual(await locateFiles(dir, "/src/App.tsx", env, { inside: true }), [join(realpathSync(dir), "src", "App.tsx")]);
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
 });

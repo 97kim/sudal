@@ -994,7 +994,8 @@ export interface SudalApi {
     /** 디렉토리 항목 목록 (폴더 먼저, 이름순). */
     list(dir: string): Promise<DirEntryDto[]>;
     /** 답변에 적힌 파일 참조("Foo.kt", "src/a.ts")에 맞는 실제 파일들(절대 경로). cwd 기준 상대 경로 → 저장소 안 뒤쪽 경로 일치 순. 없으면 []. */
-    locate(cwd: string, ref: string): Promise<string[]>;
+    /** inside: 링크를 푼 실제 경로로, 저장소 밖은 버린다(웹 페이지가 준 경로처럼 믿을 수 없을 때). */
+    locate(cwd: string, ref: string, inside?: boolean): Promise<string[]>;
     /** 끌어다 놓은 File 의 디스크 경로. 디스크에 없는 것(브라우저에서 끈 이미지 등)은 "". */
     pathFor(file: File): string;
     /** 문서 미리보기 속 원격 이미지를 data URL 로(CSP 가 원격 img 를 막는다). 못 받으면 null. */

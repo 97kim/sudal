@@ -2595,10 +2595,10 @@ function registerIpc() {
   ipcMain.handle(IPC.fileRemoteImage, (_e, url: unknown) =>
     typeof url === "string" ? fetchDocImage(url) : null,
   );
-  ipcMain.handle(IPC.fileLocate, async (_e, cwd: string, ref: string) => {
+  ipcMain.handle(IPC.fileLocate, async (_e, cwd: string, ref: string, inside: unknown) => {
     if (typeof cwd !== "string" || typeof ref !== "string" || ref.length > 1024) return [];
     if (!isKnownCwd(cwd)) return [];
-    return locateFiles(cwd, ref, await cliDiscovery().buildEnv());
+    return locateFiles(cwd, ref, await cliDiscovery().buildEnv(), { inside: inside === true });
   });
 
   ipcMain.handle(IPC.pickDirectory, (e) => pickDirectory(e.sender));
