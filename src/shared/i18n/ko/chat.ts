@@ -136,6 +136,7 @@ export const chat = {
     mirrored: "터미널의 CLI에서 대화를 이어가며 내용은 여기에도 표시됩니다. 터미널에서 /exit로 종료하거나 위의 ‘채팅으로 돌아가기’를 누르세요.",
     show: "터미널 보기",
     controlled: "터미널이 세션을 제어 중입니다",
+    starting: "터미널에서 CLI를 여는 중입니다…",
   },
   composerHint: {
     codex: "{{name}} 이 맡긴 Codex 가 작업 중 — 끝나면 답이 이어집니다. 다음 지시를 써 두면 그 뒤에 보냅니다…",

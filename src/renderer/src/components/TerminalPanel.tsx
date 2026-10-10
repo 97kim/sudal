@@ -138,7 +138,9 @@ export function TerminalPanel({
         { minHeight: MIN_HEIGHT, maxHeight: maxHeight() },
       );
       setTabs(restored);
-      setActive(layout.active);
+      // CLI 가 떠 있으면 그것을 보인다 — 이 채팅의 세션을 쥔 쪽이다. 저장된 선택이 예전 셸이어도
+      // (셸을 쓰다 접고 다른 탭에 다녀온 뒤 이어가기) 셸이 보여 CLI 가 숨어 있었다.
+      setActive(restored.find((t) => t.kind === "command")?.id ?? layout.active);
       setSplit(layout.split);
       setHeight(layout.height);
       setRatio(layout.ratio);

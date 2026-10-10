@@ -197,11 +197,15 @@ export function ChatView({
       }),
     [toggleTerminal, focused],
   );
+  const [attaching, setAttaching] = useState(false);
   const attachTerminal = async () => {
     setAttachError(null);
     // CLI 를 띄운 뒤에 패널을 연다. 먼저 열면 패널이 아직 빈 터미널 목록을 받고 기본 셸을 만들어,
     // CLI 탭 옆에 셸(Windows 는 PowerShell)이 하나 더 생겼다(CLI 를 띄우는 데 오래 걸리는 Windows 에서 매번).
-    const r = await window.sudal.chat.attachTerminal(tabId);
+    // 기다리는 사이 다른 채팅 탭으로 가면 이 화면이 내려가 아래 setState 가 버려진다 — 열림은 미리 저장해 둔다.
+    saveTerminalOpen(tabId, true);
+    setAttaching(true);
+    const r = await window.sudal.chat.attachTerminal(tabId).finally(() => setAttaching(false));
     setTerminalMounted(true);
     setTerminalOpen(true);
     if (r.ok) setConfig(r.snapshot);
@@ -900,7 +904,7 @@ export function ChatView({
               </div>
             )}
 
-            {(terminalControlled || attachError) && (
+            {(terminalControlled || attachError || attaching) && (
               <div
                 className={`mx-6 mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] ${
                   attachError
@@ -919,7 +923,9 @@ export function ChatView({
                 />
                 <span className="min-w-0 flex-1 truncate">
                   {attachError ??
-                    (attention ? (
+                    (attaching && !terminalControlled ? (
+                      t("chat.terminalBanner.starting")
+                    ) : attention ? (
                       <>
                         {t("chat.terminalBanner.attention")}{" "}
                         <span className="font-medium">{attention.tool}</span>
