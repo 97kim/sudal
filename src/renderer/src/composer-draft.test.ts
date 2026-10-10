@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hydrateKv, kvGet } from "./kv-store";
-import { clearComposerDraft, dropComposerFiles, flushComposerDrafts, loadComposerDraft, loadComposerFiles, onComposerFilesDrop, pruneComposerDrafts, saveComposerDraft, saveComposerFiles, withAttachedFiles } from "./composer-draft";
+import { clearComposerDraft, codeSpan, dropComposerFiles, flushComposerDrafts, loadComposerDraft, loadComposerFiles, onComposerFilesDrop, pruneComposerDrafts, saveComposerDraft, saveComposerFiles, withAttachedFiles } from "./composer-draft";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const stored = (tabId: string) => kvGet(`composerDraft.${tabId}`);
@@ -47,7 +47,7 @@ test("첨부 파일: 보낼 글 끝에 목록으로, 경로는 백틱으로 감�
   assert.equal(withAttachedFiles("이거 봐 줘", [], "첨부한 파일:"), "이거 봐 줘");
   assert.equal(
     withAttachedFiles("이거 봐 줘", [{ path: "/Users/me/My Report.pdf", name: "My Report.pdf" }, { path: "/tmp/a`b.txt", name: "a`b.txt" }], "첨부한 파일:"),
-    "이거 봐 줘\n\n첨부한 파일:\n- `/Users/me/My Report.pdf`\n- `/tmp/a\\`b.txt`",
+    "이거 봐 줘\n\n첨부한 파일:\n- `/Users/me/My Report.pdf`\n- ``/tmp/a`b.txt``",
   );
   // 글 없이 파일만 보내도 된다
   assert.equal(withAttachedFiles("", [{ path: "/a", name: "a" }], "첨부한 파일:"), "첨부한 파일:\n- `/a`");
@@ -72,4 +72,10 @@ test("채팅 화면에 놓은 파일은 그 탭 입력창으로만 간다", () =
   off();
   assert.equal(dropComposerFiles("t1", [new File(["x"], "c.txt")]), false);
   assert.deepEqual(got, ["b.txt"]);
+});
+
+test("codeSpan: 경로 글자를 바꾸지 않고, 백틱이 들어도 한 코드 구간으로", () => {
+  assert.equal(codeSpan("/a b"), "`/a b`");
+  assert.equal(codeSpan("/a``b"), "```/a``b```");
+  assert.equal(codeSpan("`x`"), "`` `x` ``");
 });

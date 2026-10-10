@@ -73,10 +73,22 @@ export function saveComposerFiles(tabId: string, files: ComposerFile[]): void {
   kvSet(FILES_PREFIX + tabId, files.length ? JSON.stringify(files.slice(0, MAX_FILES)) : null);
 }
 
-/** 보낼 글: 쓴 글 끝에 첨부 파일 목록을 붙인다. 경로는 백틱으로 감싸 띄어쓰기가 든 경로도 한 덩어리로 읽힌다. */
+/**
+ * 경로를 마크다운 코드 구간으로 — 띄어쓰기가 든 경로도 한 덩어리로 읽힌다. 경로 글자는 그대로 둔다:
+ * 안에 든 가장 긴 백틱 묶음보다 긴 구분자를 쓰고, 백틱으로 시작·끝나면 한 칸씩 띄운다(CommonMark).
+ * 역슬래시로 이스케이프하면 코드 구간 안에선 글자가 하나 더 붙은 다른 경로가 된다.
+ */
+export function codeSpan(s: string): string {
+  const longest = Math.max(0, ...(s.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = "`".repeat(longest + 1);
+  const pad = s.startsWith("`") || s.endsWith("`") ? " " : "";
+  return `${fence}${pad}${s}${pad}${fence}`;
+}
+
+/** 보낼 글: 쓴 글 끝에 첨부 파일 목록을 붙인다. */
 export function withAttachedFiles(text: string, files: ComposerFile[], head: string): string {
   if (files.length === 0) return text;
-  const list = files.map((f) => `- \`${f.path.replace(/`/g, "\\`")}\``).join("\n");
+  const list = files.map((f) => `- ${codeSpan(f.path)}`).join("\n");
   return `${text ? `${text}\n\n` : ""}${head}\n${list}`;
 }
 

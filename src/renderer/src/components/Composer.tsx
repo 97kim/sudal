@@ -22,6 +22,7 @@ import {
   type SnippetDto,
 } from "@shared/snippets";
 import { Icon } from "./Icon";
+import { parseAppCommand } from "@shared/app-commands";
 import { clearComposerDraft, loadComposerDraft, loadComposerFiles, onComposerDraftAppend, onComposerFilesDrop, saveComposerDraft, saveComposerFiles, withAttachedFiles, type ComposerFile } from "../composer-draft";
 import { appendToDraft } from "@shared/attachments";
 
@@ -249,18 +250,21 @@ export function Composer({
       return;
     }
     try {
+      // 앱이 처리하는 명령(/model 등)은 글 그대로 보내고 첨부 파일은 남긴다 — 합치면 명령 인자가 깨지고,
+      // 명령은 파일을 쓰지 않으니 보낸 셈이 아니다. 판별 기준은 ChatView 와 같다(이미지가 있으면 명령 아님).
+      const appCommand = images.length === 0 && parseAppCommand(trimmed) !== null;
       await onSend(
-        withAttachedFiles(trimmed, files, t("chat.composer.attachedFiles")),
+        appCommand ? trimmed : withAttachedFiles(trimmed, files, t("chat.composer.attachedFiles")),
         images.map(({ name, mime, base64 }) => ({ name, mime, base64 })),
       );
       // 보내는 사이 다른 탭으로 갔으면 이 컴포넌트는 이미 내려가 setText 의 효과가 없다 — 초안은 모듈에서 직접 비운다.
       if (draftKey) {
         clearComposerDraft(draftKey);
-        saveComposerFiles(draftKey, []);
+        if (!appCommand) saveComposerFiles(draftKey, []);
       }
       setText("");
       setImages([]);
-      setFiles([]);
+      if (!appCommand) setFiles([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

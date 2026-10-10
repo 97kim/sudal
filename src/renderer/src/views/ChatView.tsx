@@ -470,6 +470,8 @@ export function ChatView({
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropOver(false);
         }}
+        // 입력창 위에 놓으면 입력창이 받고 전파를 멈춘다 — 덮개 끄기는 캡처 단계에서 먼저 한다.
+        onDropCapture={() => setDropOver(false)}
         onDrop={(e) => {
           setDropOver(false);
           if (!e.dataTransfer.types.includes("Files")) return;

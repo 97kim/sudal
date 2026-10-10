@@ -1,6 +1,7 @@
 // 채팅 화면 어디에 놓아도 첨부, 이미지 말고 다른 파일은 파일 카드로. usage: node e2e/scenario-drop-attach.cjs (release/mac-arm64/Sudal.app 을 먼저 패키징)
 //  A) 파일을 끌고 들어오면 채팅 화면 전체에 "놓으면 입력창에 첨부해요" 덮개가 뜬다
 //  B) 입력창 밖(헤더)에 이미지를 놓아도 입력창에 이미지로 붙는다
+//  D) 입력창 위에 바로 놓아도 화면 전체 덮개가 꺼진다
 //  C) 첨부 파일은 카드로 보이고, 빼면 앱을 다시 열어도 남은 것만 있다
 // 한계: 테스트에서 만든 File 에는 실제 경로가 없어(Electron 이 실제로 끌어다 놓은 파일에만 준다) 경로 첨부는 저장값으로 확인한다.
 const os = require("os"), path = require("path"), fs = require("fs"), { execFileSync, spawn } = require("child_process");
@@ -58,6 +59,23 @@ const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwA
   const imgs = await ev(() => document.querySelectorAll("[data-composer] img").length);
   const overGone = await ev(() => !document.querySelector('[data-chat-drop="over"]'));
   res("B (입력창 밖에 놓은 이미지가 입력창에 붙음)", imgs === 1 && overGone, JSON.stringify({ imgs, overGone }));
+
+  // D: 입력창 위에 바로 놓아도(입력창이 받고 전파를 멈춘다) 화면 전체 덮개가 꺼진다
+  const overAfterComposer = await ev((png) => {
+    const box = document.querySelector("[data-composer] textarea").parentElement;
+    const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], "shot2.png", { type: "image/png" }));
+    box.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    return new Promise((r) => requestAnimationFrame(() => {
+      const on = !!document.querySelector('[data-chat-drop="over"]');
+      box.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      requestAnimationFrame(() => r({ on, stuck: !!document.querySelector('[data-chat-drop="over"]') }));
+    }));
+  }, PNG);
+  await sleep(600);
+  const imgs2 = await ev(() => document.querySelectorAll("[data-composer] img").length);
+  res("D (입력창 위에 놓아도 덮개가 꺼짐)", overAfterComposer.on && !overAfterComposer.stuck && imgs2 === 2, JSON.stringify({ ...overAfterComposer, imgs2 }));
 
   // C: 첨부 파일 두 개를 저장값으로 넣고 다시 연다 → 카드 두 개, 하나 빼고 다시 열면 하나
   await ev((id) => window.sudal.state.set(`composerFiles.${id}`, JSON.stringify([{ path: "/tmp/My Report.pdf", name: "My Report.pdf" }, { path: "/tmp/src", name: "src" }])), tab);
