@@ -205,7 +205,7 @@ export const panel = {
     import: {
       menu: "다른 브라우저에서 로그인 가져오기",
       title: "다른 브라우저에서 로그인 가져오기",
-      sub: "고른 사이트의 쿠키만 바꿔요. 다른 사이트 로그인은 그대로예요.",
+      sub: "고른 사이트의 쿠키를 가져와 같은 것만 바꿔요. 다른 사이트 로그인은 그대로예요.",
       unsupported: "지금은 macOS에서만 가져올 수 있어요. Windows의 Chrome은 다른 앱이 로그인 정보를 읽지 못하게 막아 두었어요.",
       noSources: "가져올 Chrome·Edge 프로필을 찾지 못했어요.",
       search: "사이트 찾기",
@@ -213,6 +213,9 @@ export const panel = {
       cookies_one: "쿠키 {{count}}개",
       cookies_other: "쿠키 {{count}}개",
       note: "가져올 때 macOS가 키체인 접근을 물어요. Google 로그인은 가져올 수 없어요.",
+      none: "가져온 로그인이 없어요(못 가져온 쿠키 {{failed}}개). 브라우저에서 그 사이트에 로그인돼 있는지 확인하세요.",
+      skipped_one: "쿠키 {{count}}개는 가져오지 못했어요",
+      skipped_other: "쿠키 {{count}}개는 가져오지 못했어요",
       run_one: "{{count}}개 사이트 가져오기",
       run_other: "{{count}}개 사이트 가져오기",
       running: "가져오는 중…",

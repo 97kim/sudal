@@ -15,6 +15,7 @@
 //  L-2) 실제 마우스 ⇧+클릭은 한 번에 하나, 선택을 다시 켜도 번호가 이어지고, 빼면 다시 매긴다
 //  L-3) 테두리 없는 항목도 번호 자리를 지키고, 페이지를 다시 열어도 테두리 id 가 겹치지 않는다
 //  M) 다른 브라우저(가짜 Chrome 프로필)의 로그인을 가져오면, 그 사이트만 쿠키가 들어가 서버가 받는다
+//  M-2) 하나도 못 푸는 프로필에서 가져오면 실패로 알리고, 이미 있던 로그인은 그대로 남는다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
@@ -46,7 +47,7 @@ const importBase = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-import-"));
   const { DatabaseSync } = require("node:sqlite");
   const chrome = path.join(importBase, "Google/Chrome");
   fs.mkdirSync(path.join(chrome, "Profile 1"), { recursive: true });
-  fs.writeFileSync(path.join(chrome, "Local State"), JSON.stringify({ profile: { info_cache: { "Profile 1": { name: "E2E" } } } }));
+  fs.writeFileSync(path.join(chrome, "Local State"), JSON.stringify({ profile: { info_cache: { "Profile 1": { name: "E2E" }, "Profile 2": { name: "깨짐" } } } }));
   const key = crypto.pbkdf2Sync("e2e-pass", "saltysalt", 1003, 16, "sha1");
   const c = crypto.createCipheriv("aes-128-cbc", key, Buffer.alloc(16, 0x20));
   const encd = Buffer.concat([Buffer.from("v10"), c.update(Buffer.concat([crypto.createHash("sha256").update("localhost").digest(), Buffer.from("ok-123")])), c.final()]);
@@ -55,6 +56,15 @@ const importBase = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-import-"));
   db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run("localhost", "sudal_login", "", encd, "/", 0, 0, 1, 0, 1);
   db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run(".other.example", "x", "y", Buffer.alloc(0), "/", 0, 0, 0, 0, 0);
   db.close();
+  // 프로필 2: 다른 비밀번호로 암호화된 localhost 쿠키뿐 — 하나도 못 푼다
+  fs.mkdirSync(path.join(chrome, "Profile 2"), { recursive: true });
+  const bad = crypto.pbkdf2Sync("other-pass", "saltysalt", 1003, 16, "sha1");
+  const c2 = crypto.createCipheriv("aes-128-cbc", bad, Buffer.alloc(16, 0x20));
+  const enc2 = Buffer.concat([Buffer.from("v10"), c2.update(Buffer.concat([crypto.createHash("sha256").update("localhost").digest(), Buffer.from("nope")])), c2.final()]);
+  const db2 = new DatabaseSync(path.join(chrome, "Profile 2", "Cookies"));
+  db2.exec("CREATE TABLE meta(key TEXT, value TEXT); INSERT INTO meta VALUES('version','24'); CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, has_expires INTEGER, samesite INTEGER)");
+  db2.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run("localhost", "sudal_login", "", enc2, "/", 0, 0, 1, 0, 1);
+  db2.close();
 }
 
 const srv = http.createServer((req, res) => {
@@ -91,7 +101,7 @@ const srv = http.createServer((req, res) => {
   if (req.url === "/disabled") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>disabled</title><button id="d" disabled style="margin:40px;padding:12px 24px">비활성 버튼</button><br><a id="l" href="/other" style="margin:40px">다른 곳</a>`); }
   if (req.url === "/inner") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>inner</title><div id="box" style="margin:20px;height:150px;width:240px;overflow:auto;border:1px solid #999">${Array.from({ length: 40 }, (_, i) => `<p>줄 ${i + 1}</p>`).join("")}</div>`); }
   if (req.url.split("?")[0] === "/multi") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>multi</title><h1 id="m1">제목</h1><p id="m2">본문 글</p><button id="m3">버튼</button>`); }
-  if (req.url === "/whoami") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>who</title><p id="who">cookie=${req.headers.cookie || ""}</p>`); }
+  if (req.url.split("?")[0] === "/whoami") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>who</title><p id="who">cookie=${req.headers.cookie || ""}</p>`); }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -400,6 +410,20 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await sleep(1800);
   const whoAfter = cli("browser", "read", "--tab", tab).text || "";
   res("M (다른 브라우저 로그인 가져오기)", srcShown && prechecked && otherUnchecked && closed && !whoBefore.includes("sudal_login") && whoAfter.includes("sudal_login=ok-123"), JSON.stringify({ srcShown, prechecked, otherUnchecked, closed, before: whoBefore.slice(0, 40), after: whoAfter.slice(0, 60) }));
+  // M-2: 하나도 못 푸는 프로필에서 가져오면 실패로 알리고, 이미 있던 로그인은 그대로 남는다
+  await page.click("[data-browser-more] >> visible=true");
+  await page.click("[data-browser-import-open] >> visible=true");
+  await waitFor(() => !!document.querySelector('[data-browser-import-source="chrome:Profile 2"]'), null, 5000);
+  await ev(() => document.querySelector('[data-browser-import-source="chrome:Profile 2"]')?.click());
+  await waitFor(() => !!document.querySelector('[data-browser-import-site="localhost"] input:checked'), null, 5000);
+  await ev(() => document.querySelector("[data-browser-import-run]")?.click());
+  const failShown = await waitFor(() => !!document.querySelector("[data-browser-import-error]"), null, 8000);
+  await ev(() => [...document.querySelectorAll("[data-browser-import] button")].find((b) => !b.hasAttribute("data-browser-import-run") && !b.hasAttribute("data-browser-import-source"))?.click());
+  await sleep(300);
+  cli("browser", "open", "--tab", tab, "--url", base + "/whoami?again");
+  await sleep(1500);
+  const loginKept = (cli("browser", "read", "--tab", tab).text || "").includes("sudal_login=ok-123");
+  res("M-2 (못 풀면 실패로 알리고 기존 로그인은 남음)", failShown && loginKept, JSON.stringify({ failShown, loginKept }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

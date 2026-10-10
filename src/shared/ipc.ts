@@ -1054,7 +1054,7 @@ export interface SudalApi {
     /** 그 프로필의 사이트별 쿠키 수(값은 풀지 않는다). */
     importSites(sourceId: string): Promise<{ host: string; count: number }[]>;
     /** 고른 사이트의 로그인을 가져온다. macOS 가 키체인 접근 허용 창을 띄운다. */
-    importLogins(sourceId: string, hosts: string[]): Promise<{ ok: true; imported: number; failed: number } | { ok: false; error: string }>;
+    importLogins(sourceId: string, hosts: string[]): Promise<{ ok: true; imported: number; failed: number; partitioned: number } | { ok: false; error: string }>;
   };
 }
 

@@ -205,7 +205,7 @@ export const panel: DeepPartial<typeof ko> = {
     import: {
       menu: "Import logins from another browser",
       title: "Import logins from another browser",
-      sub: "Only the chosen sites’ cookies change. Other sign-ins stay as they are.",
+      sub: "Imports the chosen sites’ cookies and replaces only matching ones. Other sign-ins stay as they are.",
       unsupported: "Importing works on macOS only for now. Chrome on Windows blocks other apps from reading its sign-ins.",
       noSources: "No Chrome or Edge profiles found.",
       search: "Find a site",
@@ -213,6 +213,9 @@ export const panel: DeepPartial<typeof ko> = {
       cookies_one: "{{count}} cookie",
       cookies_other: "{{count}} cookies",
       note: "macOS will ask for Keychain access. Google sign-ins can’t be imported.",
+      none: "No logins were imported ({{failed}} cookies couldn’t be read). Check that you’re signed in to the site in that browser.",
+      skipped_one: "{{count}} cookie couldn’t be imported",
+      skipped_other: "{{count}} cookies couldn’t be imported",
       run_one: "Import {{count}} site",
       run_other: "Import {{count}} sites",
       running: "Importing…",

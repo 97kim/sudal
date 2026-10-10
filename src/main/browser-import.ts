@@ -137,21 +137,32 @@ interface Row {
   is_httponly: bigint;
   has_expires: bigint;
   samesite: bigint;
+  top_frame_site_key?: string;
 }
 
-/** 고른 사이트들의 쿠키를 풀어 Electron cookies.set 형식으로. 못 푼 것은 세서 돌려준다. */
-export function readCookies(cookiesPath: string, hosts: string[], key: Buffer): { cookies: CookiesSetDetails[]; failed: number } {
+/**
+ * 고른 사이트들의 쿠키를 풀어 Electron cookies.set 형식으로. 못 푼 것은 failed, 최상위 사이트별로 나뉜(partitioned)
+ * 쿠키는 partitioned 로 센다 — 그 격리를 그대로 옮길 방법이 없어 일반 쿠키로 넣으면 범위가 넓어진다.
+ */
+export function readCookies(cookiesPath: string, hosts: string[], key: Buffer): { cookies: CookiesSetDetails[]; failed: number; partitioned: number } {
   const want = new Set(hosts.map(bare));
   return withCopy(cookiesPath, (db) => {
     const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined)?.value ?? 0);
     const cookies: CookiesSetDetails[] = [];
     let failed = 0;
-    const stmt = db.prepare("SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, has_expires, samesite FROM cookies");
+    let partitioned = 0;
+    // 옛 DB 엔 top_frame_site_key 칸이 없다.
+    const hasPartition = (db.prepare("PRAGMA table_info(cookies)").all() as { name: string }[]).some((c) => c.name === "top_frame_site_key");
+    const stmt = db.prepare(`SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, has_expires, samesite${hasPartition ? ", top_frame_site_key" : ""} FROM cookies`);
     // expires_utc 는 JS 숫자 범위를 넘는다. 그러면 다른 정수 칸도 BigInt 로 오므로 아래에서 Number() 로 비교한다.
     stmt.setReadBigInts(true);
     const rows = stmt.all() as unknown as Row[];
     for (const r of rows) {
       if (!want.has(bare(r.host_key))) continue;
+      if (r.top_frame_site_key) {
+        partitioned++;
+        continue;
+      }
       let value: string | null = r.value || null;
       if (!value && r.encrypted_value?.length) {
         try {
@@ -180,7 +191,7 @@ export function readCookies(cookiesPath: string, hosts: string[], key: Buffer): 
         sameSite: SAME_SITE[Number(r.samesite)] ?? "unspecified",
       });
     }
-    return { cookies, failed };
+    return { cookies, failed, partitioned };
   });
 }
 
@@ -193,18 +204,13 @@ async function keychainPassword(browser: ImportSource["browser"]): Promise<strin
 }
 
 /**
- * 고른 사이트의 로그인을 세션으로 가져온다. 그 사이트의 기존 쿠키만 지우고 바꾼다 — 다른 사이트 로그인은 그대로.
- * 키체인을 거절하거나 실패하면 던진다.
+ * 고른 사이트의 로그인을 세션으로 가져온다. 기존 쿠키는 지우지 않고 같은 것(이름·도메인·경로)만 덮어쓴다.
+ * 함정: cookies.remove(url, name) 은 그 주소로 보내지는 같은 이름 쿠키를 모두 지워 고르지 않은 상위 도메인 쿠키까지 날린다.
+ * 지우지 않으니 풀기에 실패해도 쓰던 로그인이 남는다. 키체인을 거절하면 던진다.
  */
-export async function importCookies(source: ImportSource, hosts: string[], ses: Session): Promise<{ imported: number; failed: number }> {
+export async function importCookies(source: ImportSource, hosts: string[], ses: Session): Promise<{ imported: number; failed: number; partitioned: number }> {
   const key = chromeKey(await keychainPassword(source.browser));
-  const { cookies, failed } = readCookies(source.cookies, hosts, key);
-  const want = new Set(hosts.map(bare));
-  for (const c of await ses.cookies.get({})) {
-    const host = bare(c.domain ?? "");
-    if (!want.has(host)) continue;
-    await ses.cookies.remove(`${c.secure ? "https" : "http"}://${host}${c.path ?? "/"}`, c.name).catch(() => {});
-  }
+  const { cookies, failed, partitioned } = readCookies(source.cookies, hosts, key);
   let imported = 0;
   let rejected = 0;
   for (const c of cookies) {
@@ -215,5 +221,5 @@ export async function importCookies(source: ImportSource, hosts: string[], ses: 
       rejected++;
     }
   }
-  return { imported, failed: failed + rejected };
+  return { imported, failed: failed + rejected, partitioned };
 }

@@ -22,13 +22,15 @@ function fixture(): { dir: string; db: string } {
   const db = join(dir, "Cookies");
   const d = new DatabaseSync(db);
   d.exec("CREATE TABLE meta(key TEXT, value TEXT); INSERT INTO meta VALUES('version','24');");
-  d.exec("CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, has_expires INTEGER, samesite INTEGER)");
-  const ins = d.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)");
+  d.exec("CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, has_expires INTEGER, samesite INTEGER, top_frame_site_key TEXT DEFAULT '')");
+  const ins = d.prepare("INSERT INTO cookies(host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, has_expires, samesite) VALUES(?,?,?,?,?,?,?,?,?,?)");
   ins.run(".staging.myapp.com", "sid", "", enc(".staging.myapp.com", "abc123"), "/", T2030, 1, 1, 1, 1);
   ins.run("staging.myapp.com", "__Host-csrf", "", enc("staging.myapp.com", "tok"), "/", 0, 1, 0, 0, 2);
   ins.run("admin.myapp.com", "pref", "plain", Buffer.alloc(0), "/app", 0, 0, 0, 0, -1);
   ins.run("github.com", "user", "", enc("github.com", "nope"), "/", 0, 1, 1, 0, 0);
   ins.run("broken.example", "x", "", Buffer.from("v10garbage"), "/", 0, 0, 0, 0, 0);
+  // 최상위 사이트별로 나뉜 쿠키 — 격리를 옮길 수 없어 가져오지 않는다
+  d.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("staging.myapp.com", "embed", "z", Buffer.alloc(0), "/", 0, 1, 0, 0, 0, "https://other.example");
   d.close();
   return { dir, db };
 }
@@ -51,7 +53,7 @@ test("listSites: 앞의 점을 떼고 사이트별로 센다", () => {
   const { dir, db } = fixture();
   try {
     assert.deepEqual(listSites(db), [
-      { host: "staging.myapp.com", count: 2 },
+      { host: "staging.myapp.com", count: 3 },
       { host: "admin.myapp.com", count: 1 },
       { host: "broken.example", count: 1 },
       { host: "github.com", count: 1 },
@@ -64,8 +66,10 @@ test("listSites: 앞의 점을 떼고 사이트별로 센다", () => {
 test("readCookies: 고른 사이트만, __Host- 는 domain 없이, 만료·SameSite 를 옮기고, 못 푼 것은 센다", () => {
   const { dir, db } = fixture();
   try {
-    const { cookies, failed } = readCookies(db, ["staging.myapp.com", "admin.myapp.com", "broken.example"], key);
+    const { cookies, failed, partitioned } = readCookies(db, ["staging.myapp.com", "admin.myapp.com", "broken.example"], key);
     assert.equal(failed, 1);
+    assert.equal(partitioned, 1);
+    assert.equal(cookies.some((c) => c.name === "embed"), false, "partitioned 쿠키는 빠진다");
     assert.equal(cookies.some((c) => c.name === "user"), false, "고르지 않은 github.com 은 빠진다");
     const sid = cookies.find((c) => c.name === "sid")!;
     assert.deepEqual(sid, { url: "https://staging.myapp.com/", name: "sid", value: "abc123", domain: ".staging.myapp.com", path: "/", secure: true, httpOnly: true, expirationDate: 1893456000, sameSite: "lax" });

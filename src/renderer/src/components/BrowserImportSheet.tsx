@@ -9,7 +9,7 @@ function matchesHost(site: string, host: string): boolean {
   return !!host && (host === site || host.endsWith(`.${site}`));
 }
 
-export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHost: string; onClose: () => void; onDone: (sites: number) => void }) {
+export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHost: string; onClose: () => void; onDone: (r: { sites: number; imported: number; skipped: number }) => void }) {
   const { t } = useTranslation();
   const [supported, setSupported] = useState<boolean | null>(null);
   const [sources, setSources] = useState<{ id: string; label: string }[]>([]);
@@ -64,8 +64,10 @@ export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHo
     // macOS 가 키체인 접근 허용 창을 띄운다 — 사람이 누를 때까지 기다린다.
     const r = await window.sudal.browser.importLogins(source, [...picked]).catch((e: unknown) => ({ ok: false as const, error: String(e) }));
     setBusy(false);
-    if (r.ok) onDone(picked.size);
-    else setError(r.error);
+    if (!r.ok) setError(r.error);
+    // 하나도 못 가져왔으면 성공처럼 닫지 않는다.
+    else if (r.imported === 0) setError(t("panel.browser.import.none", { failed: r.failed + r.partitioned }));
+    else onDone({ sites: picked.size, imported: r.imported, skipped: r.failed + r.partitioned });
   };
 
   return (
