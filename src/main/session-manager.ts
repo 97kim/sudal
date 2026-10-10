@@ -11,6 +11,7 @@ import type {
   ForkPoint,
   TurnResultEvent,
 } from "@shared/chat-events";
+import { sameCwdOrNull } from "@shared/any-path";
 import { buildDedupeIndex, dropReplayedPrefix, indexEvent, type DedupeIndex, type ReplayCutStats } from "@shared/event-dedupe";
 import { buildHandoff, estimateTokens, type Handoff } from "@shared/handoff";
 import type { Provider, ProviderRateLimitDto } from "@shared/ipc";
@@ -814,6 +815,9 @@ export class SessionManager {
     const s = this.sessions.get(tabId);
     if (!s || !s.external) return;
     if (s.external.watch) clearInterval(s.external.watch);
+    // 1초 간격 확인 사이에 기록 파일이 생기고 CLI 가 끝났을 수 있다 — 감시를 끄기 전에 한 번 더 본다
+    const found = this.newestTranscriptSince(s.provider, s.external.cwd, s.external.since);
+    if (found && found.sessionId !== s.sessionId) this.switchToTranscript(s, found.sessionId, found.file, Date.now());
     s.external = null;
     s.mirror?.stop();
     s.mirror = null;
@@ -1109,7 +1113,8 @@ export class SessionManager {
         meta.model = undefined;
       }
     }
-    if (patch.cwd !== undefined && patch.cwd !== s.cwd) {
+    // 같은 폴더를 다르게 적은 것(Windows 의 C:\Repo 와 c:/repo)은 바뀐 게 아니다 — 세션을 버리지 않는다
+    if (patch.cwd !== undefined && !sameCwdOrNull(patch.cwd, s.cwd)) {
       // 작업 경로가 바뀌면 provider 세션은 새로 시작한다 (기록은 그대로). 살아 있던 프로세스는 옛 cwd 것이라 내린다.
       closeProviderSessions(tabId);
       s.cwd = patch.cwd;
@@ -1141,7 +1146,7 @@ export class SessionManager {
    */
   inheritCwd(tabId: string, cwd: string | null): void {
     const s = this.sessions.get(tabId);
-    if (!s || s.cwd === cwd) return;
+    if (!s || sameCwdOrNull(s.cwd, cwd)) return;
     closeProviderSessions(tabId);
     s.cwd = cwd;
     s.sessionId = null;

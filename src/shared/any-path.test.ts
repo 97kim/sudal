@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { basenameAny, dirnameAny, isAbsoluteAny, isUnderAny, joinAny, relativeAny, sameCwd, samePath, trimSep } from "./any-path";
+import { basenameAny, dirnameAny, isAbsoluteAny, isUnderAny, joinAny, relativeAny, sameCwd, sameCwdOrNull, samePath, trimSep } from "./any-path";
 import { formatShortcut } from "./shortcut";
 
 test("any-path: macOS·Windows 표기 모두", () => {
@@ -53,6 +53,10 @@ test("sameCwd: 다른 프로그램이 적은 Windows 작업 경로를 대소문�
   assert.equal(sameCwd("C:\\Users\\김수달\\repo", "c:/users/김수달/repo/"), true);
   assert.equal(sameCwd("\\\\?\\C:\\Users\\a\\repo", "C:\\Users\\a\\repo"), true);
   assert.equal(sameCwd("C:\\Users\\a\\repo", "C:\\Users\\a\\repo2"), false);
+  assert.equal(sameCwd("\\\\?\\UNC\\server\\share\\repo", "\\\\server\\share\\repo"), true);
+  assert.equal(sameCwdOrNull(null, null), true);
+  assert.equal(sameCwdOrNull("C:\\Repo", "c:/repo"), true);
+  assert.equal(sameCwdOrNull(null, "C:\\Repo"), false);
   // macOS 경로는 대소문자를 구분한다(기존 동작)
   assert.equal(sameCwd("/Users/a/Repo", "/Users/a/repo"), false);
   assert.equal(sameCwd("/Users/a/repo/", "/Users/a/repo"), true);

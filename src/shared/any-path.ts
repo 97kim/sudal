@@ -73,11 +73,16 @@ export function samePath(a: string, b: string): boolean {
 
 /**
  * 다른 프로그램이 기록한 작업 경로(Codex rollout 의 session_meta.cwd 등)가 이 경로와 같은가.
- * Windows 는 대소문자·구분자에 더해 긴 경로 접두어(\\?\)가 붙어 올 수 있다.
+ * Windows 는 대소문자·구분자에 더해 긴 경로 접두어가 붙어 올 수 있다: \\?\C:\… 는 C:\…, \\?\UNC\서버\… 는 \\서버\….
  */
 export function sameCwd(a: string, b: string): boolean {
-  const strip = (p: string) => p.replace(/^\\\\\?\\/, "");
+  const strip = (p: string) => p.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "");
   return samePath(strip(a), strip(b));
+}
+
+/** 비어 있을 수 있는 두 작업 경로가 같은 폴더인가(둘 다 비었어도 같다). */
+export function sameCwdOrNull(a: string | null, b: string | null): boolean {
+  return a === b || (a !== null && b !== null && sameCwd(a, b));
 }
 
 /** child 가 parent 자신이거나 그 안에 있는지. */

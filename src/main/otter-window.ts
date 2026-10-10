@@ -37,6 +37,8 @@ export class OtterWindow {
   private hovering = false;
   private mood: OtterMood = "idle";
   private roamTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 끄는 중의 위치(소수까지). 끌기가 끝나면 비운다. */
+  private dragAt: { x: number; y: number } | null = null;
   private walking: { timer: ReturnType<typeof setInterval>; motion: OtterMotion; dir: 1 | -1; toX: number; x: number; y: number; at: number } | null = null;
 
   constructor(private readonly deps: OtterDeps) {
@@ -52,10 +54,17 @@ export class OtterWindow {
     ipcMain.on(OTTER_IPC.drag, (_e, dx: number, dy: number) => {
       if (!this.win) return;
       this.stopWalk(false);
-      const [x, y] = this.win.getPosition();
-      this.moveTo(x + dx, y + dy);
+      // 끄는 동안 위치를 매번 다시 읽어 더하면 소수 배율에서 반올림 오차가 쌓인다 — 시작 위치에 이동량을 누적한다
+      if (!this.dragAt) {
+        const [x, y] = this.win.getPosition();
+        this.dragAt = { x, y };
+      }
+      this.dragAt.x += dx;
+      this.dragAt.y += dy;
+      this.moveTo(this.dragAt.x, this.dragAt.y);
     });
     ipcMain.on(OTTER_IPC.dragEnd, () => {
+      this.dragAt = null;
       if (!this.win) return;
       const [x, y] = this.win.getPosition();
       this.deps.savePosition({ x, y });
@@ -219,11 +228,6 @@ export class OtterWindow {
       backgroundColor: "#00000000",
       hasShadow: false,
       resizable: false,
-      // 프로그램이 바꾸는 크기까지 막는다(resizable 은 사용자의 크기 조절만 막는다) — moveTo 와 함께 Windows 배율 오차 안전망
-      minWidth: WIDTH,
-      maxWidth: WIDTH,
-      minHeight: HEIGHT,
-      maxHeight: HEIGHT,
       fullscreenable: false,
       skipTaskbar: true,
       // 눌러도 다른 앱의 포커스를 빼앗지 않는다(입력하던 곳에 그대로 남는다).
