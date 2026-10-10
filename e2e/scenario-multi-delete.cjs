@@ -84,6 +84,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.click('.bg-err-bg button:has-text("취소")');
   res("C (Delete 키로 확인 줄)", one.length === 1 && /1개/.test(confirm2 || ""), JSON.stringify({ one: one.length, confirm2 }));
 
+  // D: 키보드로 고르기 — 행에 포커스 → Space 로 고르고, ↑ 로 옮겨 Space, Esc 로 확인 줄과 선택을 닫는다
+  const ws2 = cli("tab", "new", "--ws", ws.workspaceId, "--title", "마").tab.id;
+  await sleep(600);
+  await page.focus(row("라"));
+  await page.keyboard.press(" ");
+  await page.focus(`[data-session="${ws2}"]`);
+  await page.keyboard.press("ArrowUp");
+  const focusedId = await ev(() => document.activeElement?.getAttribute("data-session"));
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press(" ");
+  const kb = await selected();
+  await page.keyboard.press(process.platform === "darwin" ? "Backspace" : "Delete");
+  await sleep(200);
+  const before = await ev(() => !!document.querySelector(".bg-err-bg"));
+  await page.keyboard.press("Escape");
+  await sleep(200);
+  const after = await ev(() => ({ confirm: !!document.querySelector(".bg-err-bg"), selected: document.querySelectorAll("[data-session][data-selected]").length }));
+  res("D (키보드로 고르기 · Esc 로 확인 줄과 선택 닫기)", kb.length === 2 && before && !after.confirm && after.selected === 0, JSON.stringify({ kb: kb.length, focusedId: focusedId === ids["라"], before, after }));
+
   if (errs.length) log("CONSOLE ERRORS:", errs.slice(0, 5));
   log(results.filter(([, ok]) => !ok).length === 0 ? "ALL PASS" : "FAILED: " + results.filter(([, ok]) => !ok).map(([n]) => n).join(", "));
   await b.close();

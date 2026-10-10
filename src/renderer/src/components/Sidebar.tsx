@@ -285,7 +285,8 @@ export function Sidebar({
   const [selection, setSelection] = useState<TabSelection>(EMPTY_SELECTION);
   const selectableOrder = useMemo(() => {
     const out: string[] = [];
-    for (const w of model.workspaces) {
+    // 화면에 그리는 순서(예약 워크스페이스가 맨 위로 올라간다)와 같아야 Shift 범위에 안 보이는 세션이 끼지 않는다
+    for (const w of workspaces) {
       if (collapsed.has(w.id)) continue;
       const tabs = workspaceTabs(model, w.id);
       const closed = tabs.filter((t) => !t.open).length;
@@ -293,7 +294,7 @@ export function Sidebar({
       for (const t of hidden > 0 ? tabs.slice(0, tabs.length - hidden) : tabs) out.push(t.id);
     }
     return out;
-  }, [model, collapsed, showAllClosed]);
+  }, [model, workspaces, collapsed, showAllClosed]);
   useEffect(() => setSelection((s) => pruneSelection(s, selectableOrder)), [selectableOrder]);
   // 워크스페이스 만들기(이름 입력 행) · 워크스페이스 이름 변경(행 안에서).
   const [creating, setCreating] = useState(false);
@@ -332,6 +333,8 @@ export function Sidebar({
     | { kind: "tabs"; id: string; ids: string[] }
     | null
   >(null);
+  // 확인 줄을 띄운 뒤 선택이 바뀌면(워크스페이스를 접어 빠지는 등) 그 확인은 이제 맞지 않는다 — 숨은 세션까지 지울 뻔했다
+  useEffect(() => setConfirm((c) => (c?.kind === "tabs" ? null : c)), [selection]);
   const selectedInOrder = () => selectableOrder.filter((id) => selection.ids.has(id));
   const askDeleteSelected = () => {
     const ids = selectedInOrder();
@@ -341,9 +344,14 @@ export function Sidebar({
   useEffect(() => {
     if (selection.ids.size === 0) return;
     const onKey = (e: KeyboardEvent) => {
+      // 포커스가 사이드바 안이거나 아무 데도 없을 때만 — 다른 화면(설정·팔레트·입력칸)에서 누른 ⌫ 를 가로채지 않는다
       const el = document.activeElement as HTMLElement | null;
-      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest(".xterm, .cm-editor"))) return;
-      if (e.key === "Escape") setSelection(EMPTY_SELECTION);
+      if (el && el !== document.body && !el.closest("[data-sidebar]")) return;
+      if (el?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName ?? "")) return;
+      if (e.key === "Escape") {
+        setConfirm((c) => (c?.kind === "tabs" ? null : c));
+        setSelection(EMPTY_SELECTION);
+      }
       else if ((e.key === "Delete" || e.key === "Backspace") && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         askDeleteSelected();
@@ -691,7 +699,7 @@ export function Sidebar({
               )}
 
               {!isCollapsed && (
-                <ul className="ml-3 flex flex-col gap-px border-l border-line pl-1.5">
+                <ul className="ml-3 flex flex-col gap-px border-l border-line pl-1.5" role="listbox" aria-multiselectable="true" aria-label={w.name}>
                   {tabs.length === 0 && (
                     <li className="px-2 py-1 text-[11px] text-muted-2">
                       {t("nav.sidebar.noSessions")}
@@ -741,6 +749,11 @@ export function Sidebar({
                             renaming?.tabId === tab.id ? renaming.draft : null
                           }
                           renameRef={renameRef}
+                          onSelectKey={(range) =>
+                            setSelection((s) =>
+                              range ? rangeSelection(s, tab.id, selectableOrder, model.activeTabId) : toggleSelection(s, tab.id, model.activeTabId),
+                            )
+                          }
                           onClick={(e) => {
                             if (isMod(e)) return setSelection((s) => toggleSelection(s, tab.id, model.activeTabId));
                             if (e.shiftKey) return setSelection((s) => rangeSelection(s, tab.id, selectableOrder, model.activeTabId));
@@ -1011,6 +1024,7 @@ function SessionRow({
   renaming,
   renameRef,
   onClick,
+  onSelectKey,
   onStartRename,
   onRenameChange,
   onRenameCommit,
@@ -1028,6 +1042,8 @@ function SessionRow({
   renaming: string | null;
   renameRef: React.RefObject<HTMLInputElement | null>;
   onClick: (e: React.MouseEvent) => void;
+  /** 키보드로 고르기: Space(range=false 면 넣고 빼기), Shift+Space(범위). */
+  onSelectKey: (range: boolean) => void;
   onStartRename: () => void;
   onRenameChange: (v: string) => void;
   onRenameCommit: () => void;
@@ -1048,7 +1064,25 @@ function SessionRow({
       onMouseDown={(e) => e.shiftKey && e.preventDefault()}
       onDoubleClick={onStartRename}
       onContextMenu={onContextMenu}
-      className={`group flex cursor-default items-center gap-2 rounded-md py-1.5 pl-2 pr-1 ${
+      // 키보드로도 고르고 연다: Enter 열기, Space 넣고 빼기, Shift+Space 범위, ↑↓ 옆 세션으로
+      tabIndex={renaming === null ? 0 : -1}
+      role="option"
+      aria-selected={selected}
+      onKeyDown={(e) => {
+        if (renaming !== null || e.target !== e.currentTarget) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onClick(e as unknown as React.MouseEvent);
+        } else if (e.key === " ") {
+          e.preventDefault();
+          onSelectKey(e.shiftKey);
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const rows = [...document.querySelectorAll<HTMLElement>("[data-sidebar] [data-session]")];
+          rows[rows.indexOf(e.currentTarget) + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+        }
+      }}
+      className={`group flex cursor-default items-center gap-2 rounded-md py-1.5 pl-2 pr-1 outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
         dragging ? "opacity-70" : ""
       } ${selected ? "bg-accent/15" : active || highlighted ? "bg-panel-2" : "hover:bg-panel-2/60"}`}
       data-session={tab.id}
