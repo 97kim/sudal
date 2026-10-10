@@ -5,6 +5,7 @@
 //  D) 확대 배율은 호스트별로 기억된다(localhost 확대 → 127.0.0.1 은 100% → localhost 로 돌아오면 다시 확대)
 //  E) 받은 파일이 다운로드 줄에 "받았어요" 로 뜬다(실제 다운로드 폴더에 받으므로 끝에 지운다)
 //  F) 빈 브라우저 탭에 자주 간 곳이 보인다
+//  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
 const app = path.join(E2E, "..", "release/mac-arm64/Sudal.app");
@@ -31,6 +32,17 @@ const srv = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/plain", "content-disposition": `attachment; filename="${fileName}"` });
     return res.end("hello");
   }
+  if (req.url === "/agent") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return res.end(`<!doctype html><title>agent</title><body style="height:4000px">
+      <input id="q"><div id="out"></div><img src="/missing.png">
+      <script>
+        console.error("boom-e2e");
+        q.addEventListener("keydown", (e) => { if (e.key === "Enter") out.textContent = "entered:" + q.value; });
+        setTimeout(() => { const d = document.createElement("div"); d.id = "late"; d.textContent = "늦게 뜸"; d.style.cssText = "width:120px;height:40px;background:#c33"; document.body.prepend(d); }, 1000);
+      </script></body>`);
+  }
+  if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   res.end(`<!doctype html><title>home</title><a href="/other" target="_blank">새 탭 링크</a> <a href="/file">파일 받기</a>`);
@@ -118,6 +130,27 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await ev(() => document.querySelector("[data-editor-new-browser]")?.click());
   const freq = await waitFor((o) => [...document.querySelectorAll("[data-browser-frequent] button")].some((x) => x.textContent.includes(o)), `localhost:${port}`, 4000);
   res("F (자주 간 곳)", freq);
+
+  // G
+  cli("browser", "open", "--tab", tab, "--url", base + "/agent");
+  await sleep(500);
+  const w = cli("browser", "wait", "--tab", tab, "--selector", "#late", "--timeout", "8000");
+  const con = cli("browser", "console", "--tab", tab, "--level", "error");
+  const netr = cli("browser", "network", "--tab", tab);
+  cli("browser", "fill", "--tab", tab, "--selector", "#q", "--value", "hi");
+  const pr = cli("browser", "press", "--tab", tab, "--key", "Enter", "--selector", "#q");
+  const w2 = cli("browser", "wait", "--tab", tab, "--text", "entered:hi", "--timeout", "5000");
+  const sc = cli("browser", "scroll", "--tab", tab, "--to", "bottom");
+  const shotPath = path.join(os.tmpdir(), `sudal-e2e-shot-${Date.now()}.png`);
+  const shot = cli("browser", "screenshot", "--tab", tab, "--out", shotPath);
+  const shotEl = cli("browser", "screenshot", "--tab", tab, "--selector", "#late");
+  const isPng = (f) => { try { return fs.readFileSync(f).subarray(1, 4).toString() === "PNG"; } catch { return false; } };
+  const g = {
+    wait: !w.error, console: JSON.stringify(con).includes("boom-e2e"), network: JSON.stringify(netr).includes("missing.png"),
+    press: !pr.error && !w2.error, scroll: !sc.error, shot: isPng(shot.path ?? shotPath), shotEl: isPng(shotEl.path ?? ""),
+  };
+  for (const f of [shot.path, shotEl.path]) { try { if (f) fs.rmSync(f); } catch {} }
+  res("G (에이전트 명령)", Object.values(g).every(Boolean), JSON.stringify({ g, w: w.error, pr: pr.error, w2: w2.error, sc: sc.error ?? sc, shot: shot.error ?? shot.path, shotEl: shotEl.error ?? shotEl.path, con: JSON.stringify(con).slice(0, 160), netr: JSON.stringify(netr).slice(0, 160) }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});
