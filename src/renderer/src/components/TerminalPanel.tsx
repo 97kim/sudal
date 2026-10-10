@@ -138,7 +138,8 @@ export function TerminalPanel({
         tabId,
         restored.map((t) => t.id),
         {
-          active: restored.find((t) => t.kind === "command")?.id ?? restored[restored.length - 1].id,
+          // 셸을 미뤄 목록이 비었으면 고를 것이 없다(곧 오는 CLI 를 onOpened 가 고른다)
+          active: restored.find((t) => t.kind === "command")?.id ?? restored.at(-1)?.id ?? null,
           height: DEFAULT_HEIGHT,
         },
         { minHeight: MIN_HEIGHT, maxHeight: maxHeight() },

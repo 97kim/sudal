@@ -815,8 +815,9 @@ export function ChatView({
                 open={terminalOpen}
                 onClose={() => setTerminalOpen(false)}
                 onAttach={attachToChat}
-                // 터미널이 세션을 쥐었으면(앱은 CLI 를 띄우기 전에 바꿔 둔다 — 다른 탭에 다녀와도 남는다) 셸을 만들지 않는다
-                holdShell={attaching || terminalControlled}
+                // 터미널이 세션을 쥐었으면(앱은 CLI 를 띄우기 전에 바꿔 둔다 — 다른 탭에 다녀와도 남는다) 셸을 만들지 않는다.
+                // 다시 마운트된 직후에는 세션 상태(config)를 아직 몰라 그것도 기다린다.
+                holdShell={attaching || terminalControlled || config === null}
                 dock={terminalDock}
                 onWidth={setTerminalWidth}
               />
