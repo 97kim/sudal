@@ -77,7 +77,13 @@ export function EditorPane({
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel" data-editor-pane>
       <div className="flex h-9 shrink-0 items-stretch border-b border-line" data-editor-tabs>
-        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+        {/* 스크롤 막대는 탭을 가려서 숨긴다. 대신 세로 휠로도 가로로 넘긴다(트랙패드 가로 밀기는 그대로). */}
+        <div
+          className="no-scrollbar flex min-w-0 flex-1 items-stretch overflow-x-auto"
+          onWheel={(e) => {
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
+          }}
+        >
           {tabs.files.map((f) => {
             const active = f === tabs.active;
             return (

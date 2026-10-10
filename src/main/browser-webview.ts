@@ -1,6 +1,6 @@
 // 인앱 브라우저 웹뷰가 스스로 일으키는 일(새 창·우클릭·다운로드)을 main 에서 받는다.
 // 웹뷰에는 preload 가 없어 렌더러가 직접 들을 수 없다 — 그 웹뷰를 품은 창(hostWebContents)에 browser:event 로 알린다.
-import { app, BrowserWindow, clipboard, Menu, session, shell, type MenuItemConstructorOptions, type WebContents } from "electron";
+import { app, BrowserWindow, clipboard, Menu, session, shell, type DownloadItem, type MenuItemConstructorOptions, type WebContents } from "electron";
 import { existsSync } from "node:fs";
 import { join, parse } from "node:path";
 import { IPC, type BrowserEventDto } from "@shared/ipc";
@@ -97,6 +97,8 @@ export function attachWebviewHandlers(contents: WebContents): void {
 
 /** 받은 파일 id → 저장 경로. 렌더러는 id 만 보내고, 연 적 있는 파일만 열거나 보여 준다. */
 const downloads = new Map<string, string>();
+/** 받는 중인 것만 — 취소용. 끝나면 지운다. */
+const active = new Map<string, DownloadItem>();
 let downloadSeq = 0;
 
 /**
@@ -123,6 +125,7 @@ export function watchBrowserDownloads(): void {
     item.setSavePath(path);
     reserved.add(reserveKey(path));
     downloads.set(id, path);
+    active.set(id, item);
     const name = parse(path).base;
     // 받는 동안 탭을 닫으면 웹뷰가 먼저 사라진다 — 소멸한 webContents 를 읽으면 main 이 던지므로 처음에 잡아 둔다.
     const webContentsId = contents.id;
@@ -148,6 +151,7 @@ export function watchBrowserDownloads(): void {
     });
     item.once("done", (_ev, state) => {
       reserved.delete(reserveKey(path));
+      active.delete(id);
       send(state === "completed" ? "completed" : state === "cancelled" ? "cancelled" : "failed");
     });
   });
@@ -160,4 +164,27 @@ export function showDownload(id: string, how: "open" | "reveal"): boolean {
   if (how === "open") void shell.openPath(path);
   else shell.showItemInFolder(path);
   return true;
+}
+
+/** 받는 중인 파일을 취소한다. 이미 끝났거나 모르는 id 면 false. */
+export function cancelDownload(id: string): boolean {
+  const item = active.get(id);
+  if (!item) return false;
+  item.cancel();
+  return true;
+}
+
+/**
+ * 그 주소가 응답하는지만 본다(연결 오류 화면의 "서버가 뜨면 다시 열기"). 상태 코드와 상관없이 응답이 오면 true —
+ * 개발 서버는 HEAD 나 루트에 404 를 주기도 하지만 켜져 있기는 하다.
+ */
+export async function probeUrl(url: string): Promise<boolean> {
+  if (!isWeb(url)) return false;
+  try {
+    const r = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(1500) });
+    void r.body?.cancel();
+    return true;
+  } catch {
+    return false;
+  }
 }

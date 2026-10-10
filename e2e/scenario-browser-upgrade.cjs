@@ -6,12 +6,16 @@
 //  E) 받은 파일이 다운로드 줄에 "받았어요" 로 뜬다(실제 다운로드 폴더에 받으므로 끝에 지운다)
 //  F) 빈 브라우저 탭에 자주 간 곳이 보인다
 //  H) 리뷰 반영: 첫 페이지의 window.open 도 새 탭으로, 같은 이름 동시 다운로드는 다른 파일로, screenshot --out 은 있는 파일을 덮지 않는다
+//  I) 요소 선택이 React 디버그 정보로 소스 위치를 찾아 첨부·알림에 싣고, 알림에서 에디터로 연다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
 const app = path.join(E2E, "..", "release/mac-arm64/Sudal.app");
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-br-"));
-const repo = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-br-repo-"));
+// 탭 cwd 와 파일 찾기가 돌려주는 실제 경로(/private/var…)가 같아야 상대 경로로 보인다.
+const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-br-repo-")));
+fs.mkdirSync(path.join(repo, "src/pages"), { recursive: true });
+fs.writeFileSync(path.join(repo, "src/pages/Dashboard.tsx"), Array.from({ length: 60 }, (_, i) => `// line ${i + 1}`).join("\n"));
 const cli = (...a) => {
   try {
     return JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: userData }, encoding: "utf8" }));
@@ -52,6 +56,12 @@ const srv = http.createServer((req, res) => {
     return setTimeout(() => res.end("llo"), 1500);
   }
   if (req.url === "/two") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>two</title><a href="/fileslow">하나</a> <a href="/fileslow">둘</a>`); }
+  if (req.url === "/react") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    // React 18 개발 빌드가 DOM 요소에 다는 fiber 를 흉내 낸다(Vite 처럼 /src/… URL 경로).
+    return res.end(`<title>react</title><button id="b" style="margin:40px;padding:10px">자세히 보기</button>
+      <script>b["__reactFiber$e2e"] = { type: "button", _debugSource: { fileName: "/src/pages/Dashboard.tsx", lineNumber: 42, columnNumber: 7 }, _debugOwner: { type: { name: "DetailButton" } } };</script>`);
+  }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -186,6 +196,20 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   const kept = fs.readFileSync(existing, "utf8") === "keep";
   fs.rmSync(existing);
   res("H (첫 페이지 window.open · 동시 다운로드 · --out 덮어쓰기 거절)", popupTab && twoFiles && kept && over.error?.code === "bad_request" && String(over.error?.message).includes(existing), JSON.stringify({ popupTab, twoFiles, kept, over: over.error ?? over }));
+
+  // I
+  cli("browser", "open", "--tab", tab, "--url", base + "/react");
+  await sleep(1500);
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  // 웹뷰 안은 호스트에서 마우스로 누를 수 없다 — 페이지 안에서 click 을 일으키면 선택 스크립트가 받는다.
+  await ev(() => [...document.querySelectorAll("webview")].find((w) => w.offsetParent)?.executeJavaScript('document.getElementById("b").click()'));
+  const toastOk = await waitFor(() => [...document.querySelectorAll("[data-browser-pick-msg]")].some((x) => x.offsetParent && x.textContent.includes("src/pages/Dashboard.tsx:42")), null, 6000);
+  const toastText = await ev(() => [...document.querySelectorAll("[data-browser-pick-msg]")].find((x) => x.offsetParent)?.textContent ?? "");
+  const composer = await ev(() => [...document.querySelectorAll("[data-composer] textarea")].find((x) => x.offsetParent)?.value ?? "");
+  await ev(() => [...document.querySelectorAll("[data-browser-open-source]")].find((x) => x.offsetParent)?.click());
+  const srcOpened = await waitFor((f) => [...document.querySelectorAll("[data-editor-tab]")].some((t) => (t.getAttribute("data-editor-tab") || "").endsWith(f)), "src/pages/Dashboard.tsx", 5000);
+  res("I (요소 선택 소스 위치)", toastOk && /소스: src\/pages\/Dashboard\.tsx:42 \(<DetailButton>\)/.test(composer) && srcOpened, JSON.stringify({ toastOk, toastText: toastText.slice(0, 100), composer: composer.slice(0, 120), srcOpened }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

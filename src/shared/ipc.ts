@@ -259,6 +259,8 @@ export const IPC = {
   browserNetFailures: "browser:net-failures",
   browserEvent: "browser:event",
   browserShowDownload: "browser:show-download",
+  browserCancelDownload: "browser:cancel-download",
+  browserProbe: "browser:probe",
   backgroundJobs: "jobs:list",
   backgroundJobsChanged: "jobs:changed",
   gitInfo: "git:info",
@@ -1033,6 +1035,10 @@ export interface SudalApi {
     onEvent(cb: (ev: BrowserEventDto) => void): () => void;
     /** 받은 파일을 열거나 폴더에서 보여 준다. 이 앱이 받은 파일(id)만. */
     showDownload(id: string, how: "open" | "reveal"): Promise<boolean>;
+    /** 받는 중인 파일을 취소한다. */
+    cancelDownload(id: string): Promise<boolean>;
+    /** 그 주소에 응답이 오는지(서버가 켜졌는지)만 본다. */
+    probe(url: string): Promise<boolean>;
   };
 }
 

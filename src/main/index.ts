@@ -64,7 +64,7 @@ import type { BrowserRect, KeyInput } from "@shared/browser-control";
 import { fetchDocImage, fetchFavicon } from "./browser-favicon";
 import { forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
 import { BROWSER_PARTITION } from "./browser-net";
-import { attachWebviewHandlers, showDownload, watchBrowserDownloads } from "./browser-webview";
+import { attachWebviewHandlers, cancelDownload, probeUrl, showDownload, watchBrowserDownloads } from "./browser-webview";
 import { BackgroundJobWatcher } from "./background-jobs";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import { BackgroundTaskRegistry } from "./bg-tasks";
@@ -2643,6 +2643,8 @@ function registerIpc() {
     if (clear === true) clearBrowserNetFailures(webContentsId);
     return out;
   });
+  ipcMain.handle(IPC.browserProbe, (_e, url: unknown) => (typeof url === "string" ? probeUrl(url) : false));
+  ipcMain.handle(IPC.browserCancelDownload, (_e, id: unknown) => (typeof id === "string" ? cancelDownload(id) : false));
   ipcMain.handle(IPC.browserShowDownload, (_e, id: unknown, how: unknown) =>
     typeof id === "string" && (how === "open" || how === "reveal") ? showDownload(id, how) : false,
   );

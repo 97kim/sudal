@@ -334,6 +334,8 @@ const api: SudalApi = {
       return () => ipcRenderer.removeListener(IPC.browserEvent, handler);
     },
     showDownload: (id: string, how: "open" | "reveal") => ipcRenderer.invoke(IPC.browserShowDownload, id, how),
+    cancelDownload: (id: string) => ipcRenderer.invoke(IPC.browserCancelDownload, id),
+    probe: (url: string) => ipcRenderer.invoke(IPC.browserProbe, url),
   },
 };
 
