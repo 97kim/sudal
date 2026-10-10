@@ -7,6 +7,7 @@
 //  F) 빈 브라우저 탭에 자주 간 곳이 보인다
 //  H) 리뷰 반영: 첫 페이지의 window.open 도 새 탭으로, 같은 이름 동시 다운로드는 다른 파일로, screenshot --out 은 있는 파일을 덮지 않는다
 //  I) 요소 선택이 React 디버그 정보로 소스 위치를 찾아 첨부·알림에 싣고, 알림에서 에디터로 연다
+//  I-3) 비활성(disabled) 버튼도 실제 마우스로 고를 수 있고, 고른 링크는 열리지 않는다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
@@ -63,6 +64,7 @@ const srv = http.createServer((req, res) => {
       <script>b["__reactFiber$e2e"] = { type: "button", _debugSource: { fileName: "/src/pages/Dashboard.tsx", lineNumber: 42, columnNumber: 7 }, _debugOwner: { type: { name: "DetailButton" } } };</script>`);
   }
   if (req.url === "/outside") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>outside</title><button id="o" data-insp-path="/etc/hosts:1" style="margin:40px">밖</button>`); }
+  if (req.url === "/disabled") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>disabled</title><button id="d" disabled style="margin:40px;padding:12px 24px">비활성 버튼</button><br><a id="l" href="/other" style="margin:40px">다른 곳</a>`); }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -222,6 +224,24 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   const outsideToast = await waitFor(() => [...document.querySelectorAll("[data-browser-pick-msg]")].some((x) => x.offsetParent && x.textContent.includes("hosts")), null, 6000);
   const outsideBtn = await ev(() => [...document.querySelectorAll("[data-browser-open-source]")].some((x) => x.offsetParent));
   res("I-2 (저장소 밖 경로는 열기 버튼 없음)", outsideToast && !outsideBtn, JSON.stringify({ outsideToast, outsideBtn }));
+
+  // I-3: el.click() 은 비활성 버튼에서 아무 일도 안 일어나므로, 웹뷰에 진짜 마우스 입력을 보낸다.
+  cli("browser", "open", "--tab", tab, "--url", base + "/disabled");
+  await sleep(1500);
+  const realPick = async (id) => {
+    await page.click("[data-browser-pick] >> visible=true");
+    await sleep(400);
+    const r = JSON.parse(await ev((i) => [...document.querySelectorAll("webview")].find((w) => w.offsetParent)?.executeJavaScript(`JSON.stringify((() => { const b = document.getElementById("${i}").getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })())`), id));
+    await ev(({ x, y }) => { const w = [...document.querySelectorAll("webview")].find((w) => w.offsetParent); w.focus(); w.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 }); w.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 }); }, r);
+    return waitFor(() => [...document.querySelectorAll("[data-browser-pick-msg]")].some((x) => x.offsetParent && x.textContent.includes("<")), null, 5000);
+  };
+  const disabledOk = await realPick("d");
+  const disabledText = await ev(() => [...document.querySelectorAll("[data-browser-pick-msg]")].find((x) => x.offsetParent)?.textContent ?? "");
+  await sleep(4500);
+  const linkOk = await realPick("l");
+  await sleep(1500);
+  const stayed = (await ev(() => [...document.querySelectorAll("webview")].find((w) => w.offsetParent)?.getURL())).endsWith("/disabled");
+  res("I-3 (비활성 버튼 고르기 · 고른 링크는 안 열림)", disabledOk && /button/.test(disabledText) && linkOk && stayed, JSON.stringify({ disabledOk, disabledText: disabledText.slice(0, 80), linkOk, stayed }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

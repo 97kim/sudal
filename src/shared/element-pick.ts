@@ -103,12 +103,18 @@ const PICKER_SCRIPT = `(() => {
   const CANCEL = ${JSON.stringify(PICK_CANCEL_MARK)};
   const PROPS = ${JSON.stringify(ELEMENT_STYLE_PROPS)};
   const w = window;
-  if (w.__sudalPick) { w.__sudalPick.stop(); }
+  if (w.__sudalPick) { w.__sudalPick.stop(); if (w.__sudalPick.dispose) w.__sudalPick.dispose(); }
   const box = document.createElement("div");
   box.setAttribute("data-sudal-pick-box", "");
   Object.assign(box.style, { position: "fixed", pointerEvents: "none", zIndex: "2147483647", border: "2px solid #6366f1", background: "rgba(99,102,241,0.12)", borderRadius: "3px", display: "none", boxSizing: "border-box" });
   const tip = document.createElement("div");
   Object.assign(tip.style, { position: "fixed", pointerEvents: "none", zIndex: "2147483647", font: "11px/1.4 -apple-system, system-ui, sans-serif", background: "#18202a", color: "#fff", padding: "2px 6px", borderRadius: "4px", display: "none", maxWidth: "60vw", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+  // 선택 중엔 페이지 전체를 투명한 막으로 덮어 마우스를 막이 받는다. 브라우저는 비활성(disabled) 버튼에
+  // mousedown·click 을 보내지 않아 요소에 직접 리스너를 걸면 그런 버튼을 못 고른다 — 막 아래 요소는 elementsFromPoint 로 찾는다.
+  // 클릭도 막에 떨어지므로 링크가 열리거나 폼이 제출되지 않는다. 휠은 막을 지나 페이지가 스크롤된다.
+  const shield = document.createElement("div");
+  shield.setAttribute("data-sudal-pick-shield", "");
+  Object.assign(shield.style, { position: "fixed", inset: "0", zIndex: "2147483646", background: "transparent", cursor: "crosshair", display: "none" });
   let active = false;
   let cur = null;
   const selectorOf = (el) => {
@@ -146,37 +152,57 @@ ${SOURCE_FN}
     tip.textContent = selectorOf(el) + "  " + Math.round(r.width) + "×" + Math.round(r.height);
     Object.assign(tip.style, { display: "block", left: Math.max(4, r.left) + "px", top: (r.top > 24 ? r.top - 22 : r.bottom + 4) + "px" });
   };
+  const under = (x, y) => document.elementsFromPoint(x, y).find((n) => n !== shield && n !== box && n !== tip) || null;
   const onMove = (e) => {
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    if (!el || el === box || el === tip || el === document.documentElement) return;
+    const el = under(e.clientX, e.clientY);
+    if (!el || el === document.documentElement) return;
     cur = el === document.body ? null : el;
     if (cur) place(cur);
   };
+  // 골라 낸 뒤 이어서 오는 클릭 한 번은 페이지에 넘기지 않는다 — 링크가 열리거나 폼이 제출되면 안 된다.
+  let swallowUntil = 0;
   const stop = () => {
     active = false;
-    box.style.display = "none"; tip.style.display = "none";
-    document.removeEventListener("mousemove", onMove, true);
-    document.removeEventListener("click", onClick, true);
+    box.style.display = "none"; tip.style.display = "none"; shield.style.display = "none";
     document.removeEventListener("keydown", onKey, true);
   };
-  const onClick = (e) => {
-    if (!active) return;
-    e.preventDefault(); e.stopPropagation();
-    const el = e.target && e.target.nodeType === 1 && e.target !== box && e.target !== tip ? e.target : cur;
-    if (!el) return;
+  const pick = (el) => {
     box.style.display = "none"; tip.style.display = "none";
     console.log(MARK + JSON.stringify(info(el)));
+    swallowUntil = Date.now() + 1000;
     stop();
+  };
+  const targetOf = (e) => (e.target && e.target.nodeType === 1 && e.target !== box && e.target !== tip && e.target !== shield ? e.target : cur);
+  // 고르는 건 막의 mousedown 에서 — 그 자리 밑의 요소를 고른다.
+  const onDown = (e) => {
+    if (!active || e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const el = under(e.clientX, e.clientY) || cur;
+    if (el && el !== document.documentElement && el !== document.body) pick(el);
+  };
+  shield.addEventListener("mousemove", onMove);
+  shield.addEventListener("mousedown", onDown);
+  // 프로그램으로 일으킨 click(마우스 없이 el.click())도 받고, 고른 직후의 진짜 click 은 삼킨다.
+  const onClick = (e) => {
+    if (active) {
+      e.preventDefault(); e.stopPropagation();
+      const el = targetOf(e);
+      if (el) pick(el);
+    } else if (Date.now() < swallowUntil) {
+      e.preventDefault(); e.stopPropagation();
+      swallowUntil = 0;
+    }
   };
   const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stop(); console.log(CANCEL); } };
   const start = () => {
-    if (!box.isConnected) { document.documentElement.appendChild(box); document.documentElement.appendChild(tip); }
+    if (!box.isConnected) { document.documentElement.appendChild(shield); document.documentElement.appendChild(box); document.documentElement.appendChild(tip); }
     active = true;
-    document.addEventListener("mousemove", onMove, true);
-    document.addEventListener("click", onClick, true);
+    shield.style.display = "block";
     document.addEventListener("keydown", onKey, true);
   };
-  w.__sudalPick = { start, stop };
+  // click 리스너는 꺼진 뒤에도 남는다 — 고른 직후의 클릭을 삼켜야 해서(swallowUntil 이 지나면 아무것도 안 한다).
+  document.addEventListener("click", onClick, true);
+  w.__sudalPick = { start, stop, dispose: () => { document.removeEventListener("click", onClick, true); shield.remove(); box.remove(); tip.remove(); } };
   start();
   return "started";
 })()`;
