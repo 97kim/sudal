@@ -34,7 +34,7 @@ export const session: DeepPartial<typeof ko> = {
     appServerNoResponse: "codex app-server didn't respond: {{method}}",
     appServerError: "codex app-server error {{code}}",
     resumeConflict:
-      "Another Codex is using the previous Codex thread ({{id}}…). If a TUI opened with `codex resume` is still running in the terminal, close it with /exit and send again. This tab's session is left as it is. ({{detail}})",
+      "Another Codex is using the previous Codex thread ({{id}}…). If a TUI opened with `codex resume` is still running in the terminal, close it with /exit and send again. If you already closed it, Codex's background server is still holding the thread — when no other Codex work is running, run `codex app-server daemon restart` in a terminal and send again. This tab's session is left as it is. ({{detail}})",
     image: {
       empty: "{{name}}: The image data is empty.",
       dataPrefix: "{{name}}: Send plain base64 without the data: prefix.",

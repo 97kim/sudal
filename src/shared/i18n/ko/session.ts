@@ -32,7 +32,7 @@ export const session = {
     appServerNoResponse: "codex app-server 응답 없음: {{method}}",
     appServerError: "codex app-server 오류 {{code}}",
     resumeConflict:
-      "이전 Codex 스레드({{id}}…)를 다른 Codex 가 쓰는 중입니다. 터미널에서 `codex resume` 으로 연 TUI 가 있으면 그쪽을 /exit 로 닫고 다시 보내세요. 이 탭의 세션은 그대로 둡니다. ({{detail}})",
+      "이전 Codex 스레드({{id}}…)를 다른 Codex 가 쓰는 중입니다. 터미널에서 `codex resume` 으로 연 TUI 가 있으면 그쪽을 /exit 로 닫고 다시 보내세요. TUI 를 이미 닫았다면 Codex 백그라운드 서버가 아직 붙잡고 있는 것입니다 — 다른 Codex 작업이 없을 때 터미널에서 `codex app-server daemon restart` 를 실행하고 다시 보내세요. 이 탭의 세션은 그대로 둡니다. ({{detail}})",
     image: {
       empty: "{{name}}: 이미지 데이터가 비어 있습니다.",
       dataPrefix: "{{name}}: data: 접두사를 제외한 순수 base64 만 보낼 수 있습니다.",

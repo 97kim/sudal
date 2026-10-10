@@ -47,23 +47,29 @@ function captureVersion(binPath: string, env: NodeJS.ProcessEnv): Promise<string
  * 이 Codex 가 TUI 의 --no-daemon 을 아는가. Codex 0.16x 의 TUI 는 공유 백그라운드 서버(데몬)에 세션을 맡겨,
  * 터미널을 닫아 TUI 가 끝나도 데몬이 그 세션의 쓰기 권한을 쥐고 있었다. 그래서 채팅으로 돌아와 앱이 같은 세션을 열면
  * "already has an active writer" 로 거절됐다. --no-daemon 이면 TUI 가 자기 안에서 세션을 쥐어 끝날 때 같이 놓는다.
- * 옛 Codex 는 이 옵션을 모르면 시작조차 못 하므로 --help 에 있을 때만 쓴다. 실행 파일(경로·수정 시각)마다 한 번만 본다.
+ * 옛 Codex 는 이 옵션을 모르면 시작조차 못 하므로 --help 에 있을 때만 쓴다.
+ * 답을 받았을 때만 기억한다(시간 초과·실행 실패는 다음에 다시 본다). 열쇠는 실제로 실행되는 파일(Windows npm shim 이 가리키는
+ * node·js 포함)과 그 수정 시각이고, 업그레이드를 놓치지 않게 30분이 지나면 다시 본다.
  */
-const noDaemonCache = new Map<string, boolean>();
-export function codexSupportsNoDaemon(binPath: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  let key = binPath;
-  try {
-    key += `@${fs.statSync(binPath).mtimeMs}`;
-  } catch {
-    /* 없는 파일이면 아래 실행이 실패해 false */
-  }
-  const hit = noDaemonCache.get(key);
-  if (hit !== undefined) return Promise.resolve(hit);
+const NO_DAEMON_TTL_MS = 30 * 60_000;
+const noDaemonCache = new Map<string, { ok: boolean; at: number }>();
+export function codexSupportsNoDaemon(binPath: string, env: NodeJS.ProcessEnv, now = Date.now()): Promise<boolean> {
   const spec = launchSpec(binPath, ["--help"]);
+  const stamp = (p: string) => {
+    try {
+      return `${p}@${fs.statSync(p).mtimeMs}`;
+    } catch {
+      return p;
+    }
+  };
+  const key = [binPath, spec.command, ...spec.args.filter((a) => a !== "--help")].map(stamp).join("|");
+  const hit = noDaemonCache.get(key);
+  if (hit && now - hit.at < NO_DAEMON_TTL_MS) return Promise.resolve(hit.ok);
   return new Promise((resolve) => {
     execFile(spec.command, spec.args, { timeout: 5000, env, shell: spec.shell, windowsHide: true }, (err, stdout) => {
-      const ok = !err && /--no-daemon\b/.test(String(stdout));
-      noDaemonCache.set(key, ok);
+      if (err) return resolve(false);
+      const ok = /--no-daemon\b/.test(String(stdout));
+      noDaemonCache.set(key, { ok, at: now });
       resolve(ok);
     });
   });
