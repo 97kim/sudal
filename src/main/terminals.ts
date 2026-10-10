@@ -189,10 +189,9 @@ export class TerminalManager {
     // Windows 의 claude.cmd·codex.cmd 는 shim 대상(.exe·node .js)으로 띄운다. 못 읽으면 cmd.exe 를 거친다 —
     // CreateProcess 는 배치 파일을 직접 띄우지 못한다. 인자는 launchSpec 이 cmd.exe 규칙으로 인용해 두었으니 문자열 그대로 넘긴다.
     const spec = launchSpec(file, args);
-    const envPath = env.PATH ?? env.Path ?? "";
     const [command, commandArgs]: [string, string[] | string] = spec.shell
-      ? [resolvePtyCommand(process.env.ComSpec || "cmd.exe", envPath), `/d /s /c "${[spec.command, ...spec.args].join(" ")}"`]
-      : [resolvePtyCommand(spec.command, envPath), spec.args];
+      ? [resolvePtyCommand(process.env.ComSpec || "cmd.exe", env), `/d /s /c "${[spec.command, ...spec.args].join(" ")}"`]
+      : [resolvePtyCommand(spec.command, env), spec.args];
     try {
       const pty = loadPty().spawn(command, commandArgs, {
         name: "xterm-256color",

@@ -87,14 +87,22 @@ test("launchSpec: npm shim 옆에 node.exe 가 있으면 그것으로 띄운다"
   assert.match(spec.command, /\\npm\\node\.exe$/i);
 });
 
-test("resolvePtyCommand: node-pty 가 못 찾는 상대 이름을 탭 PATH 에서 .exe 까지 붙여 절대 경로로", () => {
-  const PATH = "C:\\nvm\\v22;C:\\Windows\\System32";
-  const has = (p: string) => p === "C:\\nvm\\v22\\node.exe" || p === "C:\\Windows\\System32\\cmd.exe";
-  assert.equal(resolvePtyCommand("node", PATH, "win32", has), "C:\\nvm\\v22\\node.exe");
-  assert.equal(resolvePtyCommand("cmd.exe", PATH, "win32", has), "C:\\Windows\\System32\\cmd.exe");
-  // 이미 절대 경로거나 못 찾으면 그대로(node-pty 가 이유를 알린다)
-  assert.equal(resolvePtyCommand("C:\\x\\claude.exe", PATH, "win32", has), "C:\\x\\claude.exe");
-  assert.equal(resolvePtyCommand("없음", PATH, "win32", has), "없음");
-  // macOS 는 손대지 않는다
-  assert.equal(resolvePtyCommand("node", "/usr/bin", "darwin", () => true), "node");
+test("resolvePtyCommand: node-pty 가 못 찾는 상대 이름을 탭 PATH 에서 Windows 규칙대로 절대 경로로", () => {
+  const files = new Set(["C:\\nvm\\v22\\node.exe", "C:\\Windows\\System32\\cmd.exe", "C:\\Custom Node\\node.exe", "C:\\a\\tool.com", "C:\\b\\tool.exe"]);
+  const has = (p: string) => files.has(p);
+  const env = (PATH: string, extra: NodeJS.ProcessEnv = {}) => ({ Path: PATH, ...extra });
+  assert.equal(resolvePtyCommand("node", env("C:\\nvm\\v22;C:\\Windows\\System32"), "win32", has), "C:\\nvm\\v22\\node.exe");
+  assert.equal(resolvePtyCommand("cmd.exe", env("C:\\nvm\\v22;C:\\Windows\\System32"), "win32", has), "C:\\Windows\\System32\\cmd.exe");
+  // 따옴표로 감싼 항목, %VAR% 항목
+  assert.equal(resolvePtyCommand("node", env('"C:\\Custom Node"'), "win32", has), "C:\\Custom Node\\node.exe");
+  assert.equal(resolvePtyCommand("node", env("%NVM%", { NVM: "C:\\nvm\\v22" }), "win32", has), "C:\\nvm\\v22\\node.exe");
+  // 폴더 순서가 먼저다(앞 폴더의 .com 이 뒤 폴더의 .exe 보다 먼저)
+  assert.equal(resolvePtyCommand("tool", env("C:\\a;C:\\b"), "win32", has), "C:\\a\\tool.com");
+  // 상대 경로 항목은 건너뛴다
+  assert.equal(resolvePtyCommand("node", env(".\\tools"), "win32", () => true), "node");
+  // 이미 절대 경로거나 못 찾으면 그대로(node-pty 가 이유를 알린다), macOS 는 손대지 않는다
+  assert.equal(resolvePtyCommand("C:\\x\\claude.exe", env("C:\\nvm\\v22"), "win32", has), "C:\\x\\claude.exe");
+  assert.equal(resolvePtyCommand("없음", env("C:\\nvm\\v22"), "win32", has), "없음");
+  assert.equal(resolvePtyCommand("node", { PATH: "/usr/bin" }, "darwin", () => true), "node");
 });
+
