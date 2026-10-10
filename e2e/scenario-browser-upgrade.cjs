@@ -13,6 +13,7 @@
 //  K-2) 멈춤은 같은 채팅의 다른 브라우저 탭에도 보인다
 //  L) ⇧+클릭으로 여러 요소를 모아 메모를 달고 한 번에 입력창으로 보낸다
 //  L-2) 실제 마우스 ⇧+클릭은 한 번에 하나, 선택을 다시 켜도 번호가 이어지고, 빼면 다시 매긴다
+//  L-3) 테두리 없는 항목도 번호 자리를 지키고, 페이지를 다시 열어도 테두리 id 가 겹치지 않는다
 //  M) 다른 브라우저(가짜 Chrome 프로필)의 로그인을 가져오면, 그 사이트만 쿠키가 들어가 서버가 받는다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
@@ -89,7 +90,7 @@ const srv = http.createServer((req, res) => {
   if (req.url === "/outside") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>outside</title><button id="o" data-insp-path="/etc/hosts:1" style="margin:40px">밖</button>`); }
   if (req.url === "/disabled") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>disabled</title><button id="d" disabled style="margin:40px;padding:12px 24px">비활성 버튼</button><br><a id="l" href="/other" style="margin:40px">다른 곳</a>`); }
   if (req.url === "/inner") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>inner</title><div id="box" style="margin:20px;height:150px;width:240px;overflow:auto;border:1px solid #999">${Array.from({ length: 40 }, (_, i) => `<p>줄 ${i + 1}</p>`).join("")}</div>`); }
-  if (req.url === "/multi") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>multi</title><h1 id="m1">제목</h1><p id="m2">본문 글</p><button id="m3">버튼</button>`); }
+  if (req.url.split("?")[0] === "/multi") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>multi</title><h1 id="m1">제목</h1><p id="m2">본문 글</p><button id="m3">버튼</button>`); }
   if (req.url === "/whoami") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>who</title><p id="who">cookie=${req.headers.cookie || ""}</p>`); }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
@@ -357,6 +358,32 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await ev(() => [...document.querySelectorAll("[data-browser-notes-clear]")].find((x) => x.offsetParent)?.click());
   if (await ev(() => [...document.querySelectorAll("[data-browser-pick]")].find((x) => x.offsetParent)?.getAttribute("data-browser-pick")) === "on") await page.click("[data-browser-pick] >> visible=true");
   res("L-2 (실제 마우스 ⇧+클릭 · 다시 켜도 번호 유지 · 빼면 번호 다시)", twoNotes === 2 && twoMarks === 2 && labels3 === '["1","2","3"]' && labelsAfter === '["1","2"]', JSON.stringify({ twoNotes, twoMarks, labels3, labelsAfter }));
+  // L-3: 테두리 없는 항목(그냥 클릭)도 번호 자리를 지키고, 페이지를 다시 열어도 id 가 겹치지 않는다
+  const shiftSyn = (id, shift) => wvm(`document.getElementById("${id}").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: ${shift} }))`);
+  const labelsNow = () => wvm(`JSON.stringify([...document.querySelectorAll("[data-sudal-pick-mark]")].map((m) => m.textContent))`);
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  await shiftSyn("m1", true);
+  await sleep(700);
+  await shiftSyn("m2", false); // 그냥 클릭 — 모음에 이미 있어 모음에 더하고 선택은 끝난다
+  await sleep(900);
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  await shiftSyn("m3", true);
+  await sleep(900);
+  const gapLabels = await labelsNow();
+  // 같은 웹뷰에서 이동해야 한다 — browser open 은 새 브라우저 탭을 연다(그러면 모음도 새로 시작).
+  await wvm(`location.href = "/multi?again"`);
+  await sleep(1500);
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  await shiftSyn("m1", true);
+  await sleep(900);
+  const afterNav = await labelsNow();
+  const trayCount = await ev(() => [...document.querySelectorAll("[data-browser-note]")].filter((x) => x.offsetParent).length);
+  await ev(() => [...document.querySelectorAll("[data-browser-notes-clear]")].find((x) => x.offsetParent)?.click());
+  if (await ev(() => [...document.querySelectorAll("[data-browser-pick]")].find((x) => x.offsetParent)?.getAttribute("data-browser-pick")) === "on") await page.click("[data-browser-pick] >> visible=true");
+  res("L-3 (빈 자리 번호 · 페이지 이동 후 id)", gapLabels === '["1","3"]' && afterNav === '["4"]' && trayCount === 4, JSON.stringify({ gapLabels, afterNav, trayCount }));
 
   // M
   cli("browser", "open", "--tab", tab, "--url", base + "/whoami");

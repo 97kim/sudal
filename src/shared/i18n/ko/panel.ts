@@ -225,6 +225,7 @@ export const panel = {
       remove: "빼기",
       placeholder: "이 요소에 바랄 점을 쓰세요…",
       hint: "⇧+클릭으로 더 고르기",
+      full: "메모 모음은 {{count}}개까지예요. 먼저 보내거나 몇 개를 빼세요",
       preparing: "준비 중…",
       shotsTrimmed: "스크린샷은 앞의 {{count}}개만 붙였어요",
       send_one: "{{count}}개 입력창으로",

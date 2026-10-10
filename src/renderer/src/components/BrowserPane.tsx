@@ -130,6 +130,10 @@ export function BrowserPane({
   const onUrlChangeRef = useRef(onUrlChange);
   onUrlChangeRef.current = onUrlChange;
   const [url, setUrl] = useState(initialUrl ?? "");
+  // 함정: <webview> 의 src 를 바꾸면 Electron 이 그 주소를 다시 불러온다. 페이지 안에서 이동할 때마다 url 이 바뀌므로
+  // src 에 url 을 그대로 주면 같은 페이지를 한 번 더 연다(폼·화면 상태가 날아간다). 처음 붙을 때만 정하고, 이동은 loadURL 로.
+  const firstSrc = useRef("");
+  if (!firstSrc.current && url) firstSrc.current = url;
   const [input, setInput] = useState(initialUrl ?? "");
   // 주소창 자동완성: 열림 여부와 키보드로 고른 줄(-1 = 고른 것 없음, 친 그대로 간다)
   const [sugOpen, setSugOpen] = useState(false);
@@ -270,6 +274,12 @@ export function BrowserPane({
       if (!picked.multi) {
         setPicking(false);
         nonceRef.current = "";
+      }
+      // 가득 찼으면 담지 않는다 — 방금 페이지에 생긴 테두리도 지워 모음과 맞춘다.
+      if (toTray && trayRef.current.length >= TRAY_MAX) {
+        runInPage(pickerRelabelScript(trayRef.current.map((x) => x.mark ?? 0)));
+        showToast({ text: tRef.current("panel.browser.notes.full", { count: TRAY_MAX }), error: true });
+        return;
       }
       const slot = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       if (toTray) setTray((list) => [...list, { id: slot, element: picked, url, memo: "", mark: picked.mark, pending: true }].slice(0, TRAY_MAX));
@@ -1166,7 +1176,7 @@ export function BrowserPane({
               view.current = el as unknown as SudalWebview | null; // React 의 HTMLWebViewElement 타입엔 Electron 메서드가 없다
               setMounted(!!el);
             }}
-            src={url}
+            src={firstSrc.current}
             partition="persist:sudal-browser"
             // 없으면 target=_blank·window.open 이 main 의 새 창 처리기까지 오지 못하고 조용히 막힌다.
             // 처리기는 늘 거절하고 새 탭으로 돌리므로 실제 팝업 창은 생기지 않는다.

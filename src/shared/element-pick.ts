@@ -175,7 +175,8 @@ ${SOURCE_FN}
   // ⇧+클릭으로 모은 요소에 남기는 번호 테두리. 문서 좌표에 두어 스크롤해도 요소를 따라간다.
   // 번호는 앱의 메모 모음 순서를 따른다(relabel). 여기서는 id 만 정한다.
   const marks = (prev && prev.marks) || [];
-  let markSeq = (prev && prev.markSeq && prev.markSeq()) || 0;
+  // 문서마다 무작위로 시작한다 — 페이지를 옮긴 뒤 다시 1부터 세면 모음에 남은 이전 페이지의 id 와 겹친다.
+  let markSeq = (prev && prev.markSeq && prev.markSeq()) || Math.floor(Math.random() * 2 ** 40) * 1000;
   const mark = (el) => {
     const r = el.getBoundingClientRect();
     const frame = document.createElement("div");
@@ -270,9 +271,12 @@ ${SOURCE_FN}
 
 /** 페이지 취소 스크립트(요소 선택 끄기). */
 export const PICKER_STOP_SCRIPT = `(() => { if (window.__sudalPick) window.__sudalPick.stop(); return "stopped"; })()`;
-/** 번호 테두리를 메모 모음 순서(ids)대로 다시 매기고, 없는 것은 지운다. 빈 배열이면 모두 지운다. */
+/**
+ * 번호 테두리를 메모 모음 순서(ids)대로 다시 매기고, 없는 것은 지운다. 빈 배열이면 모두 지운다.
+ * 테두리가 없는 항목(그냥 클릭으로 담음·다른 페이지)은 0 으로 자리만 지킨다 — 빼면 뒤의 번호가 당겨진다.
+ */
 export function pickerRelabelScript(ids: number[]): string {
-  const safe = ids.filter((n) => Number.isInteger(n) && n > 0);
+  const safe = ids.map((n) => (Number.isSafeInteger(n) && n > 0 ? n : 0));
   return `(() => { if (window.__sudalPick && window.__sudalPick.relabel) window.__sudalPick.relabel(${JSON.stringify(safe)}); return "ok"; })()`;
 }
 
