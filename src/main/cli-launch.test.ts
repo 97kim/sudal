@@ -98,8 +98,11 @@ test("resolvePtyCommand: node-pty 가 못 찾는 상대 이름을 탭 PATH 에�
   assert.equal(resolvePtyCommand("node", env("%NVM%", { NVM: "C:\\nvm\\v22" }), "win32", has), "C:\\nvm\\v22\\node.exe");
   // 폴더 순서가 먼저다(앞 폴더의 .com 이 뒤 폴더의 .exe 보다 먼저)
   assert.equal(resolvePtyCommand("tool", env("C:\\a;C:\\b"), "win32", has), "C:\\a\\tool.com");
-  // 상대 경로 항목은 건너뛴다
+  // 상대 경로·드라이브 없는 항목은 건너뛴다
   assert.equal(resolvePtyCommand("node", env(".\\tools"), "win32", () => true), "node");
+  assert.equal(resolvePtyCommand("node", env("\\tools"), "win32", () => true), "node");
+  // 폴더 이름의 % 는 그대로 쓴다
+  assert.equal(resolvePtyCommand("node", env("C:\\100%\\Node"), "win32", (p) => p === "C:\\100%\\Node\\node.exe"), "C:\\100%\\Node\\node.exe");
   // 이미 절대 경로거나 못 찾으면 그대로(node-pty 가 이유를 알린다), macOS 는 손대지 않는다
   assert.equal(resolvePtyCommand("C:\\x\\claude.exe", env("C:\\nvm\\v22"), "win32", has), "C:\\x\\claude.exe");
   assert.equal(resolvePtyCommand("없음", env("C:\\nvm\\v22"), "win32", has), "없음");

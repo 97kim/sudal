@@ -63,7 +63,8 @@ export function launchSpec(
  * node-pty 에 넘길 실행 파일의 절대 경로. node-pty(ConPTY)는 상대 이름을 탭 env 가 아니라 앱 프로세스의 Path 에서,
  * 확장자도 붙이지 않고 찾는다 — launchSpec 이 준 "node" 가 node.exe 를 못 찾아 "File not found" 로 터미널 모드가 열리지 않았다.
  * 넘길 env 의 PATH 를 Windows 규칙대로 미리 찾는다: 폴더 순서대로, PATHEXT 순서의 직접 실행할 수 있는 확장자(.com·.exe)를 붙여서.
- * 항목의 따옴표는 벗기고 %VAR% 는 펼치며, 상대 경로 항목은 앱 기준이 돼 틀리므로 건너뛴다. 못 찾으면 그대로 둔다(node-pty 가 이유를 알린다).
+ * 항목의 따옴표는 벗기고 %VAR% 는 펼친다(없는 변수는 글자 그대로 둔다 — 폴더 이름에 % 가 있을 수 있고, 아니면 그런 경로는 없어서 걸러진다).
+ * 드라이브(C:\)나 네트워크(\\서버)로 시작하지 않는 항목은 앱 기준이 돼 틀리므로 건너뛴다. 못 찾으면 그대로 둔다(node-pty 가 이유를 알린다).
  */
 export function resolvePtyCommand(command: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = fs.existsSync): string {
   if (platform !== "win32" || path.win32.isAbsolute(command)) return command;
@@ -74,7 +75,8 @@ export function resolvePtyCommand(command: string, env: NodeJS.ProcessEnv, platf
   const dirs = (get("PATH") ?? "")
     .split(";")
     .map((d) => d.trim().replace(/^"(.*)"$/, "$1").replace(/%([^%]+)%/g, (m, n: string) => get(n) ?? m))
-    .filter((d) => d && path.win32.isAbsolute(d) && !d.includes("%"));
+    // path.win32.isAbsolute 는 드라이브 없는 \tools 도 절대라 하지만, 그건 앱의 현재 드라이브에 따라 달라진다
+    .filter((d) => /^(?:[a-z]:[\\/]|\\\\)/i.test(d));
   const exts = /\.[a-z0-9]+$/i.test(command)
     ? [""]
     : (get("PATHEXT") ?? ".COM;.EXE").split(";").map((e) => e.trim().toLowerCase()).filter((e) => e === ".com" || e === ".exe");
