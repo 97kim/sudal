@@ -263,6 +263,9 @@ export const IPC = {
   browserProbe: "browser:probe",
   browserAgent: "browser:agent",
   browserAgentPause: "browser:agent-pause",
+  browserImportSources: "browser:import-sources",
+  browserImportSites: "browser:import-sites",
+  browserImport: "browser:import",
   backgroundJobs: "jobs:list",
   backgroundJobsChanged: "jobs:changed",
   gitInfo: "git:info",
@@ -1046,6 +1049,12 @@ export interface SudalApi {
     onAgent(cb: (ev: BrowserAgentDto) => void): () => void;
     /** 에이전트 조작을 멈추거나(true) 다시 허용(false). undefined 면 바꾸지 않고 지금 상태만 준다. */
     agentPause(tabId: string, paused?: boolean): Promise<boolean>;
+    /** 로그인을 가져올 수 있는 다른 브라우저 프로필. macOS 가 아니면 supported:false. */
+    importSources(): Promise<{ supported: boolean; sources: { id: string; label: string }[] }>;
+    /** 그 프로필의 사이트별 쿠키 수(값은 풀지 않는다). */
+    importSites(sourceId: string): Promise<{ host: string; count: number }[]>;
+    /** 고른 사이트의 로그인을 가져온다. macOS 가 키체인 접근 허용 창을 띄운다. */
+    importLogins(sourceId: string, hosts: string[]): Promise<{ ok: true; imported: number; failed: number } | { ok: false; error: string }>;
   };
 }
 

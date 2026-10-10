@@ -65,6 +65,7 @@ import { fetchDocImage, fetchFavicon } from "./browser-favicon";
 import { forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
 import { BROWSER_PARTITION } from "./browser-net";
 import { attachWebviewHandlers, cancelDownload, probeUrl, showDownload, watchBrowserDownloads } from "./browser-webview";
+import { importCookies, importSupported, listSites, listSources } from "./browser-import";
 import { BackgroundJobWatcher } from "./background-jobs";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import { BackgroundTaskRegistry } from "./bg-tasks";
@@ -2647,6 +2648,31 @@ function registerIpc() {
     const out = browserNetFailures(webContentsId);
     if (clear === true) clearBrowserNetFailures(webContentsId);
     return out;
+  });
+  // 다른 브라우저 로그인 가져오기. 렌더러는 main 이 찾은 프로필 id 로만 고른다(경로를 받지 않는다).
+  ipcMain.handle(IPC.browserImportSources, () =>
+    importSupported() ? { supported: true, sources: listSources().map((s) => ({ id: s.id, label: s.label })) } : { supported: false, sources: [] },
+  );
+  ipcMain.handle(IPC.browserImportSites, (_e, id: unknown) => {
+    const src = importSupported() && typeof id === "string" ? listSources().find((s) => s.id === id) : undefined;
+    if (!src) return [];
+    try {
+      return listSites(src.cookies);
+    } catch {
+      return [];
+    }
+  });
+  ipcMain.handle(IPC.browserImport, async (_e, id: unknown, hosts: unknown) => {
+    const src = importSupported() && typeof id === "string" ? listSources().find((s) => s.id === id) : undefined;
+    const list = Array.isArray(hosts) ? hosts.filter((h): h is string => typeof h === "string" && /^[a-z0-9.-]{1,253}$/i.test(h)).slice(0, 200) : [];
+    if (!src || list.length === 0) return { ok: false, error: mt("main.error.importNothing") };
+    try {
+      return { ok: true, ...(await importCookies(src, list, session.fromPartition(BROWSER_PARTITION))) };
+    } catch (e) {
+      // security 명령이 실패하면(사람이 키체인 접근을 거절) 그 사실을 알아듣게 알려 준다.
+      const denied = /security|keychain|SecKeychain|status 51|exit code 1/i.test(String((e as Error)?.message ?? e));
+      return { ok: false, error: denied ? mt("main.error.importKeychain") : mt("main.error.importFailed", { error: String((e as Error)?.message ?? e).slice(0, 200) }) };
+    }
   });
   ipcMain.handle(IPC.browserAgentPause, (_e, tabId: unknown, paused: unknown) => {
     if (typeof tabId !== "string") return false;

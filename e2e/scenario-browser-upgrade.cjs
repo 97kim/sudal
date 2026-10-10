@@ -13,6 +13,7 @@
 //  K-2) 멈춤은 같은 채팅의 다른 브라우저 탭에도 보인다
 //  L) ⇧+클릭으로 여러 요소를 모아 메모를 달고 한 번에 입력창으로 보낸다
 //  L-2) 실제 마우스 ⇧+클릭은 한 번에 하나, 선택을 다시 켜도 번호가 이어지고, 빼면 다시 매긴다
+//  M) 다른 브라우저(가짜 Chrome 프로필)의 로그인을 가져오면, 그 사이트만 쿠키가 들어가 서버가 받는다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
@@ -37,6 +38,23 @@ const res = (n, ok, x = "") => { results.push([n, ok]); log(`RESULT ${n}:`, ok ?
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fileName = `sudal-e2e-${Date.now().toString(36)}.txt`;
 const slowName = `sudal-e2e-slow-${Date.now().toString(36)}.txt`;
+// M: 가짜 Chrome 프로필 — localhost 쿠키를 Chrome macOS 방식(v10·AES-128-CBC·버전 24 해시)으로 암호화해 둔다.
+const importBase = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-import-"));
+{
+  const crypto = require("crypto");
+  const { DatabaseSync } = require("node:sqlite");
+  const chrome = path.join(importBase, "Google/Chrome");
+  fs.mkdirSync(path.join(chrome, "Profile 1"), { recursive: true });
+  fs.writeFileSync(path.join(chrome, "Local State"), JSON.stringify({ profile: { info_cache: { "Profile 1": { name: "E2E" } } } }));
+  const key = crypto.pbkdf2Sync("e2e-pass", "saltysalt", 1003, 16, "sha1");
+  const c = crypto.createCipheriv("aes-128-cbc", key, Buffer.alloc(16, 0x20));
+  const encd = Buffer.concat([Buffer.from("v10"), c.update(Buffer.concat([crypto.createHash("sha256").update("localhost").digest(), Buffer.from("ok-123")])), c.final()]);
+  const db = new DatabaseSync(path.join(chrome, "Profile 1", "Cookies"));
+  db.exec("CREATE TABLE meta(key TEXT, value TEXT); INSERT INTO meta VALUES('version','24'); CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, has_expires INTEGER, samesite INTEGER)");
+  db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run("localhost", "sudal_login", "", encd, "/", 0, 0, 1, 0, 1);
+  db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run(".other.example", "x", "y", Buffer.alloc(0), "/", 0, 0, 0, 0, 0);
+  db.close();
+}
 
 const srv = http.createServer((req, res) => {
   if (req.url === "/slow") return setTimeout(() => { res.writeHead(200, { "content-type": "text/html" }); res.end("<title>slow</title>slow"); }, 2500);
@@ -72,6 +90,7 @@ const srv = http.createServer((req, res) => {
   if (req.url === "/disabled") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>disabled</title><button id="d" disabled style="margin:40px;padding:12px 24px">비활성 버튼</button><br><a id="l" href="/other" style="margin:40px">다른 곳</a>`); }
   if (req.url === "/inner") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>inner</title><div id="box" style="margin:20px;height:150px;width:240px;overflow:auto;border:1px solid #999">${Array.from({ length: 40 }, (_, i) => `<p>줄 ${i + 1}</p>`).join("")}</div>`); }
   if (req.url === "/multi") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>multi</title><h1 id="m1">제목</h1><p id="m2">본문 글</p><button id="m3">버튼</button>`); }
+  if (req.url === "/whoami") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>who</title><p id="who">cookie=${req.headers.cookie || ""}</p>`); }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -83,7 +102,7 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await new Promise((r) => srv.listen(0, "127.0.0.1", r));
   const port = srv.address().port;
   const base = `http://localhost:${port}`;
-  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_USERDATA: userData } });
+  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_USERDATA: userData, SUDAL_IMPORT_BASE: importBase, SUDAL_IMPORT_TEST_PASSWORD: "e2e-pass" } });
   let b = null;
   for (let i = 0; i < 60 && !b; i++) { await sleep(500); try { b = await chromium.connectOverCDP("http://127.0.0.1:9333"); } catch {} }
   let page = null;
@@ -339,10 +358,27 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   if (await ev(() => [...document.querySelectorAll("[data-browser-pick]")].find((x) => x.offsetParent)?.getAttribute("data-browser-pick")) === "on") await page.click("[data-browser-pick] >> visible=true");
   res("L-2 (실제 마우스 ⇧+클릭 · 다시 켜도 번호 유지 · 빼면 번호 다시)", twoNotes === 2 && twoMarks === 2 && labels3 === '["1","2","3"]' && labelsAfter === '["1","2"]', JSON.stringify({ twoNotes, twoMarks, labels3, labelsAfter }));
 
+  // M
+  cli("browser", "open", "--tab", tab, "--url", base + "/whoami");
+  await sleep(1500);
+  const whoBefore = cli("browser", "read", "--tab", tab).text || "";
+  await page.click("[data-browser-more] >> visible=true");
+  await page.click("[data-browser-import-open] >> visible=true");
+  const srcShown = await waitFor(() => !!document.querySelector('[data-browser-import-source="chrome:Profile 1"]'), null, 5000);
+  await waitFor(() => !!document.querySelector('[data-browser-import-site="localhost"]'), null, 5000);
+  const prechecked = await ev(() => !!document.querySelector('[data-browser-import-site="localhost"] input')?.checked);
+  const otherUnchecked = await ev(() => document.querySelector('[data-browser-import-site="other.example"] input')?.checked === false);
+  await ev(() => document.querySelector("[data-browser-import-run]")?.click());
+  const closed = await waitFor(() => !document.querySelector("[data-browser-import]"), null, 8000);
+  await sleep(1800);
+  const whoAfter = cli("browser", "read", "--tab", tab).text || "";
+  res("M (다른 브라우저 로그인 가져오기)", srcShown && prechecked && otherUnchecked && closed && !whoBefore.includes("sudal_login") && whoAfter.includes("sudal_login=ok-123"), JSON.stringify({ srcShown, prechecked, otherUnchecked, closed, before: whoBefore.slice(0, 40), after: whoAfter.slice(0, 60) }));
+
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});
   proc.kill();
   srv.close();
+  fs.rmSync(importBase, { recursive: true, force: true });
   log(`${results.filter((r) => r[1]).length}/${results.length} PASS`);
   process.exit(results.every((r) => r[1]) ? 0 : 1);
 })().catch((e) => { console.error("ERR", e.stack || e.message); srv.close(); process.exit(1); });

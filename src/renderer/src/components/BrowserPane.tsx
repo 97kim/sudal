@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 import { normalizeUrl } from "../browser-url";
 import { browserTabLabel, openEditorFile } from "../editor-tabs";
 import { useLocateFile } from "./FileViewer";
+import { BrowserImportSheet } from "./BrowserImportSheet";
 import { relativeAny } from "@shared/any-path";
 import type { ChatImageDto } from "@shared/ipc";
 import { PICKER_STOP_SCRIPT, formatNotesAttachment, pickerRelabelScript, type PickedElement, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
@@ -145,6 +146,7 @@ export function BrowserPane({
   const [hoverUrl, setHoverUrl] = useState("");
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   // 주소창 안 칩의 폭만큼 글자 자리를 비운다.
   const chipsRef = useRef<HTMLSpanElement>(null);
@@ -1046,6 +1048,17 @@ export function BrowserPane({
                 <Icon name="externalLink" size={12} className="text-muted" />
                 {t("panel.browser.openExternal")}
               </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setImportOpen(true);
+                }}
+                className={menuItem}
+                data-browser-import-open
+              >
+                <Icon name="lock" size={12} className="text-muted" />
+                {t("panel.browser.import.menu")}
+              </button>
             </div>
           )}
         </div>
@@ -1300,6 +1313,22 @@ export function BrowserPane({
               </button>
             </div>
           </div>
+        )}
+        {importOpen && (
+          <BrowserImportSheet
+            currentHost={hostOf(url).replace(/:\d+$/, "")}
+            onClose={() => setImportOpen(false)}
+            onDone={(n) => {
+              setImportOpen(false);
+              showToast({ text: t("panel.browser.import.done", { count: n }) });
+              // 새 쿠키로 다시 불러와야 로그인한 화면이 보인다.
+              try {
+                view.current?.reload();
+              } catch {
+                /* 아직 붙기 전 */
+              }
+            }}
+          />
         )}
         {toast && (
           <div className={`${toast.action ? "" : "pointer-events-none"} absolute bottom-3 left-1/2 z-20 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-lg border border-line bg-panel-2 py-1.5 pl-3 pr-1.5 text-[11.5px] shadow-xl`} data-browser-pick-msg role="status">

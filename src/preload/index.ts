@@ -342,6 +342,9 @@ const api: SudalApi = {
       return () => ipcRenderer.removeListener(IPC.browserAgent, handler);
     },
     agentPause: (tabId: string, paused?: boolean) => ipcRenderer.invoke(IPC.browserAgentPause, tabId, paused),
+    importSources: () => ipcRenderer.invoke(IPC.browserImportSources),
+    importSites: (sourceId: string) => ipcRenderer.invoke(IPC.browserImportSites, sourceId),
+    importLogins: (sourceId: string, hosts: string[]) => ipcRenderer.invoke(IPC.browserImport, sourceId, hosts),
   },
 };
 
