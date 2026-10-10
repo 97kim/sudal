@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 import { normalizeUrl } from "../browser-url";
 import { browserTabLabel, openEditorFile } from "../editor-tabs";
 import { useLocateFile } from "./FileViewer";
+import { relativeAny } from "@shared/any-path";
 import type { ChatImageDto } from "@shared/ipc";
 import { PICKER_STOP_SCRIPT, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
 import { DIAG_MAX_CONSOLE, formatDiagnostics, pushCapped, type ConsoleLine } from "@shared/browser-diagnostics";
@@ -261,9 +262,12 @@ export function BrowserPane({
         if (src) {
           const { cwd, locate: find } = locateRef.current;
           const hits = cwd ? await find(src.file).catch(() => [] as string[]) : [];
-          if (hits.length === 1) {
+          // 경로는 페이지가 준 값이다 — 저장소 밖(/etc/hosts, ../ 등)은 열지 않는다. 찾기 결과는 링크까지 푼 실제 경로라
+          // 저장소 안 링크가 밖을 가리켜도 여기서 걸린다. relativeAny 는 Windows 구분자·대소문자도 맞춘다.
+          const rel = cwd && hits.length === 1 ? relativeAny(hits[0], cwd) : null;
+          if (rel) {
             abs = hits[0];
-            shown = cwd && abs.startsWith(cwd.replace(/[\\/]+$/, "") + "/") ? abs.slice(cwd.replace(/[\\/]+$/, "").length + 1) : abs;
+            shown = rel;
           }
         }
         onAttachRef.current?.(formatElementAttachment(tRef.current, picked, pageUrl, shown), images);
@@ -448,9 +452,11 @@ export function BrowserPane({
     return () => window.removeEventListener("sudal:browser-zoom", onZoom);
   }, []);
 
+  // 숨은 탭(display:none)에서는 폭이 0으로 재진다 — 보일 때 다시 잰다.
   useLayoutEffect(() => {
+    if (!visible) return;
     setChipsW(chipsRef.current ? chipsRef.current.offsetWidth + 10 : 0);
-  }, [viewport, zoom, t]);
+  }, [viewport, zoom, t, visible]);
 
   // 빈 탭은 주소창부터
   useEffect(() => {

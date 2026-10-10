@@ -102,3 +102,9 @@ test("formatSource / formatElementAttachment: 소스 위치를 맨 앞에", () =
   const lines = formatElementAttachment(t, el, "http://localhost:3000/", "src/a.tsx").split("\n");
   assert.match(lines[1], /^promptDoc\.attach\.element\.source\|.*src\/a\.tsx:42 \(<Btn>\)/);
 });
+
+test("sourceOf: Next.js 는 경로 안 괄호(webpack-internal:///(app-pages-browser)/…)를 지나 파일을 찾는다", () => {
+  const stack = ["Error: react-stack-top-frame", "    at jsxDEV (webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react/cjs/react-jsx-dev-runtime.development.js:345:12)", "    at Page (webpack-internal:///(app-pages-browser)/./src/app/page.tsx:12:4)"].join("\n");
+  const fiber = { type: "main", _debugStack: { stack }, _debugOwner: { type: { name: "Page" } } };
+  assert.deepEqual(sourceOf(fakeEl({ "__reactFiber$n": fiber })), { file: "./src/app/page.tsx", component: "Page", via: "react-stack" });
+});

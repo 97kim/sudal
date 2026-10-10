@@ -76,9 +76,10 @@ const sourceOf = (el) => {
       const s = f._debugSource;
       if (s && s.fileName) return { file: cleanFile(s.fileName), line: s.lineNumber, column: s.columnNumber, component: nameOf(f._debugOwner), via: "react" };
       // React 19: _debugSource 가 없어지고 JSX 를 부른 자리의 호출 스택만 남는다. 줄은 번들 기준이라 파일만 쓴다.
+      // Next.js 경로엔 괄호가 들어간다(webpack-internal:///(app-pages-browser)/./src/…) — 공백만 아니면 받고 끝의 :줄:칸으로 자른다.
       const st = f._debugStack && f._debugStack.stack;
       if (st) for (const line of String(st).split("\\n").slice(1)) {
-        const m = /((?:https?|webpack-internal|file):\\/\\/[^\\s)]+?):\\d+:\\d+\\)?\\s*$/.exec(line);
+        const m = /((?:https?|webpack-internal|file):\\/\\/\\S+?):\\d+:\\d+\\)?\\s*$/.exec(line);
         if (!m) continue;
         const file = cleanFile(m[1]);
         if (/node_modules|\\/\\.vite\\/deps\\/|react-dom|jsx-dev-runtime|jsx-runtime|\\/_next\\/static\\/chunks\\//.test(file)) continue;

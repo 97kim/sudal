@@ -62,6 +62,7 @@ const srv = http.createServer((req, res) => {
     return res.end(`<title>react</title><button id="b" style="margin:40px;padding:10px">자세히 보기</button>
       <script>b["__reactFiber$e2e"] = { type: "button", _debugSource: { fileName: "/src/pages/Dashboard.tsx", lineNumber: 42, columnNumber: 7 }, _debugOwner: { type: { name: "DetailButton" } } };</script>`);
   }
+  if (req.url === "/outside") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<title>outside</title><button id="o" data-insp-path="/etc/hosts:1" style="margin:40px">밖</button>`); }
   if (req.url === "/missing.png") { res.writeHead(404); return res.end(); }
   if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -210,6 +211,16 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await ev(() => [...document.querySelectorAll("[data-browser-open-source]")].find((x) => x.offsetParent)?.click());
   const srcOpened = await waitFor((f) => [...document.querySelectorAll("[data-editor-tab]")].some((t) => (t.getAttribute("data-editor-tab") || "").endsWith(f)), "src/pages/Dashboard.tsx", 5000);
   res("I (요소 선택 소스 위치)", toastOk && /소스: src\/pages\/Dashboard\.tsx:42 \(<DetailButton>\)/.test(composer) && srcOpened, JSON.stringify({ toastOk, toastText: toastText.slice(0, 100), composer: composer.slice(0, 120), srcOpened }));
+
+  // I-2: 페이지가 저장소 밖 경로를 주면 에디터에서 열 수 없어야 한다
+  cli("browser", "open", "--tab", tab, "--url", base + "/outside");
+  await sleep(1500);
+  await page.click("[data-browser-pick] >> visible=true");
+  await sleep(400);
+  await ev(() => [...document.querySelectorAll("webview")].find((w) => w.offsetParent)?.executeJavaScript('document.getElementById("o").click()'));
+  await waitFor(() => [...document.querySelectorAll("[data-browser-pick-msg]")].some((x) => x.offsetParent && x.textContent.includes("hosts")), null, 6000);
+  const outsideBtn = await ev(() => [...document.querySelectorAll("[data-browser-open-source]")].some((x) => x.offsetParent));
+  res("I-2 (저장소 밖 경로는 열기 버튼 없음)", !outsideBtn, JSON.stringify({ outsideBtn }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});
