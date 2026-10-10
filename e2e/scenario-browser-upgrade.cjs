@@ -185,7 +185,7 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   const over = cli("browser", "screenshot", "--tab", tab, "--out", existing);
   const kept = fs.readFileSync(existing, "utf8") === "keep";
   fs.rmSync(existing);
-  res("H (첫 페이지 window.open · 동시 다운로드 · --out 덮어쓰기 거절)", popupTab && twoFiles && kept && !!over.error, JSON.stringify({ popupTab, twoFiles, kept, over: over.error ?? over }));
+  res("H (첫 페이지 window.open · 동시 다운로드 · --out 덮어쓰기 거절)", popupTab && twoFiles && kept && over.error?.code === "bad_request" && String(over.error?.message).includes(existing), JSON.stringify({ popupTab, twoFiles, kept, over: over.error ?? over }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

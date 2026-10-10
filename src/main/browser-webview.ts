@@ -99,14 +99,18 @@ export function attachWebviewHandlers(contents: WebContents): void {
 const downloads = new Map<string, string>();
 let downloadSeq = 0;
 
-/** 받는 중인 경로 — 파일이 생기기 전에 같은 이름을 또 받으면 existsSync 만으로는 겹친다. */
+/**
+ * 받는 중인 경로 — 파일이 생기기 전에 같은 이름을 또 받으면 existsSync 만으로는 겹친다.
+ * 키는 소문자로: macOS·Windows 기본 파일시스템은 report.pdf 와 REPORT.PDF 를 같은 파일로 본다.
+ */
 const reserved = new Set<string>();
+const reserveKey = (p: string) => p.toLowerCase();
 
 /** 같은 이름이 있거나 받는 중이면 "이름 (1).확장자" 처럼 비킨다. */
 function uniquePath(dir: string, name: string): string {
   const { name: base, ext } = parse(name || "download");
   let p = join(dir, `${base}${ext}`);
-  for (let n = 1; existsSync(p) || reserved.has(p); n++) p = join(dir, `${base} (${n})${ext}`);
+  for (let n = 1; existsSync(p) || reserved.has(reserveKey(p)); n++) p = join(dir, `${base} (${n})${ext}`);
   return p;
 }
 
@@ -117,7 +121,7 @@ export function watchBrowserDownloads(): void {
     const id = `d${++downloadSeq}`;
     const path = uniquePath(app.getPath("downloads"), item.getFilename());
     item.setSavePath(path);
-    reserved.add(path);
+    reserved.add(reserveKey(path));
     downloads.set(id, path);
     const name = parse(path).base;
     // 받는 동안 탭을 닫으면 웹뷰가 먼저 사라진다 — 소멸한 webContents 를 읽으면 main 이 던지므로 처음에 잡아 둔다.
@@ -143,7 +147,7 @@ export function watchBrowserDownloads(): void {
       send("progressing");
     });
     item.once("done", (_ev, state) => {
-      reserved.delete(path);
+      reserved.delete(reserveKey(path));
       send(state === "completed" ? "completed" : state === "cancelled" ? "cancelled" : "failed");
     });
   });
