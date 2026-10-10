@@ -53,7 +53,7 @@ export class OtterWindow {
       if (!this.win) return;
       this.stopWalk(false);
       const [x, y] = this.win.getPosition();
-      this.win.setPosition(Math.round(x + dx), Math.round(y + dy));
+      this.moveTo(x + dx, y + dy);
     });
     ipcMain.on(OTTER_IPC.dragEnd, () => {
       if (!this.win) return;
@@ -68,7 +68,7 @@ export class OtterWindow {
       this.stopWalk(false);
       const [x, y] = this.win.getPosition();
       const p = onScreen({ x, y });
-      this.win.setPosition(p.x, p.y);
+      this.moveTo(p.x, p.y);
       this.deps.savePosition(p);
     };
     screen.on("display-removed", onDisplays);
@@ -175,10 +175,19 @@ export class OtterWindow {
       w.x += w.dir * OTTER_ROAM.speed[w.motion] * (Math.min(now - w.at, 100) / 1000);
       w.at = now;
       const arrived = w.dir > 0 ? w.x >= w.toX : w.x <= w.toX;
-      this.win.setPosition(Math.round(arrived ? w.toX : w.x), w.y);
+      this.moveTo(arrived ? w.toX : w.x, w.y);
       if (arrived) this.stopWalk(true);
     }, 33);
     this.walking = { timer, motion, dir, toX, x, y, at: Date.now() };
+  }
+
+  /**
+   * 창을 옮긴다. Windows 는 배율이 125%·150% 처럼 소수면 위치만 옮겨도 크기를 픽셀↔DIP 로 다시 계산하며
+   * 반올림해, 테두리 없는 투명 창이 옮길 때마다 1px 씩 커졌다. 걷기는 초당 30번 옮겨 창이 금세 길어지고,
+   * 수달은 창 아래에 붙어 있어 아래로 떨어져 화면 밖으로 나가는 것처럼 보였다. 크기까지 매번 지정한다.
+   */
+  private moveTo(x: number, y: number) {
+    this.win?.setBounds({ x: Math.round(x), y: Math.round(y), width: WIDTH, height: HEIGHT });
   }
 
   /** 멈춰 선다. save 면 선 자리를 저장한다(다음에 켤 때 거기서 시작). */
@@ -210,6 +219,11 @@ export class OtterWindow {
       backgroundColor: "#00000000",
       hasShadow: false,
       resizable: false,
+      // 프로그램이 바꾸는 크기까지 막는다(resizable 은 사용자의 크기 조절만 막는다) — moveTo 와 함께 Windows 배율 오차 안전망
+      minWidth: WIDTH,
+      maxWidth: WIDTH,
+      minHeight: HEIGHT,
+      maxHeight: HEIGHT,
       fullscreenable: false,
       skipTaskbar: true,
       // 눌러도 다른 앱의 포커스를 빼앗지 않는다(입력하던 곳에 그대로 남는다).
