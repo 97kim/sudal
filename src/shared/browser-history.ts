@@ -66,3 +66,38 @@ export function parseHistory(raw: string | null): HistoryEntry[] {
     return [];
   }
 }
+
+/** 빈 탭에 보여 줄 자주 간 곳. 개발 서버는 경로가 매번 달라 주소별로 세면 흩어지므로 출처(호스트+포트)로 묶는다. */
+export interface FrequentSite {
+  origin: string;
+  /** 그 출처에서 가장 많이 간 주소 — 누르면 여기로 간다. */
+  url: string;
+  visits: number;
+}
+
+export function frequentSites(history: HistoryEntry[], limit = SUGGEST_MAX): FrequentSite[] {
+  const by = new Map<string, { site: FrequentSite; best: HistoryEntry; at: number }>();
+  for (const h of history) {
+    let origin: string;
+    try {
+      origin = new URL(h.url).origin;
+    } catch {
+      continue;
+    }
+    const cur = by.get(origin);
+    if (!cur) {
+      by.set(origin, { site: { origin, url: h.url, visits: h.visits }, best: h, at: h.at });
+      continue;
+    }
+    cur.site.visits += h.visits;
+    cur.at = Math.max(cur.at, h.at);
+    if (h.visits > cur.best.visits || (h.visits === cur.best.visits && h.at > cur.best.at)) {
+      cur.best = h;
+      cur.site.url = h.url;
+    }
+  }
+  return [...by.values()]
+    .sort((a, b) => b.site.visits - a.site.visits || b.at - a.at)
+    .slice(0, limit)
+    .map((v) => v.site);
+}

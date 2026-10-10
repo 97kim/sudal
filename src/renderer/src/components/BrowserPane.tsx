@@ -10,7 +10,9 @@ import type { ChatImageDto } from "@shared/ipc";
 import { PICKER_STOP_SCRIPT, dataUrlImage, elementImage, formatElementAttachment, parsePickMessage, pickerScript } from "@shared/element-pick";
 import { DIAG_MAX_CONSOLE, formatDiagnostics, pushCapped, type ConsoleLine } from "@shared/browser-diagnostics";
 import { DEFAULT_VIEWPORT, VIEWPORTS, nextZoom, type ViewportId, viewportById, zoomLevelToPercent } from "../browser-viewport";
-import { parseHistory, recordVisit, suggest, type HistoryEntry } from "@shared/browser-history";
+import { frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "@shared/browser-history";
+import { browserErrorKind, type BrowserErrorKind } from "../browser-error";
+import type { BrowserEventDto } from "@shared/ipc";
 import { kvGet, kvSet } from "../kv-store";
 
 export { normalizeUrl };
@@ -29,6 +31,42 @@ function addHistory(url: string): void {
   kvSet(HISTORY_KEY, JSON.stringify(next));
 }
 
+// 보기 폭은 앱 전체에 하나 — 폰 폭으로 확인하던 중이면 새 탭도 그 폭으로 연다.
+const VIEWPORT_KEY = "browser.viewport";
+// 확대 배율은 크롬처럼 호스트마다. 0(100%)은 지워서 기본으로 돌린다.
+const ZOOM_KEY = "browser.zoom";
+function readZooms(): Record<string, number> {
+  try {
+    const v = JSON.parse(kvGet(ZOOM_KEY) ?? "{}");
+    return v && typeof v === "object" ? (v as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+/**
+ * 그 호스트에 저장한 배율(없으면 100%)을 웹뷰에 직접 건다. 돌려준 값이 표시할 배율이다.
+ * 함정: Chromium 이 한 웹뷰의 배율을 다른 웹뷰에도 퍼뜨린다 — getZoomLevel() 을 믿지 말고 늘 저장값을 건다.
+ */
+function applyHostZoom(el: SudalWebview, u: string): number {
+  const saved = readZooms()[hostOf(u)];
+  const level = typeof saved === "number" ? saved : 0;
+  try {
+    if (el.getZoomLevel() !== level) el.setZoomLevel(level);
+  } catch {
+    /* 아직 붙기 전 */
+  }
+  return level;
+}
+function hostOf(u: string): string {
+  try {
+    return new URL(u).host;
+  } catch {
+    return "";
+  }
+}
+
+type Download = Extract<BrowserEventDto, { kind: "download" }>;
+
 export function BrowserPane({
   initialUrl,
   visible,
@@ -37,6 +75,7 @@ export function BrowserPane({
   onFavicon,
   onAttach,
   onUrlChange,
+  onOpenTab,
 }: {
   initialUrl: string | null;
   visible: boolean;
@@ -50,6 +89,8 @@ export function BrowserPane({
   onAttach?: (block: string, images?: ChatImageDto[]) => void;
   /** 보고 있는 주소가 바뀔 때. 탭이 내려갔다 올라와도 같은 페이지로 돌아오게 밖에서 들고 있는다. */
   onUrlChange?: (url: string) => void;
+  /** 페이지가 새 탭으로 열려는 링크(target=_blank·우클릭 "새 탭에서 열기"). */
+  onOpenTab?: (url: string) => void;
 }) {
   const { t } = useTranslation();
   // 웹뷰 이벤트 리스너는 한 번 붙이고 오래 남으므로, 언어가 바뀐 뒤에도 최신 t 를 쓰도록 ref 로 건넨다.
@@ -78,7 +119,18 @@ export function BrowserPane({
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(false);
   const [nav, setNav] = useState({ back: false, forward: false });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ kind: BrowserErrorKind; code: string; url: string } | null>(null);
+  // 로딩 막대. 웹뷰는 진행률을 주지 않아 "시작 → 천천히 차오름 → 끝" 세 단계로만 보인다.
+  const [bar, setBar] = useState<"off" | "start" | "run" | "done">("off");
+  // 마우스를 올린 링크 주소 — 아래 줄에 제목 대신 보인다.
+  const [hoverUrl, setHoverUrl] = useState("");
+  const [downloads, setDownloads] = useState<Download[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const onOpenTabRef = useRef(onOpenTab);
+  onOpenTabRef.current = onOpenTab;
+  // 웹뷰의 webContents id — main 이 보내는 browser:event 중 제 것을 가른다. 붙기 전엔 null.
+  const wcIdRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // 요소 선택 모드: 페이지에 스크립트를 주입해 마우스를 올리면 테두리, 클릭하면 console-message 로 요소 정보가 온다
   const [picking, setPicking] = useState(false);
@@ -93,7 +145,11 @@ export function BrowserPane({
   // 페이지 내 찾기 — ⌘F 는 대화 검색과 겹치므로 브라우저에 포커스가 있을 때만 이쪽이 잡는다(ChatView 가 라우팅).
   const [find, setFind] = useState<{ open: boolean; text: string; matches: number; at: number }>({ open: false, text: "", matches: 0, at: 0 });
   const findRef = useRef<HTMLInputElement>(null);
-  const [viewport, setViewport] = useState<ViewportId>(DEFAULT_VIEWPORT);
+  const [viewport, setViewportState] = useState<ViewportId>(() => viewportById(kvGet(VIEWPORT_KEY) ?? DEFAULT_VIEWPORT).id);
+  const setViewport = (v: ViewportId) => {
+    setViewportState(v);
+    kvSet(VIEWPORT_KEY, v === DEFAULT_VIEWPORT ? null : v);
+  };
   const [zoom, setZoom] = useState(0);
   // 선택 세션마다 새 표식 — 페이지가 표식을 미리 알 수 없어 위조가 어렵고, 옛 세션의 늦은 메시지도 걸러진다
   const nonceRef = useRef("");
@@ -196,9 +252,11 @@ export function BrowserPane({
         // 페이지가 실제로 바뀐 첫 순간에만 제목·파비콘을 비운다.
         const moved = u !== pageRef.current;
         if (moved) {
+          const hostChanged = hostOf(u) !== hostOf(pageRef.current);
           pageRef.current = u;
           titleRef.current = "";
           onFaviconRef.current?.(null); // 새 페이지가 자기 것을 줄 때까지 지구본으로
+          if (hostChanged) setZoom(applyHostZoom(el, u));
         }
         onUrlChangeRef.current?.(u);
         setNav({ back: el.canGoBack(), forward: el.canGoForward() });
@@ -221,18 +279,34 @@ export function BrowserPane({
     const onStart = () => {
       setLoading(true);
       setError(null);
+      setBar("start");
+      // 한 프레임 뒤에 목표 폭을 줘야 transition 이 걸린다.
+      setTimeout(() => setBar((b) => (b === "start" ? "run" : b)), 16);
     };
     const onStop = () => {
       setLoading(false);
+      setBar("done");
+      setTimeout(() => setBar((b) => (b === "done" ? "off" : b)), 300);
       sync();
     };
     const onFail = (e: Event) => {
       const d = e as Event & { errorDescription?: string; validatedURL?: string; isMainFrame?: boolean };
       if (d.isMainFrame === false) return;
       setLoading(false);
-      if (d.errorDescription && d.errorDescription !== "ERR_ABORTED") setError(`${d.errorDescription} — ${d.validatedURL ?? ""}`);
+      if (d.errorDescription && d.errorDescription !== "ERR_ABORTED")
+        setError({ kind: browserErrorKind(d.errorDescription), code: d.errorDescription, url: d.validatedURL ?? "" });
     };
-    const onAttach = () => setAttached(true);
+    const onAttach = () => {
+      setAttached(true);
+      try {
+        wcIdRef.current = el.getWebContentsId();
+      } catch {
+        /* 다음 dom-ready 에서 */
+      }
+    };
+    const onTarget = (e: Event) => setHoverUrl((e as Event & { url?: string }).url ?? "");
+    // 웹뷰 안을 누르면 호스트 문서에 mousedown 이 오지 않는다 — 웹뷰가 포커스를 받는 것으로 메뉴를 닫는다.
+    const onFocus = () => setMenuOpen(false);
     // 파비콘은 원격 주소라 화면이 바로 못 쓴다 — main 이 받아 data URL 로 바꿔 준다.
     const onFav = (e: Event) => {
       const list = (e as Event & { favicons?: string[] }).favicons ?? [];
@@ -244,6 +318,8 @@ export function BrowserPane({
         .catch(() => onFaviconRef.current?.(null));
     };
     el.addEventListener("page-favicon-updated", onFav);
+    el.addEventListener("update-target-url", onTarget);
+    el.addEventListener("focus", onFocus);
     el.addEventListener("dom-ready", onAttach);
     el.addEventListener("did-navigate", sync);
     el.addEventListener("did-navigate-in-page", sync);
@@ -253,6 +329,8 @@ export function BrowserPane({
     el.addEventListener("did-fail-load", onFail);
     return () => {
       el.removeEventListener("page-favicon-updated", onFav);
+      el.removeEventListener("update-target-url", onTarget);
+      el.removeEventListener("focus", onFocus);
       el.removeEventListener("dom-ready", onAttach);
       el.removeEventListener("did-navigate", sync);
       el.removeEventListener("did-navigate-in-page", sync);
@@ -262,6 +340,46 @@ export function BrowserPane({
       el.removeEventListener("did-fail-load", onFail);
     };
   }, [mounted]);
+
+  // main 이 웹뷰를 대신해 알리는 일. 숨은 탭도 제 것이면 받는다(받은 파일 표시가 탭을 옮겨도 남게).
+  useEffect(
+    () =>
+      window.sudal.browser.onEvent((ev) => {
+        if (ev.webContentsId !== wcIdRef.current) return;
+        if (ev.kind === "open-tab") onOpenTabRef.current?.(ev.url);
+        else
+          setDownloads((list) => {
+            const i = list.findIndex((d) => d.id === ev.id);
+            // 최근 3개만 — 오래된 것부터 밀려난다.
+            return i === -1 ? [...list, ev].slice(-3) : list.map((d) => (d.id === ev.id ? ev : d));
+          });
+      }),
+    [],
+  );
+
+  // 바깥(앱 쪽)을 누르거나 esc 면 메뉴를 닫는다. 웹뷰 안 클릭은 위의 focus 가 맡는다.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // 숨어 있던 사이 다른 탭이 배율을 퍼뜨렸을 수 있다 — 다시 보일 때 이 호스트 값으로 되돌린다.
+  useEffect(() => {
+    const el = view.current;
+    if (!visible || !el || !attached || !pageRef.current) return;
+    setZoom(applyHostZoom(el, pageRef.current));
+  }, [visible, attached]);
 
   // 빈 탭은 주소창부터
   useEffect(() => {
@@ -406,6 +524,12 @@ export function BrowserPane({
     } catch {
       /* 아직 붙기 전 */
     }
+    const host = hostOf(url);
+    if (!host) return;
+    const zooms = readZooms();
+    if (level === 0) delete zooms[host];
+    else zooms[host] = level;
+    kvSet(ZOOM_KEY, Object.keys(zooms).length ? JSON.stringify(zooms) : null);
   };
 
   const go = (raw: string) => {
@@ -439,13 +563,20 @@ export function BrowserPane({
   // 자동완성 후보. 목록이 열려 있을 때만 계산한다.
   const sugs = sugOpen ? suggest(readHistory(), input) : [];
 
+  const vp = viewportById(viewport);
+  const frequent = url ? [] : frequentSites(readHistory());
+  const btn = "rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30";
+  const chip = "flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] disabled:opacity-30";
+  const menuItem = "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] hover:bg-panel-2 disabled:opacity-40 disabled:hover:bg-transparent";
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-browser-pane={url || "blank"}>
-      <div className="flex items-center gap-1 border-b border-line px-2 py-1">
-        <button onClick={() => view.current?.goBack()} disabled={!nav.back} className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30" title={t("panel.browser.back")} data-browser-back>
+      {/* 패널 폭에 따라 글자를 숨긴다 — 좁은 패널에서 주소창이 찌그러지지 않게. */}
+      <div className="@container/browserbar flex items-center gap-1 border-b border-line px-2 py-1">
+        <button onClick={() => view.current?.goBack()} disabled={!nav.back} className={btn} title={t("panel.browser.back")} data-browser-back>
           <Icon name="chevronRight" size={13} className="rotate-180" />
         </button>
-        <button onClick={() => view.current?.goForward()} disabled={!nav.forward} className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30" title={t("panel.browser.forward")}>
+        <button onClick={() => view.current?.goForward()} disabled={!nav.forward} className={btn} title={t("panel.browser.forward")}>
           <Icon name="chevronRight" size={13} />
         </button>
         <button
@@ -458,11 +589,11 @@ export function BrowserPane({
             else el.reload();
           }}
           disabled={!url}
-          className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30"
+          className={btn}
           title={loading ? t("panel.browser.stop") : t("panel.browser.reloadTitle")}
           data-browser-reload
         >
-          <Icon name={loading ? "x" : "refresh"} size={13} className={loading ? "" : ""} />
+          <Icon name={loading ? "x" : "refresh"} size={13} />
         </button>
         <form
           className="relative min-w-0 flex-1"
@@ -512,7 +643,7 @@ export function BrowserPane({
             style={{ userSelect: "text" }}
             data-browser-url
           />
-                  {sugs.length > 0 && (
+          {sugs.length > 0 && (
             <ul
               className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-line bg-panel shadow-lg"
               data-browser-suggest
@@ -542,82 +673,159 @@ export function BrowserPane({
             </ul>
           )}
         </form>
+        {/* 기본값이 아닐 때만 보인다 — 메뉴에 숨긴 상태를 잊지 않게. 누르면 기본으로. */}
+        {viewport !== DEFAULT_VIEWPORT && (
+          <button onClick={() => setViewport(DEFAULT_VIEWPORT)} className={`${chip} border-accent/40 bg-accent-tint text-accent`} title={t("panel.browser.viewportReset")} data-browser-viewport-chip>
+            {t(`panel.browser.viewport.${viewport}.label`)}
+            <span className="mono hidden text-[10px] opacity-70 @min-[520px]/browserbar:inline">{vp.width}</span>
+          </button>
+        )}
+        {zoom !== 0 && (
+          <button onClick={() => applyZoom(0)} className={`${chip} mono border-accent/40 bg-accent-tint text-accent`} title={t("panel.browser.zoomReset")} data-browser-zoom-chip>
+            {zoomLevelToPercent(zoom)}%
+          </button>
+        )}
         <button
           onClick={() => (picking ? stopPick() : void startPick())}
           disabled={!url || loading}
-          className={`flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] disabled:opacity-30 ${picking ? "border-accent/40 bg-accent-tint text-accent" : "border-line text-muted hover:bg-panel-2 hover:text-fg"}`}
+          className={`${chip} ${picking ? "border-accent/40 bg-accent-tint text-accent" : "border-line text-muted hover:bg-panel-2 hover:text-fg"}`}
           title={picking ? t("panel.browser.pickCancelTitle") : t("panel.browser.pickTitle")}
           data-browser-pick={picking ? "on" : "off"}
         >
           <Icon name="edit" size={11} />
-          {picking ? t("panel.browser.pickingLabel") : t("panel.browser.pick")}
+          <span className="hidden @min-[560px]/browserbar:inline">{picking ? t("panel.browser.pickingLabel") : t("panel.browser.pick")}</span>
         </button>
-        <select
-          value={viewport}
-          onChange={(e) => setViewport(e.target.value as ViewportId)}
-          disabled={!url}
-          className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-[11px] text-muted hover:text-fg disabled:opacity-30"
-          title={t("panel.browser.viewportTitle")}
-          data-browser-viewport
-        >
-          {VIEWPORTS.map((v) => (
-            <option key={v.id} value={v.id} title={t(`panel.browser.viewport.${v.id}.hint`)}>
-              {t(`panel.browser.viewport.${v.id}.label`)}
-            </option>
-          ))}
-        </select>
-        <div className="flex shrink-0 items-center rounded-md border border-line" data-browser-zoom={zoomLevelToPercent(zoom)}>
-          <button onClick={() => applyZoom(nextZoom(zoom, -1))} disabled={!url} className="px-1.5 py-0.5 text-muted hover:text-fg disabled:opacity-30" title={t("panel.browser.zoomOut")}>
-            <Icon name="minus" size={11} />
-          </button>
-          <button onClick={() => applyZoom(0)} disabled={!url} className="mono min-w-[38px] px-1 py-0.5 text-[10.5px] text-muted hover:text-fg disabled:opacity-30" title={t("panel.browser.zoomReset")}>
-            {zoomLevelToPercent(zoom)}%
-          </button>
-          <button onClick={() => applyZoom(nextZoom(zoom, 1))} disabled={!url} className="px-1.5 py-0.5 text-muted hover:text-fg disabled:opacity-30" title={t("panel.browser.zoomIn")}>
-            <Icon name="plus" size={11} />
-          </button>
-        </div>
         <button
           onClick={() => void attachDiagnostics()}
           disabled={!url || diagBusy}
-          className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[11px] text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30"
+          className={`${chip} border-line text-muted hover:bg-panel-2 hover:text-fg`}
           title={t("panel.browser.diagnoseTitle")}
           data-browser-diagnose
         >
           <Icon name="alert" size={11} />
-          {diagBusy ? t("panel.browser.diagnosing") : t("panel.browser.diagnose")}
+          <span className="hidden @min-[560px]/browserbar:inline">{diagBusy ? t("panel.browser.diagnosing") : t("panel.browser.diagnose")}</span>
         </button>
-        <button
-          onClick={() => {
-            const el = view.current;
-            if (!el) return;
-            try {
-              if (el.isDevToolsOpened()) el.closeDevTools();
-              else el.openDevTools();
-            } catch {
-              /* 아직 붙기 전 */
-            }
-          }}
-          disabled={!url}
-          className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30"
-          title={t("panel.browser.devtools")}
-          data-browser-devtools
-        >
-          <Icon name="terminal" size={13} />
-        </button>
-        <button
-          onClick={() => url && void window.sudal.browser.openExternal(url)}
-          disabled={!url}
-          className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-30"
-          title={t("panel.browser.openExternal")}
-          data-browser-external
-        >
-          <Icon name="externalLink" size={13} />
-        </button>
+        <div className="relative shrink-0" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className={`rounded p-1 ${menuOpen ? "bg-accent-tint text-accent" : "text-muted hover:bg-panel-2 hover:text-fg"}`}
+            title={t("panel.browser.more")}
+            data-browser-more={menuOpen ? "open" : "closed"}
+          >
+            <Icon name="more" size={13} strokeWidth={3} />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full z-30 mt-1 w-[248px] rounded-lg border border-line bg-panel p-1 shadow-2xl" data-browser-menu>
+              <div className="px-2.5 pb-1 pt-1.5 text-[10.5px] text-muted" title={t("panel.browser.viewportTitle")}>
+                {t("panel.browser.viewportLabel")}
+              </div>
+              <div className="mx-1.5 mb-1.5 grid grid-cols-4 gap-0.5 rounded-md border border-line p-0.5" data-browser-viewport={viewport}>
+                {VIEWPORTS.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setViewport(v.id)}
+                    className={`rounded px-1 py-1 text-[11px] ${v.id === viewport ? "bg-accent-tint text-accent" : "text-muted hover:bg-panel-2 hover:text-fg"}`}
+                    title={t(`panel.browser.viewport.${v.id}.hint`)}
+                    data-browser-viewport-option={v.id}
+                  >
+                    {t(`panel.browser.viewport.${v.id}.label`)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-between px-2.5 py-1">
+                <span className="text-[12px]">{t("panel.browser.zoomLabel")}</span>
+                <div className="flex items-center rounded-md border border-line" data-browser-zoom={zoomLevelToPercent(zoom)}>
+                  <button onClick={() => applyZoom(nextZoom(zoom, -1))} disabled={!url} className="px-1.5 py-0.5 text-muted hover:text-fg disabled:opacity-30" title={t("panel.browser.zoomOut")}>
+                    <Icon name="minus" size={11} />
+                  </button>
+                  <button onClick={() => applyZoom(0)} disabled={!url} className="mono min-w-[42px] px-1 py-0.5 text-[10.5px] text-muted hover:text-fg disabled:opacity-30" title={t("panel.browser.zoomReset")}>
+                    {zoomLevelToPercent(zoom)}%
+                  </button>
+                  <button onClick={() => applyZoom(nextZoom(zoom, 1))} disabled={!url} className="px-1.5 py-0.5 text-muted hover:text-fg disabled:opacity-30" title={t("panel.browser.zoomIn")}>
+                    <Icon name="plus" size={11} />
+                  </button>
+                </div>
+              </div>
+              <div className="my-1 border-t border-line" />
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  void navigator.clipboard.writeText(url).catch(() => {});
+                }}
+                disabled={!url}
+                className={menuItem}
+                data-browser-copy-url
+              >
+                <Icon name="copy" size={12} className="text-muted" />
+                {t("panel.browser.copyUrl")}
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  const el = view.current;
+                  if (!el) return;
+                  try {
+                    if (el.isDevToolsOpened()) el.closeDevTools();
+                    else el.openDevTools();
+                  } catch {
+                    /* 아직 붙기 전 */
+                  }
+                }}
+                disabled={!url}
+                className={menuItem}
+                data-browser-devtools
+              >
+                <Icon name="terminal" size={12} className="text-muted" />
+                {t("panel.browser.devtools")}
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  if (url) void window.sudal.browser.openExternal(url);
+                }}
+                disabled={!url}
+                className={menuItem}
+                data-browser-external
+              >
+                <Icon name="externalLink" size={12} className="text-muted" />
+                {t("panel.browser.openExternal")}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-      {error && (
-        <div className="border-b border-err/40 bg-err-bg px-3 py-1 text-[11px] text-err" data-browser-error>
-          {error}
+      {downloads.length > 0 && (
+        <div className="border-b border-line bg-inset px-3 py-1" data-browser-downloads>
+          {downloads.map((d) => (
+            <div key={d.id} className="flex items-center gap-2 py-0.5 text-[11px]" data-browser-download={d.state}>
+              <Icon name={d.state === "completed" ? "check" : d.state === "progressing" ? "arrowUp" : "alert"} size={11} className={`shrink-0 ${d.state === "progressing" ? "rotate-180 text-muted" : d.state === "completed" ? "text-accent" : "text-err"}`} />
+              <span className="min-w-0 truncate">{d.name}</span>
+              <span className="mono shrink-0 text-[10.5px] text-muted">
+                {d.state === "progressing"
+                  ? d.total > 0
+                    ? `${Math.floor((d.received / d.total) * 100)}%`
+                    : t("panel.browser.download.progressing")
+                  : t(`panel.browser.download.${d.state}`)}
+              </span>
+              <span className="ml-auto flex shrink-0 items-center gap-1">
+                {d.state === "completed" && (
+                  <>
+                    <button onClick={() => void window.sudal.browser.showDownload(d.id, "open")} className="rounded px-1.5 py-0.5 text-muted hover:bg-panel-2 hover:text-fg">
+                      {t("panel.browser.download.open")}
+                    </button>
+                    <button onClick={() => void window.sudal.browser.showDownload(d.id, "reveal")} className="rounded px-1.5 py-0.5 text-muted hover:bg-panel-2 hover:text-fg">
+                      {t("panel.browser.download.reveal")}
+                    </button>
+                  </>
+                )}
+                {d.state !== "progressing" && (
+                  <button onClick={() => setDownloads((l) => l.filter((x) => x.id !== d.id))} className="rounded p-0.5 text-muted hover:text-fg" title={t("panel.browser.download.dismiss")}>
+                    <Icon name="x" size={11} />
+                  </button>
+                )}
+              </span>
+            </div>
+          ))}
         </div>
       )}
       {find.open && (
@@ -663,6 +871,19 @@ export function BrowserPane({
         </div>
       )}
       <div className={`relative min-h-0 flex-1 ${viewport === "full" ? "bg-white" : "flex justify-center bg-inset"}`} data-browser-viewport-active={viewport}>
+        {bar !== "off" && (
+          <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-[2px]" data-browser-progress={bar}>
+            <div
+              className="h-full bg-accent"
+              style={{
+                width: bar === "start" ? "8%" : bar === "run" ? "85%" : "100%",
+                opacity: bar === "done" ? 0 : 1,
+                // 차오름은 느리게 끝으로 갈수록 더디게, 끝날 땐 빠르게 채우고 사라진다.
+                transition: bar === "run" ? "width 8s cubic-bezier(0.1, 0.7, 0.2, 1)" : bar === "done" ? "width 150ms ease-out, opacity 250ms ease 100ms" : "none",
+              }}
+            />
+          </div>
+        )}
         {url ? (
           // partition 을 앱 세션과 분리해 쿠키·저장소가 섞이지 않게 한다.
           <webview
@@ -672,19 +893,69 @@ export function BrowserPane({
             }}
             src={url}
             partition="persist:sudal-browser"
+            // 없으면 target=_blank·window.open 이 main 의 새 창 처리기까지 오지 못하고 조용히 막힌다.
+            // 처리기는 늘 거절하고 새 탭으로 돌리므로 실제 팝업 창은 생기지 않는다.
+            // React 타입은 boolean 이지만 Electron 은 속성이 있는지만 본다 — 문자열로 넣어야 DOM 에 확실히 남는다.
+            allowpopups={"true" as unknown as boolean}
             // 프리셋 폭보다 패널이 좁으면 패널을 따른다 — 가로 스크롤이 생기면 좁은 화면 확인이 안 된다
-            style={{ width: viewportById(viewport).width ? `min(100%, ${viewportById(viewport).width}px)` : "100%", height: "100%" }}
+            style={{ width: vp.width ? `min(100%, ${vp.width}px)` : "100%", height: "100%" }}
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 bg-inset text-muted">
+          <div className="flex h-full flex-col items-center justify-center gap-2 bg-inset px-6 text-muted">
             <Icon name="globe" size={22} className="opacity-50" />
             <span>{t("panel.browser.emptyHint")}</span>
-            <span className="mono text-[10.5px] text-muted-2">{t("panel.browser.emptyExamples")}</span>
+            {frequent.length > 0 ? (
+              <div className="mt-3 w-full max-w-[420px]" data-browser-frequent>
+                <div className="mb-1.5 text-[10.5px] text-muted-2">{t("panel.browser.frequent")}</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {frequent.map((f) => (
+                    <button
+                      key={f.origin}
+                      onClick={() => go(f.url)}
+                      className="flex min-w-0 items-center gap-2 rounded-md border border-line bg-panel px-2.5 py-1.5 text-left text-[11.5px] text-fg hover:border-accent/40 hover:bg-panel-2"
+                      title={f.url}
+                    >
+                      <Icon name="clock" size={11} className="shrink-0 text-muted" />
+                      <span className="truncate">{f.origin.replace(/^https?:\/\//, "")}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <span className="mono text-[10.5px] text-muted-2">{t("panel.browser.emptyExamples")}</span>
+            )}
+          </div>
+        )}
+        {error && url && (
+          // 웹뷰 위에 덮는다 — 웹뷰를 내리면 다시 시도할 때 페이지를 처음부터 붙여야 한다.
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-inset px-6 text-center" data-browser-error={error.kind}>
+            <Icon name="alert" size={22} className="text-err opacity-80" />
+            <div className="text-[13px] font-medium text-fg">{t(`panel.browser.error.${error.kind}.title`)}</div>
+            <div className="max-w-[360px] text-[11.5px] text-muted">{t(`panel.browser.error.${error.kind}.hint`, { host: hostOf(error.url) || error.url })}</div>
+            <div className="mono max-w-full truncate text-[10.5px] text-muted-2">
+              {error.code} · {error.url}
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  setError(null);
+                  const el = view.current;
+                  if (el && error.url) void el.loadURL(error.url).catch(() => {});
+                }}
+                className="rounded-md border border-accent/40 bg-accent-tint px-3 py-1 text-[11.5px] text-accent hover:bg-accent/15"
+                data-browser-retry
+              >
+                {t("panel.browser.retry")}
+              </button>
+              <button onClick={() => error.url && void window.sudal.browser.openExternal(error.url)} className="rounded-md border border-line px-3 py-1 text-[11.5px] text-muted hover:bg-panel-2 hover:text-fg">
+                {t("panel.browser.openExternal")}
+              </button>
+            </div>
           </div>
         )}
       </div>
-      <div className="mono flex items-center gap-2 border-t border-line px-2 py-0.5 text-[10px] text-muted">
-        <span className="truncate">{title || (loading ? t("common.loading") : "")}</span>
+      <div className="mono flex items-center gap-2 border-t border-line px-2 py-0.5 text-[10px] text-muted" data-browser-status>
+        <span className="truncate">{hoverUrl || title || (loading ? t("common.loading") : "")}</span>
       </div>
     </div>
   );

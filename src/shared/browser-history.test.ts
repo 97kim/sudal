@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HISTORY_MAX, parseHistory, recordVisit, suggest, type HistoryEntry } from "./browser-history";
+import { HISTORY_MAX, frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "./browser-history";
 
 const e = (url: string, at: number, visits = 1): HistoryEntry => ({ url, at, visits });
 
@@ -60,4 +60,19 @@ test("parseHistory: 모양이 틀린 항목은 조용히 버린다", () => {
     parseHistory('[{"url":"http://a/","at":1,"visits":2},{"url":"javascript:alert(1)","at":1,"visits":1},{"url":"http://b/"}]'),
     [{ url: "http://a/", at: 1, visits: 2 }],
   );
+});
+
+test("frequentSites: 출처별로 묶고, 그 안에서 가장 많이 간 주소를 연다", () => {
+  const h = [
+    e("http://localhost:3000/a", 5, 2),
+    e("https://example.com/", 6, 3),
+    e("http://localhost:3000/b", 4, 4),
+    e("http://localhost:5173/", 1, 1),
+  ];
+  assert.deepEqual(frequentSites(h), [
+    { origin: "http://localhost:3000", url: "http://localhost:3000/b", visits: 6 },
+    { origin: "https://example.com", url: "https://example.com/", visits: 3 },
+    { origin: "http://localhost:5173", url: "http://localhost:5173/", visits: 1 },
+  ]);
+  assert.equal(frequentSites(h, 1).length, 1);
 });

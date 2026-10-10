@@ -1,6 +1,29 @@
 // main 이 직접 그리거나 돌려주는 문구: 메뉴, macOS 알림, 창 요청(IPC)의 오류, shared 의 표시 함수(팬아웃·교차 리뷰·스니펫).
 // msg 아래는 대화 기록에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
 export const main = {
+  // 인앱 브라우저 페이지의 우클릭 메뉴.
+  browser: {
+    menu: {
+      openLinkInTab: "새 탭에서 링크 열기",
+      openLinkExternal: "기본 브라우저에서 링크 열기",
+      copyLink: "링크 주소 복사",
+      copyImage: "이미지 복사",
+      copyImageUrl: "이미지 주소 복사",
+      saveImage: "이미지 저장",
+      undo: "실행 취소",
+      redo: "다시 실행",
+      cut: "잘라내기",
+      copy: "복사",
+      paste: "붙여넣기",
+      selectAll: "모두 선택",
+      search: "‘{{text}}’ 검색",
+      back: "뒤로",
+      forward: "앞으로",
+      reload: "새로고침",
+      copyPageUrl: "페이지 주소 복사",
+      inspect: "요소 검사",
+    },
+  },
   // 화면에 떠 있는 수달의 말풍선과 우클릭 메뉴. 탭 제목 뒤에 조사가 붙지 않게 제목을 끝에 둔다.
   otter: {
     bubble: {

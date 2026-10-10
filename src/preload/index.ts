@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
-import type { ScheduleListDto } from "@shared/ipc";
+import type { BrowserEventDto, ScheduleListDto } from "@shared/ipc";
 import type { SnippetDto } from "@shared/snippets";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import type { PermissionAnswer } from "@shared/chat-events";
@@ -328,6 +328,12 @@ const api: SudalApi = {
       ipcRenderer.send(IPC.browserRegister, tabId, webContentsId, url),
     favicon: (url: string) => ipcRenderer.invoke(IPC.browserFavicon, url),
     netFailures: (webContentsId: number, clear?: boolean) => ipcRenderer.invoke(IPC.browserNetFailures, webContentsId, clear === true),
+    onEvent: (cb: (ev: BrowserEventDto) => void) => {
+      const handler = (_e: IpcRendererEvent, ev: BrowserEventDto) => cb(ev);
+      ipcRenderer.on(IPC.browserEvent, handler);
+      return () => ipcRenderer.removeListener(IPC.browserEvent, handler);
+    },
+    showDownload: (id: string, how: "open" | "reveal") => ipcRenderer.invoke(IPC.browserShowDownload, id, how),
   },
 };
 

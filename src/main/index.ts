@@ -62,6 +62,7 @@ import { browserNetFailures, clearBrowserNetFailures, watchBrowserNetwork } from
 import { fetchDocImage, fetchFavicon } from "./browser-favicon";
 import { forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
 import { BROWSER_PARTITION } from "./browser-net";
+import { attachWebviewHandlers, showDownload, watchBrowserDownloads } from "./browser-webview";
 import { BackgroundJobWatcher } from "./background-jobs";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import { BackgroundTaskRegistry } from "./bg-tasks";
@@ -659,7 +660,7 @@ function isExternalUrl(url: string): boolean {
 
 /**
  * <webview> 보안: 렌더러가 무엇을 요청하든 preload 없이, node 없이, 샌드박스로, http(s) 만 붙인다.
- * 웹뷰가 새 창을 열려 하면 같은 웹뷰에서 이동시킨다(팝업 없음).
+ * 웹뷰가 새 창을 열려 하면 새 브라우저 탭으로 연다(팝업 없음) — browser-webview.ts.
  */
 function hardenWebviews() {
   app.on("web-contents-created", (_e, contents) => {
@@ -671,10 +672,7 @@ function hardenWebviews() {
       if (!/^https?:\/\//i.test(params.src ?? "")) event.preventDefault();
     });
     if (contents.getType() === "webview") {
-      contents.setWindowOpenHandler(({ url }) => {
-        if (/^https?:\/\//i.test(url)) void contents.loadURL(url);
-        return { action: "deny" };
-      });
+      attachWebviewHandlers(contents);
       contents.on("will-navigate", (event, url) => {
         if (!/^https?:\/\//i.test(url)) event.preventDefault();
       });
@@ -2613,6 +2611,9 @@ function registerIpc() {
     if (clear === true) clearBrowserNetFailures(webContentsId);
     return out;
   });
+  ipcMain.handle(IPC.browserShowDownload, (_e, id: unknown, how: unknown) =>
+    typeof id === "string" && (how === "open" || how === "reveal") ? showDownload(id, how) : false,
+  );
   ipcMain.handle(IPC.openExternal, async (_e, url: unknown) => {
     if (typeof url !== "string" || !isExternalUrl(url)) return false;
     await shell.openExternal(url);
@@ -3092,6 +3093,7 @@ app.whenReady().then(async () => {
   buildMenu();
   // 브라우저 탭의 실패한 요청 수집 — webRequest 는 세션에 한 번만 걸 수 있어 창보다 먼저 건다
   watchBrowserNetwork();
+  watchBrowserDownloads();
   // 세션 쿠키 되돌리기도 창보다 먼저 — 첫 페이지부터 로그인 상태여야 한다.
   if (appSettings().keepBrowserLogin) {
     const n = await restoreSessionCookies(session.fromPartition(BROWSER_PARTITION), app.getPath("userData"));

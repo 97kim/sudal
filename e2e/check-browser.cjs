@@ -13,7 +13,7 @@ cli("browser","open","--tab","브A","--url","https://example.com");
 await page.waitForTimeout(3000);
 const first=await ev(()=>document.querySelector("[data-browser-url]")?.value);
 console.log("처음 주소:", first);
-console.log("RESULT (개발자 도구 버튼 있음):", await ev(()=>!!document.querySelector("[data-browser-devtools]"))?"PASS":"FAIL");
+console.log("RESULT (더보기 메뉴 버튼 있음):", await ev(()=>!!document.querySelector("[data-browser-more]"))?"PASS":"FAIL");
 // 주소창으로 이동
 await page.fill("[data-browser-url]","https://example.com/moved");
 await page.press("[data-browser-url]","Enter");
@@ -28,9 +28,9 @@ const back=await ev(()=>document.querySelector("[data-browser-url]")?.value);
 console.log("돌아온 뒤 주소:", back, "| 탭 전환 중 내려갔었나:", gone);
 console.log("RESULT (이동한 주소가 유지됨):", back && back.includes("/moved")?"PASS":"FAIL (기대: /moved, 실제: "+back+")");
 // 개발자 도구 토글
-await page.click("[data-browser-devtools]");await page.waitForTimeout(1500);
+await page.click("[data-browser-more]");await page.click("[data-browser-devtools]");await page.waitForTimeout(1500);
 const opened=await ev(()=>{const w=document.querySelector("webview");return w&&w.isDevToolsOpened?w.isDevToolsOpened():null});
-await page.click("[data-browser-devtools]");await page.waitForTimeout(1000);
+await page.click("[data-browser-more]");await page.click("[data-browser-devtools]");await page.waitForTimeout(1000);
 const closed=await ev(()=>{const w=document.querySelector("webview");return w&&w.isDevToolsOpened?w.isDevToolsOpened():null});
 console.log("devtools 열림:",opened,"→ 닫힘:",closed);
 console.log("RESULT (개발자 도구 토글):", opened===true&&closed===false?"PASS":"FAIL");

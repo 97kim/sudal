@@ -257,6 +257,8 @@ export const IPC = {
   pickDirectory: "dialog:pick-directory",
   openExternal: "browser:open-external",
   browserNetFailures: "browser:net-failures",
+  browserEvent: "browser:event",
+  browserShowDownload: "browser:show-download",
   backgroundJobs: "jobs:list",
   backgroundJobsChanged: "jobs:changed",
   gitInfo: "git:info",
@@ -1027,8 +1029,18 @@ export interface SudalApi {
     /** 파비콘을 main 이 받아 data URL 로 준다(렌더러 CSP 가 원격 이미지를 막는다). 못 받으면 null. */
     favicon(url: string): Promise<string | null>;
     netFailures(webContentsId: number, clear?: boolean): Promise<NetFailure[]>;
+    /** 웹뷰가 스스로 일으킨 일(새 탭으로 열 링크·다운로드). 받은 쪽이 webContentsId 로 제 것인지 가른다. */
+    onEvent(cb: (ev: BrowserEventDto) => void): () => void;
+    /** 받은 파일을 열거나 폴더에서 보여 준다. 이 앱이 받은 파일(id)만. */
+    showDownload(id: string, how: "open" | "reveal"): Promise<boolean>;
   };
 }
+
+/** main 이 인앱 브라우저 웹뷰를 대신해 렌더러에 알리는 일. */
+export type BrowserEventDto = { webContentsId: number } & (
+  | { kind: "open-tab"; url: string }
+  | { kind: "download"; id: string; name: string; state: "progressing" | "completed" | "cancelled" | "failed"; received: number; total: number }
+);
 
 /** 제어 소켓(sudal CLI)이 렌더러에 요청하는 화면 동작. */
 export type ControlOpenDto =

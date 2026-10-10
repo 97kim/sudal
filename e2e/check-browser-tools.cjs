@@ -54,12 +54,16 @@ const srv = http.createServer((req, res) => {
   await page.click("[data-editor-maximize]");
   await page.waitForTimeout(900);
   const fullW = await ev(() => Math.round([...document.querySelectorAll("webview")].map((x) => x.getBoundingClientRect()).find((r) => r.width > 50)?.width ?? 0));
-  await page.selectOption("[data-browser-viewport]", "phone");
+  // 보기 폭·확대는 ⋯ 메뉴 안에 있다
+  await page.click("[data-browser-more]");
+  await page.click('[data-browser-viewport-option="phone"]');
   await page.waitForTimeout(700);
   const phoneW = await ev(() => Math.round([...document.querySelectorAll("webview")].map((x) => x.getBoundingClientRect()).find((r) => r.width > 50)?.width ?? 0));
   console.log("폭:", fullW, "→", phoneW);
   console.log("RESULT (폰 폭으로 좁아짐):", phoneW > 0 && phoneW < fullW ? "PASS" : `FAIL (${fullW} → ${phoneW})`);
-  await page.selectOption("[data-browser-viewport]", "full");
+  console.log("RESULT (보기 폭 칩이 보임):", await ev(() => !!document.querySelector("[data-browser-viewport-chip]")) ? "PASS" : "FAIL");
+  await page.click('[data-browser-viewport-option="full"]');
+  await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
   const backW = await ev(() => Math.round([...document.querySelectorAll("webview")].map((x) => x.getBoundingClientRect()).find((r) => r.width > 50)?.width ?? 0));
   console.log("RESULT (전체로 복귀):", Math.abs(backW - fullW) < 5 ? "PASS" : `FAIL (${fullW} → ${backW})`);
@@ -69,6 +73,7 @@ const srv = http.createServer((req, res) => {
 
   // 3) 확대·축소
   const zoomOf = () => ev(() => document.querySelector("[data-browser-zoom]")?.getAttribute("data-browser-zoom"));
+  await page.click("[data-browser-more]");
   console.log("처음 배율:", await zoomOf());
   await page.click("[data-browser-zoom] button:last-child");
   await page.waitForTimeout(500);
@@ -78,6 +83,7 @@ const srv = http.createServer((req, res) => {
   await page.click("[data-browser-zoom] button:nth-child(2)");
   await page.waitForTimeout(500);
   console.log("RESULT (100% 로 복귀):", (await zoomOf()) === "100" ? "PASS" : "FAIL");
+  await page.keyboard.press("Escape");
 
   const s = await ev(() => window.sudal.workspaces.state());
   for (const w of s.model.workspaces) { for (const t of s.model.tabs.filter((t) => t.workspaceId === w.id)) await ev((id) => window.sudal.workspaces.deleteTab(id), t.id); await ev((id) => window.sudal.workspaces.remove(id), w.id); }

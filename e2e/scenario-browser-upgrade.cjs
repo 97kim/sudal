@@ -1,0 +1,128 @@
+// 인앱 브라우저 고도화 검증. usage: node e2e/scenario-browser-upgrade.cjs (release/mac-arm64/Sudal.app 을 먼저 패키징)
+//  A) target=_blank 링크가 지금 페이지를 덮지 않고 새 브라우저 탭으로 열린다
+//  B) 느린 페이지를 여는 동안 로딩 막대가 보인다
+//  C) 꺼진 포트는 오류 화면(refused)과 다시 시도 버튼을 보여 주고, 서버가 뜨면 다시 시도로 열린다
+//  D) 확대 배율은 호스트별로 기억된다(localhost 확대 → 127.0.0.1 은 100% → localhost 로 돌아오면 다시 확대)
+//  E) 받은 파일이 다운로드 줄에 "받았어요" 로 뜬다(실제 다운로드 폴더에 받으므로 끝에 지운다)
+//  F) 빈 브라우저 탭에 자주 간 곳이 보인다
+const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
+const E2E = __dirname;
+const app = path.join(E2E, "..", "release/mac-arm64/Sudal.app");
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-br-"));
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-br-repo-"));
+const cli = (...a) => {
+  try {
+    return JSON.parse(execFileSync(app + "/Contents/MacOS/Sudal", [app + "/Contents/Resources/cli/sudal.cjs", ...a], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", SUDAL_USERDATA: userData }, encoding: "utf8" }));
+  } catch (e) {
+    try { return JSON.parse(e.stdout); } catch { throw e; }
+  }
+};
+const { chromium } = require("playwright-core");
+const t0 = Date.now();
+const log = (...a) => console.log(`+${((Date.now() - t0) / 1000).toFixed(1)}s`, ...a);
+const results = [];
+const res = (n, ok, x = "") => { results.push([n, ok]); log(`RESULT ${n}:`, ok ? "PASS" : "FAIL", x); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fileName = `sudal-e2e-${Date.now().toString(36)}.txt`;
+
+const srv = http.createServer((req, res) => {
+  if (req.url === "/slow") return setTimeout(() => { res.writeHead(200, { "content-type": "text/html" }); res.end("<title>slow</title>slow"); }, 2500);
+  if (req.url === "/file") {
+    res.writeHead(200, { "content-type": "text/plain", "content-disposition": `attachment; filename="${fileName}"` });
+    return res.end("hello");
+  }
+  if (req.url === "/other") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<title>other</title>other page"); }
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(`<!doctype html><title>home</title><a href="/other" target="_blank">새 탭 링크</a> <a href="/file">파일 받기</a>`);
+});
+const freePort = () => new Promise((r) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
+
+(async () => {
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const port = srv.address().port;
+  const base = `http://localhost:${port}`;
+  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_USERDATA: userData } });
+  let b = null;
+  for (let i = 0; i < 60 && !b; i++) { await sleep(500); try { b = await chromium.connectOverCDP("http://127.0.0.1:9333"); } catch {} }
+  let page = null;
+  for (let i = 0; i < 40 && !page; i++) { page = b.contexts().flatMap((c) => c.pages()).find((p) => p.url().startsWith("file:") || p.url().includes("localhost:5")); if (!page) await sleep(250); }
+  await page.waitForSelector("[data-sidebar]", { timeout: 20000 });
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const errs = [];
+  page.on("console", (m) => { if (m.type() === "error") errs.push(m.text().slice(0, 200)); });
+  const waitFor = async (fn, arg, ms = 8000) => { for (let i = 0; i < ms / 200; i++) { if (await ev(fn, arg)) return true; await sleep(200); } return false; };
+  const tabs = () => ev(() => [...document.querySelectorAll("[data-editor-tab]")].map((t) => t.getAttribute("data-editor-tab")));
+
+  const ws = cli("ws", "add", "--path", repo);
+  const tab = cli("tab", "new", "--ws", ws.workspaceId, "--title", "브라우저").tab.id;
+  await sleep(800);
+  cli("browser", "open", "--tab", tab, "--url", base + "/");
+  await waitFor(() => [...document.querySelectorAll("[data-browser-pane]")].some((p) => p.getAttribute("data-browser-pane").endsWith("/") && p.offsetParent));
+  await sleep(1500);
+
+  // A
+  const before = await tabs();
+  const clicked = cli("browser", "click", "--tab", tab, "--text", "새 탭 링크");
+  const opened = await waitFor((u) => [...document.querySelectorAll("[data-editor-tab]")].some((t) => t.getAttribute("data-editor-tab") === u), base + "/other");
+  const after = await tabs();
+  res("A (_blank → 새 탭)", opened && after.length === before.length + 1 && after.includes(base + "/"), JSON.stringify({ clicked: clicked.ok ?? clicked.error, before, after }));
+
+  // B
+  cli("browser", "open", "--tab", tab, "--url", base + "/slow");
+  const sawBar = await waitFor(() => !!document.querySelector("[data-browser-progress]"), null, 2000);
+  const barGone = await waitFor(() => !document.querySelector("[data-browser-progress]"), null, 6000);
+  res("B (로딩 막대)", sawBar && barGone, JSON.stringify({ sawBar, barGone }));
+
+  // C
+  const deadPort = await freePort();
+  const deadUrl = `http://localhost:${deadPort}/`;
+  cli("browser", "open", "--tab", tab, "--url", deadUrl);
+  const refused = await waitFor(() => document.querySelector("[data-browser-error]")?.getAttribute("data-browser-error") === "refused", null, 8000);
+  const late = http.createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end("<title>late</title>late"); });
+  await new Promise((r) => late.listen(deadPort, "127.0.0.1", r));
+  await ev(() => document.querySelector("[data-browser-retry]")?.click());
+  const recovered = await waitFor(() => !document.querySelector("[data-browser-error]"), null, 6000);
+  late.close();
+  res("C (오류 화면 · 다시 시도)", refused && recovered, JSON.stringify({ refused, recovered }));
+
+  // D
+  // 숨은 탭에도 칩이 있으므로 보이는 것만 본다.
+  const zoomChip = () => ev(() => [...document.querySelectorAll("[data-browser-zoom-chip]")].find((x) => x.offsetParent)?.textContent ?? null);
+  cli("browser", "open", "--tab", tab, "--url", base + "/");
+  await sleep(1500);
+  await page.click("[data-browser-more] >> visible=true");
+  await page.click("[data-browser-zoom] button:last-child >> visible=true");
+  await page.keyboard.press("Escape");
+  const zoomedLocal = await zoomChip();
+  cli("browser", "open", "--tab", tab, "--url", `http://127.0.0.1:${port}/`);
+  await sleep(1800);
+  const otherHost = await zoomChip();
+  cli("browser", "open", "--tab", tab, "--url", base + "/other");
+  await sleep(1800);
+  const backLocal = await zoomChip();
+  res("D (호스트별 배율)", zoomedLocal === "120%" && otherHost === null && backLocal === "120%", JSON.stringify({ zoomedLocal, otherHost, backLocal }));
+  await ev(() => [...document.querySelectorAll("[data-browser-zoom-chip]")].find((x) => x.offsetParent)?.click());
+
+  // E
+  cli("browser", "open", "--tab", tab, "--url", base + "/");
+  await sleep(1500);
+  cli("browser", "click", "--tab", tab, "--text", "파일 받기");
+  const done = await waitFor(() => [...document.querySelectorAll("[data-browser-download]")].some((x) => x.offsetParent && x.getAttribute("data-browser-download") === "completed"), null, 8000);
+  const dlText = await ev(() => document.querySelector("[data-browser-downloads]")?.textContent ?? "");
+  const saved = path.join(os.homedir(), "Downloads", fileName);
+  const exists = fs.existsSync(saved);
+  try { fs.rmSync(saved); } catch {}
+  res("E (다운로드 줄)", done && dlText.includes(fileName) && exists, JSON.stringify({ done, exists, dlText: dlText.slice(0, 80) }));
+
+  // F
+  await ev(() => document.querySelector("[data-editor-new-browser]")?.click());
+  const freq = await waitFor((o) => [...document.querySelectorAll("[data-browser-frequent] button")].some((x) => x.textContent.includes(o)), `localhost:${port}`, 4000);
+  res("F (자주 간 곳)", freq);
+
+  res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
+  await b.close().catch(() => {});
+  proc.kill();
+  srv.close();
+  log(`${results.filter((r) => r[1]).length}/${results.length} PASS`);
+  process.exit(results.every((r) => r[1]) ? 0 : 1);
+})().catch((e) => { console.error("ERR", e.stack || e.message); srv.close(); process.exit(1); });

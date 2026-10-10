@@ -2,6 +2,28 @@ import type { main as ko } from "../ko/main";
 import type { DeepPartial } from "../types";
 
 export const main: DeepPartial<typeof ko> = {
+  browser: {
+    menu: {
+      openLinkInTab: "Open Link in New Tab",
+      openLinkExternal: "Open Link in Default Browser",
+      copyLink: "Copy Link Address",
+      copyImage: "Copy Image",
+      copyImageUrl: "Copy Image Address",
+      saveImage: "Save Image",
+      undo: "Undo",
+      redo: "Redo",
+      cut: "Cut",
+      copy: "Copy",
+      paste: "Paste",
+      selectAll: "Select All",
+      search: "Search for “{{text}}”",
+      back: "Back",
+      forward: "Forward",
+      reload: "Reload",
+      copyPageUrl: "Copy Page Address",
+      inspect: "Inspect Element",
+    },
+  },
   otter: {
     bubble: {
       waiting: "Waiting for you · {{title}}",

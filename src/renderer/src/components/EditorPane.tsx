@@ -216,6 +216,7 @@ export function EditorPane({
                 }
                 onAttach={onAttach}
                 onUrlChange={(u) => setBrowserUrl(f, u)}
+                onOpenTab={(u) => openBrowserTab(tabId, u)}
               />
             </div>
           ) : (
