@@ -11,7 +11,8 @@ import {
 } from "@shared/workspace-model";
 import { moveNextTo, neighborOf } from "@shared/reorder";
 import { Icon } from "./Icon";
-import { scApp } from "../platform";
+import { isMod, scApp } from "../platform";
+import { EMPTY_SELECTION, pruneSelection, rangeSelection, toggleSelection, type TabSelection } from "@shared/sidebar-select";
 import { ProviderLogo } from "./ProviderLogo";
 import { Logo } from "./Logo";
 import { SidebarLimits } from "./SidebarLimits";
@@ -36,6 +37,8 @@ const MAX_SCROLL_SPEED = 360;
 
 type Menu =
   | { kind: "tab"; id: string; x: number; y: number }
+  /** 여러 개 고른 세션 중 하나를 우클릭했다 — 고른 것 전체에 대한 메뉴 */
+  | { kind: "tabs"; id: string; x: number; y: number }
   | { kind: "ws"; id: string; x: number; y: number };
 
 /**
@@ -278,6 +281,20 @@ export function Sidebar({
       return next;
     });
   const [showAllClosed, setShowAllClosed] = useState<Set<string>>(new Set());
+  // 여러 세션 고르기(⌘·Ctrl+클릭, Shift+클릭). 범위는 화면에 보이는 순서로 잡는다 — 접힌 워크스페이스·숨긴 닫힌 세션은 빼고.
+  const [selection, setSelection] = useState<TabSelection>(EMPTY_SELECTION);
+  const selectableOrder = useMemo(() => {
+    const out: string[] = [];
+    for (const w of model.workspaces) {
+      if (collapsed.has(w.id)) continue;
+      const tabs = workspaceTabs(model, w.id);
+      const closed = tabs.filter((t) => !t.open).length;
+      const hidden = showAllClosed.has(w.id) ? 0 : Math.max(0, closed - CLOSED_LIMIT);
+      for (const t of hidden > 0 ? tabs.slice(0, tabs.length - hidden) : tabs) out.push(t.id);
+    }
+    return out;
+  }, [model, collapsed, showAllClosed]);
+  useEffect(() => setSelection((s) => pruneSelection(s, selectableOrder)), [selectableOrder]);
   // 워크스페이스 만들기(이름 입력 행) · 워크스페이스 이름 변경(행 안에서).
   const [creating, setCreating] = useState(false);
   const [createDraft, setCreateDraft] = useState("");
@@ -309,10 +326,32 @@ export function Sidebar({
     tabId: string;
     draft: string;
   } | null>(null);
-  const [confirm, setConfirm] = useState<{
-    kind: "tab" | "ws";
-    id: string;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<
+    | { kind: "tab" | "ws"; id: string }
+    /** 고른 세션 여러 개 삭제. 확인 줄은 id(화면에서 맨 위에 있는 고른 세션) 자리에 띄운다. */
+    | { kind: "tabs"; id: string; ids: string[] }
+    | null
+  >(null);
+  const selectedInOrder = () => selectableOrder.filter((id) => selection.ids.has(id));
+  const askDeleteSelected = () => {
+    const ids = selectedInOrder();
+    if (ids.length > 0) setConfirm({ kind: "tabs", id: ids[0], ids });
+  };
+  // 고른 세션이 있을 때: Delete(Mac 은 ⌫)로 삭제 확인, Esc 로 선택 풀기. 입력칸에 쓰는 중이면 그 키를 가로채지 않는다.
+  useEffect(() => {
+    if (selection.ids.size === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest(".xterm, .cm-editor"))) return;
+      if (e.key === "Escape") setSelection(EMPTY_SELECTION);
+      else if ((e.key === "Delete" || e.key === "Backspace") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        askDeleteSelected();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const renameRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (renaming) renameRef.current?.select();
@@ -660,7 +699,18 @@ export function Sidebar({
                   )}
                   {visible.map((tab) => (
                     <li key={tab.id}>
-                      {confirm?.kind === "tab" && confirm.id === tab.id ? (
+                      {confirm?.kind === "tabs" && confirm.id === tab.id ? (
+                        <ConfirmRow
+                          text={t("nav.sidebar.deleteSelectedConfirm", { count: confirm.ids.length })}
+                          action={t("nav.sidebar.deleteSessionAction")}
+                          onYes={() => {
+                            setConfirm(null);
+                            setSelection(EMPTY_SELECTION);
+                            for (const id of confirm.ids) onDeleteTab(id);
+                          }}
+                          onNo={() => setConfirm(null)}
+                        />
+                      ) : confirm?.kind === "tab" && confirm.id === tab.id ? (
                         <ConfirmRow
                           text={t("nav.sidebar.deleteSessionConfirm")}
                           action={t("nav.sidebar.deleteSessionAction")}
@@ -686,11 +736,18 @@ export function Sidebar({
                           highlighted={
                             menu?.kind === "tab" && menu.id === tab.id
                           }
+                          selected={selection.ids.has(tab.id)}
                           renaming={
                             renaming?.tabId === tab.id ? renaming.draft : null
                           }
                           renameRef={renameRef}
-                          onOpen={() => onOpenTab(tab.id)}
+                          onClick={(e) => {
+                            if (isMod(e)) return setSelection((s) => toggleSelection(s, tab.id, model.activeTabId));
+                            if (e.shiftKey) return setSelection((s) => rangeSelection(s, tab.id, selectableOrder, model.activeTabId));
+                            // 그냥 클릭은 지금처럼 연다. 고른 것은 풀고 Shift+클릭의 기준점만 남긴다.
+                            setSelection({ ids: new Set(), anchor: tab.id });
+                            onOpenTab(tab.id);
+                          }}
                           onStartRename={() =>
                             setRenaming({
                               tabId: tab.id,
@@ -702,14 +759,12 @@ export function Sidebar({
                           }
                           onRenameCommit={commitRename}
                           onRenameCancel={() => setRenaming(null)}
-                          onContextMenu={(e) =>
-                            openMenu(e, {
-                              kind: "tab",
-                              id: tab.id,
-                              x: e.clientX,
-                              y: e.clientY,
-                            })
-                          }
+                          onContextMenu={(e) => {
+                            // 여러 개 고른 것 중 하나면 고른 것 전체의 메뉴, 아니면 고른 것을 풀고 이 세션의 메뉴
+                            const many = selection.ids.size > 1 && selection.ids.has(tab.id);
+                            if (!many && selection.ids.size > 0) setSelection(EMPTY_SELECTION);
+                            openMenu(e, { kind: many ? "tabs" : "tab", id: tab.id, x: e.clientX, y: e.clientY });
+                          }}
                           onX={() =>
                             tab.open
                               ? onCloseTab(tab.id)
@@ -738,7 +793,7 @@ export function Sidebar({
         })}
       </div>
 
-      {menu && (menuTab || menuWs) && (
+      {menu && (menuTab || menuWs || menu.kind === "tabs") && (
         <div
           role="menu"
           data-session-menu
@@ -749,6 +804,43 @@ export function Sidebar({
             top: Math.min(menu.y, window.innerHeight - 140),
           }}
         >
+          {menu.kind === "tabs" && (
+            <>
+              {(() => {
+                const ids = selectedInOrder();
+                const open = ids.filter((id) => model.tabs.find((x) => x.id === id)?.open);
+                return (
+                  <>
+                    {open.length > 0 && (
+                      <MenuItem
+                        label={t("nav.sidebar.menu.closeSelected", { count: open.length })}
+                        onPick={() => {
+                          setMenu(null);
+                          for (const id of open) onCloseTab(id);
+                        }}
+                      />
+                    )}
+                    <MenuItem
+                      label={t("nav.sidebar.menu.clearSelection")}
+                      onPick={() => {
+                        setMenu(null);
+                        setSelection(EMPTY_SELECTION);
+                      }}
+                    />
+                    <div className="my-1 h-px bg-line" />
+                    <MenuItem
+                      label={t("nav.sidebar.menu.deleteSelected", { count: ids.length })}
+                      danger
+                      onPick={() => {
+                        setMenu(null);
+                        askDeleteSelected();
+                      }}
+                    />
+                  </>
+                );
+              })()}
+            </>
+          )}
           {menuTab && (
             <>
               {menuTab.open && menuTab.id !== model.activeTabId && (
@@ -915,9 +1007,10 @@ function SessionRow({
   attention,
   active,
   highlighted,
+  selected,
   renaming,
   renameRef,
-  onOpen,
+  onClick,
   onStartRename,
   onRenameChange,
   onRenameCommit,
@@ -930,9 +1023,11 @@ function SessionRow({
   attention: SessionAttention | null;
   active: boolean;
   highlighted: boolean;
+  /** 여러 개 고르기로 골랐다 */
+  selected: boolean;
   renaming: string | null;
   renameRef: React.RefObject<HTMLInputElement | null>;
-  onOpen: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onStartRename: () => void;
   onRenameChange: (v: string) => void;
   onRenameCommit: () => void;
@@ -948,13 +1043,16 @@ function SessionRow({
   return (
     <div
       {...drag}
-      onClick={onOpen}
+      onClick={onClick}
+      // Shift+클릭으로 범위를 고를 때 글자가 같이 선택되지 않게
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
       onDoubleClick={onStartRename}
       onContextMenu={onContextMenu}
       className={`group flex cursor-default items-center gap-2 rounded-md py-1.5 pl-2 pr-1 ${
         dragging ? "opacity-70" : ""
-      } ${active || highlighted ? "bg-panel-2" : "hover:bg-panel-2/60"}`}
+      } ${selected ? "bg-accent/15" : active || highlighted ? "bg-panel-2" : "hover:bg-panel-2/60"}`}
       data-session={tab.id}
+      data-selected={selected ? "true" : undefined}
       data-open={tab.open ? "true" : "false"}
     >
       <StatusDot

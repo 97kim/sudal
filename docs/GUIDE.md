@@ -25,6 +25,7 @@ inherits the active session's path, and you can also set a default path from the
 The left side is the workspace tree. Each workspace row has its sessions underneath (open sessions in tab-bar order, closed ones dimmed, most recent first).
 Hover over a row and an × appears: it closes an open session, or asks to confirm deleting a closed one. The + on a workspace row opens a new session in it,
 and clicking the row collapses it (remembered). Right-click menu: for sessions, Close / Open, Rename, Delete; for workspaces, New session, Collapse, Remove.
+**To delete several sessions at once**, ⌘-click (Ctrl-click on Windows) to pick them one by one, or Shift-click to pick a range. Right-click a picked session and choose "Delete N selected", or press Delete (⌫ on Mac); it asks once, then deletes them. You can also close only the open ones among them, and Esc clears the selection.
 Collapse the sidebar with ⌘B (or the panel icon in the header); the state is saved and stays when you turn it back on. It doesn't disappear entirely but leaves a 52px strip, because on macOS the
 traffic-light buttons float inside the window (`hiddenInset`), so a width of 0 would leave those buttons covering the content. The strip keeps buttons for expand, switching screens, new session, and
 chat search, plus a button for sessions that need a response, shown as an icon only.
