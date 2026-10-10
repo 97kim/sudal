@@ -6,9 +6,10 @@
 // 앱 UI 와 같은 권한을 가진다(경로 승인·full 정책 포함). 다른 사용자·원격은 파일 권한이 막는다.
 // Windows 는 유닉스 소켓 파일 대신 named pipe(\\.\pipe\sudal-<userData 해시>)를 쓴다 — chmod 가 없어 파이프 기본 보안 설명자에 맡긴다.
 import { createServer, type Server, type Socket } from "node:net";
-import { chmodSync, existsSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
 import { samePath } from "@shared/any-path";
 import { isPermissionPolicy, type ChatEvent, type PermissionPolicy, type SessionStatus } from "@shared/chat-events";
 import { parseCron } from "@shared/cron";
@@ -16,7 +17,8 @@ import type { Run, Schedule } from "@shared/schedules";
 import type { ChatSendResult, FanoutStartDto, FanoutStartResult, Provider, WorkspaceStateDto } from "@shared/ipc";
 import { OrchError, type Orchestrator } from "./orchestration";
 import { replaySession, type Block } from "@shared/session-state";
-import { clickScript, fillScript, readScript } from "@shared/browser-control";
+import { clickScript, fillScript, focusScript, keyInputEvents, pickConsole, readScript, rectScript, scrollScript, waitProbeScript, type BrowserRect, type KeyInput, type ScrollTarget } from "@shared/browser-control";
+import type { ConsoleLine, NetFailure } from "@shared/browser-diagnostics";
 import { tabTitle as sharedTabTitle, type TabMeta } from "@shared/workspace-model";
 import { mainI18n, mt } from "./i18n";
 import { verifyOutputText } from "@shared/verify";
@@ -65,6 +67,13 @@ export interface ControlDeps {
   openBrowser(tabId: string, url: string): void;
   /** 그 탭의 브라우저에서 스크립트를 돌린다(에이전트 조작). 브라우저가 없으면 던진다. */
   runInBrowser(tabId: string, script: string): Promise<Record<string, unknown>>;
+  /** 그 탭의 브라우저 화면(rect 는 CSS px, 없으면 보이는 영역 전체)을 PNG 로. 비었으면 던진다. */
+  captureBrowser(tabId: string, rect?: BrowserRect): Promise<{ png: Buffer; width: number; height: number }>;
+  /** 진짜 키 이벤트를 차례로 보낸다(포커스된 요소로 간다). */
+  pressInBrowser(tabId: string, events: KeyInput[]): Promise<void>;
+  /** main 이 모아 둔 그 브라우저의 콘솔·실패한 요청. 읽기만 한다(비우지 않는다). */
+  browserConsole(tabId: string): ConsoleLine[];
+  browserNet(tabId: string): NetFailure[];
   guide(name: string): string | null;
   /** 예약 실행. 없으면 schedule.* 는 unsupported. */
   schedules?: () => {
@@ -582,6 +591,68 @@ export class ControlServer {
         const r = await this.deps.runInBrowser(tab.id, fillScript(mt, selector, value));
         return { tab: tab.id, ...r };
       }
+      case "browser.screenshot": {
+        const tab = this.resolveTab(params.tab);
+        const selector = params.selector !== undefined ? this.requireString(params, "selector") : undefined;
+        const out = params.out !== undefined ? this.requireString(params, "out") : join(tmpdir(), `sudal-browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`);
+        if (!isAbsolute(out)) throw new ControlError(mt("cli.control.outAbsolute"));
+        const r = selector ? await this.deps.runInBrowser(tab.id, rectScript(mt, selector)) : undefined;
+        const shot = await this.deps.captureBrowser(tab.id, r?.rect as BrowserRect | undefined);
+        mkdirSync(dirname(out), { recursive: true });
+        writeFileSync(out, shot.png);
+        return { tab: tab.id, ok: true, path: out, width: shot.width, height: shot.height, ...(r ? { selector: r.selector, clipped: r.clipped } : {}) };
+      }
+      case "browser.scroll": {
+        const tab = this.resolveTab(params.tab);
+        if ([params.selector, params.by, params.to].filter((v) => v !== undefined).length !== 1) throw new ControlError(mt("cli.control.scrollTarget"));
+        let target: ScrollTarget;
+        if (params.selector !== undefined) target = { selector: this.requireString(params, "selector") };
+        else if (params.to !== undefined) {
+          if (params.to !== "top" && params.to !== "bottom") throw new ControlError(mt("cli.control.scrollToInvalid"));
+          target = { to: params.to };
+        } else {
+          // num 은 음수 문자열을 받지 않는다 — 위로 스크롤(--by -300)도 받아야 한다
+          const by = typeof params.by === "number" ? params.by : typeof params.by === "string" && /^-?\d+$/.test(params.by.trim()) ? Number(params.by) : NaN;
+          if (!Number.isInteger(by)) throw new ControlError(mt("cli.control.scrollByInvalid"));
+          target = { by };
+        }
+        const r = await this.deps.runInBrowser(tab.id, scrollScript(mt, target));
+        return { tab: tab.id, ...r };
+      }
+      case "browser.press": {
+        const tab = this.resolveTab(params.tab);
+        // trim 하지 않는다 — 키 이름에 공백이 섞이면 모르는 키로 거절하는 편이 낫다
+        if (typeof params.key !== "string" || params.key === "") throw new ControlError(mt("cli.control.keyRequired"));
+        const key = params.key;
+        const events = keyInputEvents(key);
+        if (!events) throw new ControlError(mt("cli.control.keyInvalid", { key }));
+        const selector = params.selector !== undefined ? this.requireString(params, "selector") : undefined;
+        const f = selector ? await this.deps.runInBrowser(tab.id, focusScript(mt, selector)) : undefined;
+        await this.deps.pressInBrowser(tab.id, events);
+        return { tab: tab.id, ok: true, key, ...(f ? { focused: f.focused } : {}) };
+      }
+      case "browser.wait": {
+        const tab = this.resolveTab(params.tab);
+        const selector = params.selector !== undefined ? this.requireString(params, "selector") : undefined;
+        const text = params.text !== undefined ? this.requireString(params, "text") : undefined;
+        if (!selector && !text) throw new ControlError(mt("cli.control.selectorOrText"));
+        const rawTimeout = params.timeout ?? params.timeoutMs;
+        const timeoutMs = rawTimeout === undefined ? 10_000 : num(rawTimeout);
+        if (timeoutMs === undefined) throw new ControlError(mt("cli.control.timeoutInvalid"));
+        return { tab: tab.id, ...(await this.waitInBrowser(tab.id, { selector, text }, timeoutMs)) };
+      }
+      case "browser.console": {
+        const tab = this.resolveTab(params.tab);
+        const level = params.level;
+        if (level !== undefined && level !== "warn" && level !== "error") throw new ControlError(mt("cli.control.levelInvalid"));
+        const limit = params.limit !== undefined ? num(params.limit) : undefined;
+        if (params.limit !== undefined && (limit === undefined || limit < 1)) throw new ControlError(mt("cli.control.limitInvalid"));
+        return { tab: tab.id, lines: pickConsole(this.deps.browserConsole(tab.id), { level, limit }) };
+      }
+      case "browser.network": {
+        const tab = this.resolveTab(params.tab);
+        return { tab: tab.id, failures: this.deps.browserNet(tab.id) };
+      }
       case "skills.get": {
         const name = params.name !== undefined ? this.requireString(params, "name") : "sudal-cli";
         const text = this.deps.guide(name);
@@ -711,6 +782,44 @@ export class ControlServer {
       }
       if (Date.now() >= deadline) return { satisfied: false };
       await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  /**
+   * 브라우저에 보이는 요소·글이 나타날 때까지 들여다본다. 페이지 이동 중에는 실행 자체가 실패하거나 응답이 늦으므로
+   * 실패는 삼키고 다시 보고, 한 번 들여다보기도 남은 시간 안에서만 기다린다. 끝내 없으면 마지막 실패를 붙여 던진다.
+   */
+  private async waitInBrowser(tabId: string, target: { selector?: string; text?: string }, timeoutMs: number): Promise<Record<string, unknown>> {
+    const started = Date.now();
+    const deadline = started + Math.min(timeoutMs, 10 * 60_000);
+    const script = waitProbeScript(target);
+    let lastError = "";
+    for (;;) {
+      const left = Math.max(1, deadline - Date.now());
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const probe = this.deps.runInBrowser(tabId, script);
+        probe.catch(() => {}); // 시간에 져서 버려진 뒤 실패해도 처리 안 된 거절로 남지 않게
+        const r = await Promise.race([
+          probe,
+          new Promise<null>((res) => (timer = setTimeout(() => res(null), left))),
+        ]);
+        if (r?.bad) throw new ControlError(mt("cli.browser.badSelector", { selector: target.selector ?? "" }));
+        if (r?.found) {
+          const { ok: _ok, found: _found, ...rest } = r;
+          return { ok: true, found: true, waitedMs: Date.now() - started, ...rest };
+        }
+      } catch (e) {
+        if (e instanceof ControlError) throw e;
+        lastError = e instanceof Error ? e.message : String(e);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (Date.now() >= deadline) {
+        const msg = mt("cli.control.waitTimeout", { ms: timeoutMs, target: target.selector ?? target.text ?? "" });
+        throw new ControlError(lastError ? `${msg} (${lastError})` : msg, "timeout");
+      }
+      await new Promise((r) => setTimeout(r, 250));
     }
   }
 

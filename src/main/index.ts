@@ -59,6 +59,8 @@ import { lastReplyText } from "@shared/session-state";
 import { parseCron } from "@shared/cron";
 import { PreviewServer } from "./preview-server";
 import { browserNetFailures, clearBrowserNetFailures, watchBrowserNetwork } from "./browser-net";
+import { browserConsoleLines, watchBrowserConsole } from "./browser-console";
+import type { BrowserRect, KeyInput } from "@shared/browser-control";
 import { fetchDocImage, fetchFavicon } from "./browser-favicon";
 import { forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
 import { BROWSER_PARTITION } from "./browser-net";
@@ -749,6 +751,10 @@ async function startControlServer() {
       openFile: (tabId, path, line) => deliverControlOpen({ kind: "file", tabId, path, line }),
       openBrowser: (tabId, url) => deliverControlOpen({ kind: "browser", tabId, url }),
       runInBrowser: (tabId, script) => runInBrowser(tabId, script),
+      captureBrowser: (tabId, rect) => captureBrowser(tabId, rect),
+      pressInBrowser: (tabId, events) => pressInBrowser(tabId, events),
+      browserConsole: (tabId) => browserConsoleLines(browserContents(tabId).id),
+      browserNet: (tabId) => browserNetFailures(browserContents(tabId).id),
       guide: (name) => {
         if (name !== "sudal-cli") return null;
         try {
@@ -1828,8 +1834,8 @@ async function askHandoffBrief(tabId: string): Promise<string> {
  */
 const browserViews = new Map<string, { id: number; url: string }>();
 
-/** 등록된 브라우저에서 스크립트를 돌리고 결과를 받는다. 없거나 죽었으면 뚜렷하게 알린다. */
-async function runInBrowser(tabId: string, script: string): Promise<Record<string, unknown>> {
+/** 그 탭에 등록된 브라우저의 webContents. 없거나 죽었으면 뚜렷하게 알린다. */
+function browserContents(tabId: string): Electron.WebContents {
   const reg = browserViews.get(tabId);
   if (!reg) throw new Error(mt("main.error.browserNotOpen"));
   const wc = webContents.fromId(reg.id);
@@ -1837,11 +1843,37 @@ async function runInBrowser(tabId: string, script: string): Promise<Record<strin
     browserViews.delete(tabId);
     throw new Error(mt("main.error.browserClosed"));
   }
+  return wc;
+}
+
+/** 등록된 브라우저에서 스크립트를 돌리고 결과를 받는다. */
+async function runInBrowser(tabId: string, script: string): Promise<Record<string, unknown>> {
+  const wc = browserContents(tabId);
   const out = await wc.executeJavaScript(script, true);
   if (!out || typeof out !== "object") throw new Error(mt("main.error.browserNoResult"));
   const r = out as Record<string, unknown>;
   if (typeof r.error === "string") throw new Error(r.error);
   return r;
+}
+
+/** 브라우저 화면을 PNG 로. rect 는 페이지의 CSS px 라 확대 배율을 곱해야 capturePage 좌표가 된다. */
+async function captureBrowser(tabId: string, rect?: BrowserRect): Promise<{ png: Buffer; width: number; height: number }> {
+  const wc = browserContents(tabId);
+  const z = wc.getZoomFactor();
+  const img = await wc.capturePage(
+    rect && { x: Math.floor(rect.x * z), y: Math.floor(rect.y * z), width: Math.ceil(rect.width * z), height: Math.ceil(rect.height * z) },
+  );
+  // 패널이 가려져(display:none) 있으면 빈 그림이 온다
+  if (img.isEmpty()) throw new Error(mt("main.error.browserCaptureEmpty"));
+  const { width, height } = img.getSize();
+  return { png: img.toPNG(), width, height };
+}
+
+/** 진짜 키 입력. 웹뷰에 포커스가 없으면 키가 페이지로 가지 않는다. */
+async function pressInBrowser(tabId: string, events: KeyInput[]): Promise<void> {
+  const wc = browserContents(tabId);
+  wc.focus();
+  for (const e of events) wc.sendInputEvent(e);
 }
 
 async function handleChatSend(
@@ -3094,6 +3126,8 @@ app.whenReady().then(async () => {
   // 브라우저 탭의 실패한 요청 수집 — webRequest 는 세션에 한 번만 걸 수 있어 창보다 먼저 건다
   watchBrowserNetwork();
   watchBrowserDownloads();
+  // 에이전트가 읽을 브라우저 콘솔 — 웹뷰가 붙기 전에 걸어야 첫 페이지 로그부터 잡힌다
+  watchBrowserConsole();
   // 세션 쿠키 되돌리기도 창보다 먼저 — 첫 페이지부터 로그인 상태여야 한다.
   if (appSettings().keepBrowserLogin) {
     const n = await restoreSessionCookies(session.fromPartition(BROWSER_PARTITION), app.getPath("userData"));

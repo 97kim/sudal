@@ -124,6 +124,7 @@ export const main: DeepPartial<typeof ko> = {
     browserNotOpen: "No browser is open in this tab. Open one first with `sudal browser open --url …`.",
     browserClosed: "The browser tab was closed. Open it again.",
     browserNoResult: "The browser returned no result.",
+    browserCaptureEmpty: "Could not capture the browser. Make sure the browser panel is visible on screen.",
     emptyContent: "The content is empty.",
     badWorkspacesFile: "workspaces.json has an invalid format.",
   },

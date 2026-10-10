@@ -126,6 +126,7 @@ export const main = {
     browserNotOpen: "이 탭에 열린 브라우저가 없습니다. 먼저 `sudal browser open --url …` 으로 여세요.",
     browserClosed: "브라우저 탭이 닫혔습니다. 다시 여세요.",
     browserNoResult: "브라우저가 결과를 주지 않았습니다.",
+    browserCaptureEmpty: "브라우저 화면을 찍지 못했어요. 브라우저 패널이 화면에 보이는지 확인하세요.",
     emptyContent: "내용이 비어 있습니다.",
     badWorkspacesFile: "workspaces.json 형식이 맞지 않습니다.",
   },

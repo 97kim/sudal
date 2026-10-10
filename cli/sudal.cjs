@@ -78,6 +78,12 @@ const MESSAGES = {
   sudal browser read [--tab <sel>]                     보이는 글과 누를 만한 것(선택자 포함)
   sudal browser click (--selector <css> | --text <글>) [--tab <sel>]
   sudal browser fill --selector <css> --value <값> [--tab <sel>]
+  sudal browser screenshot [--selector <css>] [--out <path>] [--tab <sel>]   보이는 화면(또는 그 요소)을 PNG로 저장하고 경로를 돌려줘요
+  sudal browser scroll (--selector <css> | --by <px> | --to top|bottom) [--tab <sel>]
+  sudal browser press --key <Enter|Escape|Tab|ArrowDown|Shift+Tab|…> [--selector <css>] [--tab <sel>]   진짜 키 입력
+  sudal browser wait (--selector <css> | --text <글>) [--timeout <ms>] [--tab <sel>]   보일 때까지 기다려요(기본 10000ms)
+  sudal browser console [--level warn|error] [--limit N] [--tab <sel>]   지금 페이지의 콘솔
+  sudal browser network [--tab <sel>]                  실패한 요청(통신 오류·4xx·5xx)
   sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # 오케스트레이션 Run (코디네이터 = 사람 또는 탭)
   sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
                             [--policy ask|auto_edit|auto_review|full] [--cwd /abs] [--worktree] [--request-id <id>]
@@ -140,6 +146,12 @@ const MESSAGES = {
   sudal browser read [--tab <sel>]                     visible text and clickable things (with selectors)
   sudal browser click (--selector <css> | --text <text>) [--tab <sel>]
   sudal browser fill --selector <css> --value <value> [--tab <sel>]
+  sudal browser screenshot [--selector <css>] [--out <path>] [--tab <sel>]   save the visible page (or that element) as PNG and return the path
+  sudal browser scroll (--selector <css> | --by <px> | --to top|bottom) [--tab <sel>]
+  sudal browser press --key <Enter|Escape|Tab|ArrowDown|Shift+Tab|…> [--selector <css>] [--tab <sel>]   real key input
+  sudal browser wait (--selector <css> | --text <text>) [--timeout <ms>] [--tab <sel>]   wait until visible (default 10000ms)
+  sudal browser console [--level warn|error] [--limit N] [--tab <sel>]   console of the current page
+  sudal browser network [--tab <sel>]                  failed requests (network errors, 4xx, 5xx)
   sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # orchestration Run (the coordinator is a person or a tab)
   sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
                             [--policy ask|auto_edit|auto_review|full] [--cwd /abs] [--worktree] [--request-id <id>]
@@ -201,7 +213,7 @@ function parseArgs(argv) {
 }
 
 /** 값이 있어야 하는 플래그. `--tab` 처럼 값 없이 쓰면 서버가 active 로 오해하기 전에 여기서 거절한다. */
-const VALUE_FLAGS = ["tab", "text", "prompt", "ws", "cwd", "provider", "policy", "model", "title", "path", "url", "line", "last", "timeoutMs", "cmd", "run", "key", "spec", "task", "agent", "dispatch", "capability", "question", "options", "resume", "id", "body", "subject", "type", "to", "outcome", "filesModified", "types", "ack", "objective", "coordinator", "reason", "requestId", "deps", "terminal", "resolution", "name", "cron", "timezone", "precheck", "precheckTimeout", "grace", "workspace", "enabled"];
+const VALUE_FLAGS = ["tab", "text", "prompt", "ws", "cwd", "provider", "policy", "model", "title", "path", "url", "line", "last", "timeoutMs", "cmd", "run", "key", "spec", "task", "agent", "dispatch", "capability", "question", "options", "resume", "id", "body", "subject", "type", "to", "outcome", "filesModified", "types", "ack", "objective", "coordinator", "reason", "requestId", "deps", "terminal", "resolution", "name", "cron", "timezone", "precheck", "precheckTimeout", "grace", "workspace", "enabled", "selector", "out", "by", "level", "limit", "timeout"];
 function checkValueFlags(flags) {
   for (const k of VALUE_FLAGS) if (flags[k] === true || (Array.isArray(flags[k]) && flags[k].includes(true))) fail(t("valueNeeded", { flag: k.replace(/([A-Z])/g, (m) => "-" + m.toLowerCase()) }), "bad_request");
 }
@@ -395,6 +407,13 @@ async function main() {
   else if (group === "browser" && cmd === "read") { method = "browser.read"; params = { tab: flags.tab }; }
   else if (group === "browser" && cmd === "click") { method = "browser.click"; params = { tab: flags.tab, selector: flags.selector, text: flags.text }; }
   else if (group === "browser" && cmd === "fill") { method = "browser.fill"; params = { tab: flags.tab, selector: flags.selector, value: flags.value }; }
+  // --out 은 이 명령을 부른 곳 기준 — 앱의 작업 경로와 다르다
+  else if (group === "browser" && cmd === "screenshot") { method = "browser.screenshot"; params = { tab: flags.tab, selector: flags.selector, out: typeof flags.out === "string" ? path.resolve(flags.out) : flags.out }; }
+  else if (group === "browser" && cmd === "scroll") { method = "browser.scroll"; params = { tab: flags.tab, selector: flags.selector, by: flags.by, to: flags.to }; }
+  else if (group === "browser" && cmd === "press") { method = "browser.press"; params = { tab: flags.tab, key: flags.key, selector: flags.selector }; }
+  else if (group === "browser" && cmd === "wait") { method = "browser.wait"; params = { tab: flags.tab, selector: flags.selector, text: flags.text, timeout: flags.timeout ?? flags.timeoutMs }; }
+  else if (group === "browser" && cmd === "console") { method = "browser.console"; params = { tab: flags.tab, level: flags.level, limit: flags.limit }; }
+  else if (group === "browser" && cmd === "network") { method = "browser.network"; params = { tab: flags.tab }; }
   else return fail(t("unknownCommand", { cmd: [group, cmd].filter(Boolean).join(" ") }), "unknown_command");
 
   // 부른 탭을 서버에 알려 준다 — 자기 탭을 기다리는 일을 막고, 새 탭은 부른 탭의 워크스페이스에 만든다
@@ -403,7 +422,9 @@ async function main() {
   // --tab 을 안 주면 서버가 active 로 본다(선택자 규칙은 서버에)
   // 데드라인: 기다리는 명령은 서버 대기 시간(기본 10분) + 15초, 나머지는 30초
   const waits = method === "tab.wait" || method === "orch.ask" || ((method === "tab.send" || method === "tab.verify" || method === "tab.fanout" || method === "orch.check") && params.wait);
-  const deadline = waits ? (timeoutMs ?? (method === "tab.verify" || method === "tab.fanout" ? 1800000 : method === "orch.check" ? 900000 : 600000)) + 15000 : 30000;
+  const deadline = waits ? (timeoutMs ?? (method === "tab.verify" || method === "tab.fanout" ? 1800000 : method === "orch.check" ? 900000 : 600000)) + 15000
+    : method === "browser.wait" ? Math.min(Number(params.timeout ?? 10000) || 10000, 600000) + 15000
+    : 30000;
   let res;
   try {
     res = await request(method, params, deadline);

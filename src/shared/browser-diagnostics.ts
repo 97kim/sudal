@@ -31,7 +31,7 @@ export const DIAG_MAX_NET = 30;
 export const DIAG_MAX_LINE = 500;
 
 const clip = (t: TFunction, s: string, max = DIAG_MAX_LINE) => (s.length <= max ? s : t("promptDoc.attach.diag.clipped", { text: s.slice(0, max), n: s.length }));
-const levelName = (l: number) => (l >= 3 ? "error" : l === 2 ? "warn" : l === 1 ? "info" : "log");
+export const levelName = (l: number) => (l >= 3 ? "error" : l === 2 ? "warn" : l === 1 ? "info" : "log");
 
 /** 링 버퍼에 넣는다. 바로 앞과 같은 내용이면 세기만 늘리지 않고 그냥 버린다(같은 오류가 초당 수십 번 나는 경우). */
 export function pushCapped<T>(buf: T[], item: T, max: number): T[] {

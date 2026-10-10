@@ -72,7 +72,17 @@ sudal browser open --url http://localhost:3000 [--tab <sel>]  # open it in that 
 sudal browser read [--tab <sel>]                             # visible text plus clickable items (with selectors)
 sudal browser click --selector "#save" [--tab <sel>]         # or --text "Save"
 sudal browser fill --selector "#email" --value "a@b.c"       # React state is updated too
+sudal browser screenshot [--selector ".card"] [--out /abs/shot.png]   # PNG of the visible page (or that element); read the returned path as an image
+sudal browser scroll --by 600 | --to bottom | --selector "#footer"
+sudal browser press --key Enter [--selector "#search"]      # real key events; also Escape, Tab, ArrowDown, Shift+Tab, Control+a
+sudal browser wait --selector ".result" | --text "Saved" [--timeout 10000]   # until visible; fails with code timeout
+sudal browser console [--level warn|error] [--limit 20]     # console of the current page (cleared on navigation)
+sudal browser network                                        # failed requests (network errors, 4xx, 5xx)
 ```
+
+- After `click`, `press --key Enter`, or `open`, run `wait` before `read` or `screenshot` — the page may still be loading.
+- `screenshot` only captures what is on screen; a `--selector` element is scrolled into view first and cut at the viewport (`clipped: true`). It fails if the browser panel is hidden.
+- `press` focuses the in-app browser, so it may take keyboard focus away from the person using the app.
 
 Fan-out (send the same prompt to several isolated sessions at once and compare):
 

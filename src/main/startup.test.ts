@@ -64,7 +64,7 @@ function harness() {
     PROVIDERS: ["claude", "codex"], workspaces,
     cliDiscovery: () => ({ invalidate() {}, find: (provider: Provider) => find(provider) }),
     bootstrap() {}, registerIpc: () => { ipcReady = true; },
-    buildMenu() {}, watchBrowserNetwork() {}, watchBrowserDownloads() {},
+    buildMenu() {}, watchBrowserNetwork() {}, watchBrowserDownloads() {}, watchBrowserConsole() {},
     appSettings: () => ({ keepBrowserLogin: true }),
     session: { fromPartition() {} }, BROWSER_PARTITION: "test",
     restoreSessionCookies: () => cookies.promise,

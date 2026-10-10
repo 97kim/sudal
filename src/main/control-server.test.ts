@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createConnection } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -101,6 +101,18 @@ function fakeDeps() {
       calls.push(`runInBrowser ${tabId} ${script.slice(0, 20)}`);
       return { ok: true };
     },
+    captureBrowser: async (tabId, rect) => {
+      calls.push(`capture ${tabId} ${rect ? JSON.stringify(rect) : "-"}`);
+      return { png: Buffer.from("png"), width: 10, height: 20 };
+    },
+    pressInBrowser: async (tabId, evs) => {
+      calls.push(`press ${tabId} ${evs.map((e) => `${e.type}:${e.keyCode}`).join(",")}`);
+    },
+    browserConsole: () => [
+      { ts: 1, level: 1, text: "hi" },
+      { ts: 2, level: 3, text: "boom" },
+    ],
+    browserNet: () => [{ ts: 3, url: "http://x/api", method: "GET", error: null, status: 500 }],
     guide: (name) => (name === "sudal-cli" ? "# 가이드" : null),
   };
   return { deps, calls, statuses, pending, model };
@@ -174,6 +186,72 @@ test("ControlServer: 선택자·목록·읽기·보내고 기다리기·화면 �
   await assert.rejects(d("browser.open", { url: "file:///x" }), /http/);
   assert.equal((await d("skills.get")).text, "# 가이드");
   await assert.rejects(d("nope"), /모르는 명령/);
+});
+
+test("ControlServer: 브라우저 찍기·스크롤·키·기다리기·콘솔·네트워크", async () => {
+  const { deps, calls } = fakeDeps();
+  const srv = new ControlServer(deps, "unused");
+  const d = (m: string, p: Record<string, unknown> = {}) => srv.dispatch(m, p) as Promise<Record<string, unknown>>;
+  const dir = mkdtempSync(join(tmpdir(), "wb-shot-"));
+  try {
+    // 찍기: --out 이 없으면 임시 폴더, 있으면 그 자리(폴더도 만든다). 선택자면 스크립트가 준 rect 로 자른다
+    const shot = await d("browser.screenshot", { tab: "t1" });
+    assert.ok(String(shot.path).startsWith(tmpdir()));
+    assert.equal(readFileSync(String(shot.path), "utf8"), "png");
+    rmSync(String(shot.path));
+    const out = join(dir, "sub", "a.png");
+    deps.runInBrowser = async () => ({ ok: true, selector: "#c", rect: { x: 1, y: 2, width: 3, height: 4 }, clipped: false });
+    const el = await d("browser.screenshot", { selector: "#c", out });
+    assert.equal(el.path, out);
+    assert.ok(existsSync(out));
+    assert.ok(calls.includes(`capture t1 {"x":1,"y":2,"width":3,"height":4}`));
+    await assert.rejects(d("browser.screenshot", { out: "rel.png" }), /절대 경로/);
+    // 스크롤: 셋 중 하나만, 음수 문자열도 받는다
+    await assert.rejects(d("browser.scroll", {}), /하나만/);
+    await assert.rejects(d("browser.scroll", { by: 10, to: "top" }), /하나만/);
+    await assert.rejects(d("browser.scroll", { to: "middle" }), /top이나 bottom/);
+    await assert.rejects(d("browser.scroll", { by: "abc" }), /픽셀/);
+    let script = "";
+    deps.runInBrowser = async (_t, s) => ((script = s), { ok: true });
+    await d("browser.scroll", { by: "-300" });
+    assert.match(script, /top: -300/);
+    // 키: 모르는 키는 보내기 전에 거절, 선택자면 먼저 포커스
+    await assert.rejects(d("browser.press", {}), /--key/);
+    await assert.rejects(d("browser.press", { key: "Enterr" }), /모르는 키/);
+    await d("browser.press", { key: "Enter", selector: "#q" });
+    assert.match(script, /focus\(\)/);
+    assert.ok(calls.includes("press t1 keyDown:Enter,char:\r,keyUp:Enter"));
+    // 기다리기: 실행 실패(페이지 이동 중)는 재시도하고, 나타나면 끝
+    let n = 0;
+    deps.runInBrowser = async () => {
+      n += 1;
+      if (n === 1) throw new Error("Render frame was disposed");
+      return n >= 3 ? { ok: true, found: true, selector: ".r", label: "결과" } : { ok: true, found: false };
+    };
+    const w = await d("browser.wait", { selector: ".r", timeout: 5000 });
+    assert.equal(w.found, true);
+    assert.equal(w.selector, ".r");
+    assert.equal(n, 3);
+    // 시간 안에 안 나타나면 마지막 실패를 붙여 timeout 으로
+    deps.runInBrowser = async () => {
+      throw new Error("Render frame was disposed");
+    };
+    await assert.rejects(d("browser.wait", { text: "저장", timeout: 300 }), /300ms 안에 나타나지 않았어요: 저장 \(Render frame/);
+    // 답이 오지 않는 실행도 시간 안에서만 기다린다
+    deps.runInBrowser = () => new Promise(() => {});
+    await assert.rejects(d("browser.wait", { text: "x", timeout: "200" }), /200ms/);
+    deps.runInBrowser = async () => ({ ok: true, found: false, bad: true });
+    await assert.rejects(d("browser.wait", { selector: "##" }), /선택자가 올바르지/);
+    await assert.rejects(d("browser.wait", {}), /--selector/);
+    // 콘솔·네트워크는 읽기만
+    assert.deepEqual((await d("browser.console", { level: "error" })).lines, [{ ts: 2, level: "error", text: "boom" }]);
+    assert.equal(((await d("browser.console", { limit: "1" })).lines as unknown[]).length, 1);
+    await assert.rejects(d("browser.console", { level: "info" }), /warn이나 error/);
+    await assert.rejects(d("browser.console", { limit: "0" }), /--limit/);
+    assert.equal(((await d("browser.network", {})).failures as unknown[]).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("ControlServer: 소켓으로 줄 단위 JSON 요청·응답, 잘못된 줄은 error 로", async () => {
