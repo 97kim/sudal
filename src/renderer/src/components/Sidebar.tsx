@@ -344,10 +344,10 @@ export function Sidebar({
   useEffect(() => {
     if (selection.ids.size === 0) return;
     const onKey = (e: KeyboardEvent) => {
-      // 포커스가 사이드바 안이거나 아무 데도 없을 때만 — 다른 화면(설정·팔레트·입력칸)에서 누른 ⌫ 를 가로채지 않는다
+      // 채팅 화면에서, 포커스가 세션 줄이거나 아무 데도 없을 때만 — 설정 버튼·팔레트·입력칸에서 누른 ⌫ 를 가로채지 않는다
+      if (view !== "chat") return;
       const el = document.activeElement as HTMLElement | null;
-      if (el && el !== document.body && !el.closest("[data-sidebar]")) return;
-      if (el?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName ?? "")) return;
+      if (el && el !== document.body && !el.closest("[data-session], [data-confirm-row]")) return;
       if (e.key === "Escape") {
         setConfirm((c) => (c?.kind === "tabs" ? null : c));
         setSelection(EMPTY_SELECTION);
@@ -711,12 +711,17 @@ export function Sidebar({
                         <ConfirmRow
                           text={t("nav.sidebar.deleteSelectedConfirm", { count: confirm.ids.length })}
                           action={t("nav.sidebar.deleteSessionAction")}
+                          // 이 줄이 확인 줄로 바뀌며 포커스가 사라진다 — 키보드로 이어 갈 수 있게 삭제 버튼으로 옮긴다
+                          autoFocus
                           onYes={() => {
                             setConfirm(null);
                             setSelection(EMPTY_SELECTION);
                             for (const id of confirm.ids) onDeleteTab(id);
                           }}
-                          onNo={() => setConfirm(null)}
+                          onNo={() => {
+                            setConfirm(null);
+                            setTimeout(() => document.querySelector<HTMLElement>(`[data-sidebar] [data-session="${tab.id}"]`)?.focus(), 0);
+                          }}
                         />
                       ) : confirm?.kind === "tab" && confirm.id === tab.id ? (
                         <ConfirmRow
@@ -1065,7 +1070,8 @@ function SessionRow({
       onDoubleClick={onStartRename}
       onContextMenu={onContextMenu}
       // 키보드로도 고르고 연다: Enter 열기, Space 넣고 빼기, Shift+Space 범위, ↑↓ 옆 세션으로
-      tabIndex={renaming === null ? 0 : -1}
+      // Tab 은 지금 보고 있는 세션 줄에만 멈춘다(목록 안에서는 ↑↓) — 세션이 많아도 목록을 금방 빠져나간다
+      tabIndex={renaming === null && active ? 0 : -1}
       role="option"
       aria-selected={selected}
       onKeyDown={(e) => {
@@ -1152,19 +1158,22 @@ function ConfirmRow({
   action,
   onYes,
   onNo,
+  autoFocus,
 }: {
   text: string;
   action: string;
   onYes: () => void;
   onNo: () => void;
+  autoFocus?: boolean;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-center gap-2 rounded-md bg-err-bg px-2 py-1.5 text-[12px] text-err">
+    <div className="flex items-center gap-2 rounded-md bg-err-bg px-2 py-1.5 text-[12px] text-err" data-confirm-row>
       <span className="min-w-0 flex-1 truncate">{text}</span>
       <button
         onClick={onYes}
-        className="rounded px-1.5 py-0.5 font-medium hover:bg-err/10"
+        autoFocus={autoFocus}
+        className="rounded px-1.5 py-0.5 font-medium hover:bg-err/10 outline-none focus-visible:ring-1 focus-visible:ring-err/60"
       >
         {action}
       </button>

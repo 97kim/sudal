@@ -101,7 +101,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.keyboard.press("Escape");
   await sleep(200);
   const after = await ev(() => ({ confirm: !!document.querySelector(".bg-err-bg"), selected: document.querySelectorAll("[data-session][data-selected]").length }));
-  res("D (키보드로 고르기 · Esc 로 확인 줄과 선택 닫기)", kb.length === 2 && before && !after.confirm && after.selected === 0, JSON.stringify({ kb: kb.length, focusedId: focusedId === ids["라"], before, after }));
+  res("D (키보드로 고르기 · Esc 로 확인 줄과 선택 닫기)", focusedId === ids["라"] && kb.length === 2 && before && !after.confirm && after.selected === 0, JSON.stringify({ kb: kb.length, focusedId: focusedId === ids["라"], before, after }));
 
   if (errs.length) log("CONSOLE ERRORS:", errs.slice(0, 5));
   log(results.filter(([, ok]) => !ok).length === 0 ? "ALL PASS" : "FAILED: " + results.filter(([, ok]) => !ok).map(([n]) => n).join(", "));
