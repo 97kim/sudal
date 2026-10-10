@@ -44,7 +44,7 @@ import {
   toHistoryImages,
 } from "./chat-attachments";
 import { forkClaudeSession, setClaudeSessionIdleMs, type ClaudeRuntime } from "./claude-adapter";
-import { buildCliDiscovery, type CliDiscovery } from "./cli-discovery";
+import { buildCliDiscovery, codexSupportsNoDaemon, type CliDiscovery } from "./cli-discovery";
 import { claudeExecutableFor } from "./cli-launch";
 import { ADD_TO_USER_PATH_PS, appendPathEntry, encodePowerShell, parseUserPathResult, pathListHas, windowsCliBinDir, windowsCmdShim, windowsShShim, type UserPathResult } from "./cli-shim";
 import { sanitizeCliEnv } from "./cli-env";
@@ -1668,6 +1668,8 @@ function bootstrap() {
           if (!cli.installed || !cli.path)
             throw new Error(cli.error || mt("main.error.codexCliMissing"));
           const args = sessionId && !isNew ? ["resume", sessionId] : [];
+          // 공유 데몬에 세션을 맡기면 터미널을 닫아도 쓰기 권한이 남아 채팅이 같은 세션을 못 연다(codexSupportsNoDaemon)
+          if (await codexSupportsNoDaemon(cli.path, env)) args.push("--no-daemon");
           const r = terminals.openCommand(
             `${tabId}:cli`,
             cwd,

@@ -44,6 +44,32 @@ function captureVersion(binPath: string, env: NodeJS.ProcessEnv): Promise<string
 }
 
 /**
+ * 이 Codex 가 TUI 의 --no-daemon 을 아는가. Codex 0.16x 의 TUI 는 공유 백그라운드 서버(데몬)에 세션을 맡겨,
+ * 터미널을 닫아 TUI 가 끝나도 데몬이 그 세션의 쓰기 권한을 쥐고 있었다. 그래서 채팅으로 돌아와 앱이 같은 세션을 열면
+ * "already has an active writer" 로 거절됐다. --no-daemon 이면 TUI 가 자기 안에서 세션을 쥐어 끝날 때 같이 놓는다.
+ * 옛 Codex 는 이 옵션을 모르면 시작조차 못 하므로 --help 에 있을 때만 쓴다. 실행 파일(경로·수정 시각)마다 한 번만 본다.
+ */
+const noDaemonCache = new Map<string, boolean>();
+export function codexSupportsNoDaemon(binPath: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  let key = binPath;
+  try {
+    key += `@${fs.statSync(binPath).mtimeMs}`;
+  } catch {
+    /* 없는 파일이면 아래 실행이 실패해 false */
+  }
+  const hit = noDaemonCache.get(key);
+  if (hit !== undefined) return Promise.resolve(hit);
+  const spec = launchSpec(binPath, ["--help"]);
+  return new Promise((resolve) => {
+    execFile(spec.command, spec.args, { timeout: 5000, env, shell: spec.shell, windowsHide: true }, (err, stdout) => {
+      const ok = !err && /--no-daemon\b/.test(String(stdout));
+      noDaemonCache.set(key, ok);
+      resolve(ok);
+    });
+  });
+}
+
+/**
  * 사용자 로그인 셸의 PATH. 모든 POSIX 셸(bash/zsh/fish)이 자식 프로세스에 PATH를 콜론 join으로
  * export하므로, 외부 명령 printenv를 통해 받으면 셸 별 분기가 불필요하다.
  * (fish는 내부적으로 $PATH가 list지만 export 시 콜론으로 join — fish 공식 문서)
