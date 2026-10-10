@@ -83,6 +83,7 @@ sudal browser network                                        # failed requests (
 - After `click`, `press --key Enter`, or `open`, run `wait` before `read` or `screenshot` — the page may still be loading.
 - `screenshot` only captures what is on screen; a `--selector` element is scrolled into view first and cut at the viewport (`clipped: true`). It fails if the browser panel is hidden.
 - `press` focuses the in-app browser, so it may take keyboard focus away from the person using the app.
+- The person sees your browser actions live and can press Stop. Then every browser command fails with code `paused` — do not retry; ask the person what to do.
 
 Fan-out (send the same prompt to several isolated sessions at once and compare):
 

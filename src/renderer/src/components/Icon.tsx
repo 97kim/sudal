@@ -48,6 +48,7 @@ const PATHS = {
   laptop: "M18 5a2 2 0 0 1 2 2v8.5H4V7a2 2 0 0 1 2-2zM2 19h20",
   lock: "M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
   plugZap: "M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4zM2 22l3-3M7.5 13.5L10 11M10.5 16.5L13 14M18 3l-4 4h6l-4 4",
+  bot: "M12 8V4H8M4 8h16v12H4zM2 14h2M20 14h2M15 13v2M9 13v2",
   arrowDownToLine: "M12 17V3M6 11l6 6 6-6M19 21H5",
   copy: "M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1",
 } satisfies Record<string, string>;

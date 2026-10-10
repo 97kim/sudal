@@ -688,6 +688,8 @@ const unapprovedDir = () => mt("main.error.unapprovedDir");
  * 탭 cwd·워크스페이스 경로를 바꾸는 IPC 는 이 안의 경로만 받는다 — 그래야 knownCwds() 가 렌더러 마음대로 늘어나지 않는다.
  */
 const approvedRoots = new Set<string>();
+/** 사람이 에이전트 조작을 멈춰 둔 채팅 탭(그 탭의 인앱 브라우저). 앱을 다시 켜면 풀린다. */
+const pausedBrowserAgents = new Set<string>();
 /** 에디터의 HTML 을 인앱 브라우저로 보여 주는 로컬 정적 서버(처음 쓸 때 뜬다). */
 const previewServer = new PreviewServer();
 /** 검증 실행기 — 결과는 verify 이벤트로 탭 기록에 남는다(sessions 가 준비된 뒤 note 로 이어진다). */
@@ -751,6 +753,8 @@ async function startControlServer() {
       openFile: (tabId, path, line) => deliverControlOpen({ kind: "file", tabId, path, line }),
       openBrowser: (tabId, url) => deliverControlOpen({ kind: "browser", tabId, url }),
       runInBrowser: (tabId, script) => runInBrowser(tabId, script),
+      browserActivity: (tabId, ev) => sendAll(IPC.browserAgent, { tabId, ...ev, at: Date.now() }),
+      browserPaused: (tabId) => pausedBrowserAgents.has(tabId),
       captureBrowser: (tabId, rect) => captureBrowser(tabId, rect),
       pressInBrowser: (tabId, events) => pressInBrowser(tabId, events),
       browserConsole: (tabId) => browserConsoleLines(browserContents(tabId).id),
@@ -2642,6 +2646,12 @@ function registerIpc() {
     const out = browserNetFailures(webContentsId);
     if (clear === true) clearBrowserNetFailures(webContentsId);
     return out;
+  });
+  ipcMain.handle(IPC.browserAgentPause, (_e, tabId: unknown, paused: unknown) => {
+    if (typeof tabId !== "string") return false;
+    if (paused === true) pausedBrowserAgents.add(tabId);
+    else if (paused === false) pausedBrowserAgents.delete(tabId);
+    return pausedBrowserAgents.has(tabId);
   });
   ipcMain.handle(IPC.browserProbe, (_e, url: unknown) => (typeof url === "string" ? probeUrl(url) : false));
   ipcMain.handle(IPC.browserCancelDownload, (_e, id: unknown) => (typeof id === "string" ? cancelDownload(id) : false));

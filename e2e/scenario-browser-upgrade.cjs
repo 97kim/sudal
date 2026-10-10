@@ -9,6 +9,7 @@
 //  I) 요소 선택이 React 디버그 정보로 소스 위치를 찾아 첨부·알림에 싣고, 알림에서 에디터로 연다
 //  I-3) 비활성(disabled) 버튼도 실제 마우스로 고를 수 있고, 고른 링크는 열리지 않는다
 //  I-4) 선택 중에도 안쪽 스크롤 영역이 휠로 움직인다(막이 휠을 대신 넘긴다)
+//  K) 에이전트가 조작하면 화면에 "조작 중" 이 뜨고, 사람이 멈추면 명령이 거절되고, 다시 허용하면 된다
 //  G) 에이전트 명령: wait·console·network·press·scroll·screenshot 이 실제 웹뷰에서 동작한다
 const os = require("os"), path = require("path"), fs = require("fs"), http = require("http"), net = require("net"), { execFileSync, spawn } = require("child_process");
 const E2E = __dirname;
@@ -258,6 +259,23 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   const stillPicking = await ev(() => [...document.querySelectorAll("[data-browser-pick]")].find((x) => x.offsetParent)?.getAttribute("data-browser-pick"));
   if (stillPicking === "on") await page.click("[data-browser-pick] >> visible=true");
   res("I-4 (선택 중 안쪽 스크롤)", innerTop > 0 && stillPicking === "on", JSON.stringify({ innerTop, stillPicking }));
+
+  // K
+  cli("browser", "open", "--tab", tab, "--url", base + "/");
+  await sleep(1500);
+  cli("browser", "click", "--tab", tab, "--text", "파일 받기");
+  const barOn = await waitFor(() => [...document.querySelectorAll("[data-browser-agent]")].some((x) => x.offsetParent && x.getAttribute("data-browser-agent") === "active"), null, 3000);
+  const nowText = await ev(() => [...document.querySelectorAll("[data-browser-agent-now]")].find((x) => x.offsetParent)?.textContent ?? "");
+  const feedOn = await ev(() => [...document.querySelectorAll("[data-browser-agent-feed]")].some((x) => x.offsetParent));
+  await ev(() => [...document.querySelectorAll("[data-browser-agent-stop]")].find((x) => x.offsetParent)?.click());
+  await sleep(400);
+  const agentRefused = cli("browser", "read", "--tab", tab);
+  const pausedShown = await ev(() => [...document.querySelectorAll("[data-browser-agent]")].some((x) => x.offsetParent && x.getAttribute("data-browser-agent") === "paused"));
+  await ev(() => [...document.querySelectorAll("[data-browser-agent-resume]")].find((x) => x.offsetParent)?.click());
+  await sleep(400);
+  const again = cli("browser", "read", "--tab", tab);
+  try { fs.rmSync(path.join(os.homedir(), "Downloads", fileName)); } catch {}
+  res("K (에이전트 조작 표시 · 멈추기 · 다시 허용)", barOn && /click/.test(nowText) && feedOn && agentRefused.error?.code === "paused" && pausedShown && again.ok === true, JSON.stringify({ barOn, nowText, feedOn, refused: agentRefused.error?.code, pausedShown, again: again.ok }));
 
   res("렌더러 오류 없음", errs.length === 0, errs.join(" | "));
   await b.close().catch(() => {});

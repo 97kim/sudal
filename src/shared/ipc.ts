@@ -261,6 +261,8 @@ export const IPC = {
   browserShowDownload: "browser:show-download",
   browserCancelDownload: "browser:cancel-download",
   browserProbe: "browser:probe",
+  browserAgent: "browser:agent",
+  browserAgentPause: "browser:agent-pause",
   backgroundJobs: "jobs:list",
   backgroundJobsChanged: "jobs:changed",
   gitInfo: "git:info",
@@ -1040,7 +1042,21 @@ export interface SudalApi {
     cancelDownload(id: string): Promise<boolean>;
     /** 그 주소에 응답이 오는지(서버가 켜졌는지)만 본다. */
     probe(url: string): Promise<boolean>;
+    /** 에이전트가 sudal browser 명령으로 이 채팅 탭의 브라우저를 조작할 때마다. */
+    onAgent(cb: (ev: BrowserAgentDto) => void): () => void;
+    /** 에이전트 조작을 멈추거나(true) 다시 허용(false). undefined 면 바꾸지 않고 지금 상태만 준다. */
+    agentPause(tabId: string, paused?: boolean): Promise<boolean>;
   };
+}
+
+/** 에이전트의 브라우저 조작 한 번(시작·끝·오류). point 는 click 이 누른 자리(페이지 화면 좌표). */
+export interface BrowserAgentDto {
+  tabId: string;
+  op: string;
+  detail: string;
+  phase: "start" | "done" | "error";
+  point?: { x: number; y: number };
+  at: number;
 }
 
 /** main 이 인앱 브라우저 웹뷰를 대신해 렌더러에 알리는 일. */

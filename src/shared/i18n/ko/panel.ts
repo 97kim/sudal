@@ -202,6 +202,15 @@ export const panel = {
       blocked: { title: "브라우저가 막는 주소예요", hint: "보안상 열 수 없는 포트나 주소예요. 다른 포트를 쓰세요." },
       generic: { title: "페이지를 열지 못했어요", hint: "잠시 뒤 다시 시도하세요." },
     },
+    agent: {
+      working: "에이전트가 조작 중",
+      paused: "에이전트 조작을 멈췄어요",
+      stop: "멈추기",
+      resume: "다시 허용",
+      recent: "최근 동작",
+      now: "방금",
+      secondsAgo: "{{n}}초 전",
+    },
     download: {
       progressing: "받는 중",
       completed: "받았어요",

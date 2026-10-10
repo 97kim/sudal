@@ -74,6 +74,10 @@ export interface ControlDeps {
   /** main 이 모아 둔 그 브라우저의 콘솔·실패한 요청. 읽기만 한다(비우지 않는다). */
   browserConsole(tabId: string): ConsoleLine[];
   browserNet(tabId: string): NetFailure[];
+  /** 에이전트가 그 탭의 브라우저를 조작한다는 알림(화면에 "조작 중" 표시). 없으면 알리지 않는다. */
+  browserActivity?(tabId: string, ev: BrowserActivity): void;
+  /** 사람이 그 탭 브라우저의 에이전트 조작을 멈춰 두었나. */
+  browserPaused?(tabId: string): boolean;
   guide(name: string): string | null;
   /** 예약 실행. 없으면 schedule.* 는 unsupported. */
   schedules?: () => {
@@ -176,6 +180,23 @@ export function controlPipeName(userData: string): string {
 /** \\.\pipe\... 는 파일이 아니다 — 지우거나 chmod 하지 않는다. */
 export function isPipePath(p: string): boolean {
   return /^\\\\[.?]\\pipe\\/i.test(p);
+}
+
+/** 에이전트가 브라우저를 조작하는 명령. browser.open 은 사람이 여는 것과 같아 표시하지 않는다. */
+const AGENT_BROWSER = new Set(["browser.read", "browser.click", "browser.fill", "browser.screenshot", "browser.scroll", "browser.press", "browser.wait", "browser.console", "browser.network"]);
+
+/** 화면 "조작 중" 줄에 보일 대상 한 토막(선택자·글·키 등). 값(fill)은 비밀번호일 수 있어 싣지 않는다. */
+function browserDetail(p: Params): string {
+  const v = [p.selector, p.text, p.key, p.to, p.by, p.level].find((x) => typeof x === "string" || typeof x === "number");
+  return v === undefined ? "" : String(v).slice(0, 80);
+}
+
+export interface BrowserActivity {
+  op: string;
+  detail: string;
+  phase: "start" | "done" | "error";
+  /** click 이 누른 자리(페이지 화면 좌표, CSS px). */
+  point?: { x: number; y: number };
 }
 
 export class ControlServer {
@@ -303,6 +324,26 @@ export class ControlServer {
   /** 명령 하나를 처리한다(테스트에서 직접 부른다). */
   async dispatch(method: string, params: Params, signal?: AbortSignal): Promise<Json> {
     if (method.startsWith("orch.")) return this.dispatchOrch(method.slice(5), params, signal);
+    if (!AGENT_BROWSER.has(method)) return this.dispatchCore(method, params, signal);
+    // 에이전트의 브라우저 조작 — 사람이 보고 멈출 수 있게 화면에 알리고, 멈춰 두었으면 거절한다.
+    const tab = this.resolveTab(params.tab);
+    if (this.deps.browserPaused?.(tab.id)) throw new ControlError(mt("cli.control.browserPaused"), "paused");
+    const op = method.slice("browser.".length);
+    const detail = browserDetail(params);
+    this.deps.browserActivity?.(tab.id, { op, detail, phase: "start" });
+    try {
+      const r = await this.dispatchCore(method, params, signal);
+      const clicked = (r as { clicked?: { x?: unknown; y?: unknown } }).clicked;
+      const point = clicked && typeof clicked.x === "number" && typeof clicked.y === "number" ? { x: clicked.x, y: clicked.y } : undefined;
+      this.deps.browserActivity?.(tab.id, { op, detail, phase: "done", ...(point ? { point } : {}) });
+      return r;
+    } catch (e) {
+      this.deps.browserActivity?.(tab.id, { op, detail, phase: "error" });
+      throw e;
+    }
+  }
+
+  private async dispatchCore(method: string, params: Params, signal?: AbortSignal): Promise<Json> {
     switch (method) {
       case "status": {
         const st = this.deps.state();

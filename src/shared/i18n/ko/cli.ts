@@ -150,6 +150,7 @@ export const cli = {
     keyRequired: "--key가 필요해요(예: Enter, Escape, Tab, ArrowDown, Shift+Tab).",
     keyInvalid: "모르는 키예요: {{key}}. Enter, Escape, Tab, ArrowDown, Shift+Tab, a 같은 이름을 주세요.",
     outAbsolute: "--out은 절대 경로여야 해요.",
+    browserPaused: "사용자가 이 브라우저의 에이전트 조작을 멈췄어요. 다시 허용할 때까지 브라우저 명령은 거절돼요. 사용자에게 무엇을 할지 물어보세요.",
     outExists: "{{path}} 파일이 이미 있어요. 다른 --out 경로를 주세요.",
     levelInvalid: "--level은 warn이나 error예요.",
     limitInvalid: "--limit은 1 이상의 정수예요.",

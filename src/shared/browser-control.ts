@@ -113,8 +113,10 @@ export function clickScript(t: TFunction, target: { selector?: string; text?: st
   }
   if (!visible(el)) return { error: ${notVisible}.replace("{{selector}}", () => sel(el)) };
   el.scrollIntoView({ block: "center" });
+  // 누른 자리 — 화면이 "여기를 눌렀다" 를 잠깐 표시한다.
+  const b = el.getBoundingClientRect();
   el.click();
-  return { ok: true, clicked: { selector: sel(el), label: label(el), tag: el.tagName.toLowerCase() } };
+  return { ok: true, clicked: { selector: sel(el), label: label(el), tag: el.tagName.toLowerCase(), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) } };
 })()`;
 }
 

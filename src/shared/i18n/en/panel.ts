@@ -202,6 +202,15 @@ export const panel: DeepPartial<typeof ko> = {
       blocked: { title: "The browser blocks this address", hint: "This port or address can’t be opened for security reasons. Use a different port." },
       generic: { title: "Couldn’t open the page", hint: "Try again in a moment." },
     },
+    agent: {
+      working: "Agent is controlling",
+      paused: "Agent control paused",
+      stop: "Stop",
+      resume: "Allow again",
+      recent: "Recent actions",
+      now: "just now",
+      secondsAgo: "{{n}}s ago",
+    },
     download: {
       progressing: "Downloading",
       completed: "Downloaded",

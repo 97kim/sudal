@@ -395,3 +395,33 @@ test("controlPipeName: 앱과 cli/sudal.cjs 가 같은 이름을 만든다(표�
   assert.equal(isPipePath(name), true);
   assert.equal(isPipePath("/Users/a/Library/Application Support/Sudal/control.sock"), false);
 });
+
+test("에이전트 브라우저 조작: 화면에 알리고, 사람이 멈춰 두면 거절한다", async () => {
+  const { deps } = fakeDeps();
+  const seen: string[] = [];
+  let paused = false;
+  deps.browserActivity = (tabId, ev) => seen.push(`${tabId} ${ev.op} ${ev.phase} ${ev.detail}${ev.point ? ` @${ev.point.x},${ev.point.y}` : ""}`);
+  deps.browserPaused = () => paused;
+  deps.runInBrowser = async () => ({ ok: true, clicked: { selector: "#save", label: "저장", tag: "button", x: 40, y: 12 } });
+  const srv = new ControlServer(deps, "unused");
+  const d = (m: string, p: Record<string, unknown> = {}) => srv.dispatch(m, p) as Promise<Record<string, unknown>>;
+  await d("browser.click", { tab: "t1", selector: "#save" });
+  assert.deepEqual(seen, ["t1 click start #save", "t1 click done #save @40,12"]);
+  // 입력값은 비밀번호일 수 있어 화면에 싣지 않는다 — 선택자만
+  seen.length = 0;
+  await d("browser.fill", { tab: "t1", selector: "#pw", value: "secret" });
+  assert.ok(seen.every((s) => !s.includes("secret")) && seen[0] === "t1 fill start #pw");
+  // 실패도 알린다
+  seen.length = 0;
+  deps.runInBrowser = async () => {
+    throw new Error("없음");
+  };
+  await assert.rejects(d("browser.read", { tab: "t1" }), /없음/);
+  assert.deepEqual(seen, ["t1 read start ", "t1 read error "]);
+  // 멈춰 두면 아무것도 하지 않고 paused 로 거절한다. 여는 것(open)은 사람이 하는 것과 같아 막지 않는다
+  paused = true;
+  seen.length = 0;
+  await assert.rejects(d("browser.read", { tab: "t1" }), (e: Error & { code?: string }) => e.code === "paused");
+  assert.deepEqual(seen, []);
+  await d("browser.open", { tab: "t1", url: "https://example.com" });
+});

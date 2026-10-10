@@ -146,6 +146,16 @@ export function BrowserPane({
   const [chipsW, setChipsW] = useState(0);
   const chatTabIdRef = useRef(chatTabId);
   chatTabIdRef.current = chatTabId;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  // 에이전트가 sudal browser 명령으로 이 브라우저를 조작하는 중인지 — 사람이 보고 멈출 수 있게 보여 준다.
+  type AgentLine = { op: string; detail: string; at: number; ok?: boolean };
+  const [agent, setAgent] = useState<{ active: boolean; now: AgentLine | null; feed: AgentLine[] }>({ active: false, now: null, feed: [] });
+  const [agentPoint, setAgentPoint] = useState<{ x: number; y: number; at: number } | null>(null);
+  const [agentPaused, setAgentPaused] = useState(false);
+  const [, setTick] = useState(0);
+  const agentInflight = useRef(0);
+  const agentIdle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onOpenTabRef = useRef(onOpenTab);
   onOpenTabRef.current = onOpenTab;
   // 웹뷰의 webContents id — main 이 보내는 browser:event 중 제 것을 가른다. 붙기 전엔 null.
@@ -456,6 +466,43 @@ export function BrowserPane({
     if (!visible) return;
     setChipsW(chipsRef.current ? chipsRef.current.offsetWidth + 10 : 0);
   }, [viewport, zoom, t, visible]);
+
+  useEffect(
+    () =>
+      window.sudal.browser.onAgent((ev) => {
+        // 에이전트 명령은 그 채팅 탭에서 지금 보이는 브라우저로 간다(main 의 등록 기준과 같다).
+        if (!visibleRef.current || ev.tabId !== chatTabIdRef.current) return;
+        agentInflight.current = Math.max(0, agentInflight.current + (ev.phase === "start" ? 1 : -1));
+        const line: AgentLine = { op: ev.op, detail: ev.detail, at: ev.at, ok: ev.phase === "start" ? undefined : ev.phase === "done" };
+        setAgent((a) => ({ active: true, now: line, feed: ev.phase === "start" ? a.feed : [line, ...a.feed].slice(0, 4) }));
+        if (ev.point) setAgentPoint({ ...ev.point, at: ev.at });
+        if (agentIdle.current) clearTimeout(agentIdle.current);
+        // 한동안 명령이 없으면 표시를 내린다. 기다리는 명령(wait)이 남아 있으면 계속 둔다.
+        if (agentInflight.current === 0) agentIdle.current = setTimeout(() => setAgent((a) => ({ ...a, active: false })), 5000);
+      }),
+    [],
+  );
+  // 앱을 껐다 켜기 전까지 멈춤은 main 이 들고 있다 — 다시 마운트돼도 같은 상태를 보인다.
+  useEffect(() => {
+    if (!chatTabId) return;
+    void window.sudal.browser.agentPause(chatTabId).then(setAgentPaused).catch(() => {});
+  }, [chatTabId]);
+  // 누른 자리 표시는 잠깐만, 최근 동작의 "N초 전" 은 표시가 떠 있는 동안 1초마다 다시 센다.
+  useEffect(() => {
+    if (!agentPoint) return;
+    const id = setTimeout(() => setAgentPoint(null), 1200);
+    return () => clearTimeout(id);
+  }, [agentPoint]);
+  useEffect(() => {
+    if (!agent.active) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [agent.active]);
+  const setPaused = (paused: boolean) => {
+    if (!chatTabId) return;
+    setAgentPaused(paused);
+    void window.sudal.browser.agentPause(chatTabId, paused).then(setAgentPaused).catch(() => {});
+  };
 
   // 빈 탭은 주소창부터
   useEffect(() => {
@@ -1068,6 +1115,57 @@ export function BrowserPane({
             )}
             <div className="mono mt-6 text-[10.5px] text-muted-2">{t("panel.browser.emptyKeys")}</div>
           </div>
+        )}
+        {(agent.active || agentPaused) && url && (
+          <>
+            <div className={`pointer-events-none absolute inset-0 z-20 ring-2 ring-inset ${agentPaused ? "ring-warn/70" : "ring-accent"}`} data-browser-agent-ring />
+            <div
+              className={`absolute left-2 right-2 top-2 z-30 flex items-center gap-2 rounded-lg border bg-panel-2 py-1 pl-2.5 pr-1 text-[11.5px] shadow-xl ${agentPaused ? "border-warn/50" : "border-accent/50"}`}
+              data-browser-agent={agentPaused ? "paused" : "active"}
+            >
+              <Icon name="bot" size={13} className={agentPaused ? "text-warn" : "text-accent"} />
+              <span className="shrink-0 font-semibold text-fg">{agentPaused ? t("panel.browser.agent.paused") : t("panel.browser.agent.working")}</span>
+              <span className="mono min-w-0 flex-1 truncate text-[10.5px] text-muted" data-browser-agent-now>
+                {!agentPaused && agent.now ? `${agent.now.op}${agent.now.detail ? `  ${agent.now.detail}` : ""}` : ""}
+              </span>
+              {agentPaused ? (
+                <button onClick={() => setPaused(false)} className="shrink-0 rounded-md bg-accent-tint px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20" data-browser-agent-resume>
+                  {t("panel.browser.agent.resume")}
+                </button>
+              ) : (
+                <button onClick={() => setPaused(true)} className="flex shrink-0 items-center gap-1 rounded-md bg-err-bg px-2 py-0.5 text-[11px] text-err hover:opacity-90" data-browser-agent-stop>
+                  <span className="size-2 rounded-[2px] bg-err" />
+                  {t("panel.browser.agent.stop")}
+                </button>
+              )}
+            </div>
+            {!agentPaused && agent.feed.length > 0 && (
+              <div className="pointer-events-none absolute bottom-3 right-3 z-30 w-[220px] rounded-lg border border-line bg-panel-2 px-3 py-2 shadow-xl" data-browser-agent-feed>
+                <div className="mb-1 text-[10px] text-muted-2">{t("panel.browser.agent.recent")}</div>
+                {agent.feed.map((l) => {
+                  const sec = Math.max(0, Math.round((Date.now() - l.at) / 1000));
+                  return (
+                    <div key={`${l.at}-${l.op}`} className="flex items-center gap-2 py-0.5 text-[10.5px]">
+                      <span className={`size-1.5 shrink-0 rounded-full ${l.ok === false ? "bg-err" : "bg-accent"}`} />
+                      <span className="mono min-w-0 flex-1 truncate text-muted">
+                        {l.op}
+                        {l.detail ? `  ${l.detail}` : ""}
+                      </span>
+                      <span className="shrink-0 text-muted-2">{sec < 2 ? t("panel.browser.agent.now") : t("panel.browser.agent.secondsAgo", { n: sec })}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+        {agentPoint && view.current && (
+          // 페이지 좌표 → 이 칸 좌표: 웹뷰가 가운데 놓인 만큼(보기 폭) 밀고, 확대 배율만큼 키운다.
+          <span
+            className="pointer-events-none absolute z-30 size-9 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full border-2 border-accent bg-accent/20"
+            style={{ left: view.current.offsetLeft + agentPoint.x * (zoomLevelToPercent(zoom) / 100), top: view.current.offsetTop + agentPoint.y * (zoomLevelToPercent(zoom) / 100) }}
+            data-browser-agent-point
+          />
         )}
         {toast && (
           <div className={`${toast.action ? "" : "pointer-events-none"} absolute bottom-3 left-1/2 z-20 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-lg border border-line bg-panel-2 py-1.5 pl-3 pr-1.5 text-[11.5px] shadow-xl`} data-browser-pick-msg role="status">
