@@ -5,6 +5,12 @@ import type { MobileStatusDto } from "@shared/ipc";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
 import { Icon } from "./Icon";
 
+// GitHub 의 안내서 "Tailscale 준비" 절. 앱 언어에 맞는 쪽을 연다.
+const SETUP_URL = {
+  ko: "https://github.com/97kim/sudal/blob/main/docs/GUIDE.ko.md#tailscale-%EC%A4%80%EB%B9%84",
+  en: "https://github.com/97kim/sudal/blob/main/docs/GUIDE.md#setting-up-tailscale",
+};
+
 export function MobileAccessSettings({ enabled, onToggle }: { enabled: boolean | undefined; onToggle: (on: boolean) => void }) {
   const { t, i18n } = useTranslation();
   const [status, setStatus] = useState<MobileStatusDto | null>(null);
@@ -21,6 +27,16 @@ export function MobileAccessSettings({ enabled, onToggle }: { enabled: boolean |
   }, [status?.code]);
   const time = (ms: number) => new Date(ms).toLocaleTimeString(intlLocale(i18n.language as Locale), { hour: "2-digit", minute: "2-digit" });
   const code = status?.code && status.code.expiresAt > Date.now() ? status.code : null;
+  const setupLink = (
+    <button
+      type="button"
+      onClick={() => void window.sudal.browser.openExternal(i18n.language.startsWith("ko") ? SETUP_URL.ko : SETUP_URL.en)}
+      className="text-accent hover:underline"
+      data-mobile-setup
+    >
+      {t("settings.mobile.setupLink")}
+    </button>
+  );
 
   return (
     <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="mobile-access">
@@ -28,7 +44,9 @@ export function MobileAccessSettings({ enabled, onToggle }: { enabled: boolean |
         <Icon name="laptop" size={14} className="text-accent" />
         {t("settings.mobile.title")}
       </div>
-      <p className="mb-2 text-[12px] leading-5 text-muted">{t("settings.mobile.description")}</p>
+      <p className="mb-2 text-[12px] leading-5 text-muted">
+        {t("settings.mobile.description")} {setupLink}
+      </p>
       <p className="mb-3 text-[12px] leading-5 text-warn">{t("settings.mobile.warning")}</p>
       <label className="flex cursor-pointer items-center gap-2 text-[12.5px]">
         <input type="checkbox" checked={enabled ?? false} disabled={enabled === undefined} onChange={(e) => onToggle(e.target.checked)} data-mobile-access />
@@ -53,6 +71,7 @@ export function MobileAccessSettings({ enabled, onToggle }: { enabled: boolean |
                 : status.error === "noTailscaleCli"
                   ? t("settings.mobile.noTailscaleCli")
                   : t("settings.mobile.error", { error: status.error ?? "" })}
+              {status.error !== null && status.error.startsWith("noTailscale") && <div className="mt-1">{setupLink}</div>}
             </div>
           )}
 

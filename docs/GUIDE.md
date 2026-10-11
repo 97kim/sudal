@@ -389,6 +389,16 @@ changes the text, it may quietly stop working (as of codex-cli 0.153).
 When you step away, open Sudal on your Mac from your phone's browser: see the tab list, read conversations live, send messages, stop a turn, and allow or deny permission requests.
 Opening new tabs, changing the model or policy, viewing files, and attaching images are not supported yet. There is no app to install — add the page to your home screen.
 
+### Setting up Tailscale
+
+Tailscale is a private network (VPN) that connects only your own devices. The free Personal plan is enough, and you set it up once.
+
+1. **Mac**: Download the macOS app from [tailscale.com/download](https://tailscale.com/download) (the App Store version works too) and sign in from the Tailscale icon in the menu bar. You can sign up with a Google, Microsoft, or GitHub account, among others.
+2. **Phone**: Install "Tailscale" from the App Store or Play Store, sign in with **the same account as the Mac**, and allow the VPN connection.
+3. **Check**: When the Mac shows up as connected in the phone's Tailscale device list, you are ready. If Tailscale is off on the phone, the Sudal address won't load.
+
+Then turn it on in Sudal settings as below. Sudal asks the Tailscale app for this Mac's address and listens only there. If you turn Tailscale on later, Sudal picks it up on its own.
+
 **Turn it on**: Settings > General > Continue on your phone shows the address to open (`http://100.x.y.z:47800`). Both the Mac and the phone must be signed in to
 Tailscale with the same account. It is off by default.
 

@@ -238,6 +238,7 @@ export const settings = {
     title: "휴대폰에서 이어 쓰기 (Tailscale)",
     description: "켜면 Tailscale 주소에서만 Sudal에 접속할 수 있어요. 휴대폰 브라우저로 아래 주소를 열고, 처음 한 번 연결 코드를 넣으면 탭을 보고 대화를 이어 갈 수 있어요.",
     warning: "연결된 기기는 이 Mac의 탭에 메시지를 보낼 수 있어요. 권한이 \"전부 자동\"인 탭이면 휴대폰에서 이 Mac의 명령을 실행시키는 것과 같아요. 쓰지 않는 기기는 끊어 두세요.",
+    setupLink: "Tailscale 설정 방법",
     checkbox: "휴대폰에서 이어 쓰기 켜기",
     address: "휴대폰에서 열 주소",
     noTailscale: "Tailscale 주소를 찾지 못했어요. 이 Mac에서 Tailscale을 켜고 로그인하세요. 켜지면 자동으로 열려요.",

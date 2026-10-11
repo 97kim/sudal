@@ -240,6 +240,7 @@ export const settings: DeepPartial<typeof ko> = {
     title: "Continue on your phone (Tailscale)",
     description: "When on, Sudal accepts connections only on its Tailscale address. Open the address below in your phone's browser and enter a connection code once to see your tabs and keep chatting.",
     warning: "A connected device can send messages to tabs on this Mac. For tabs set to full auto, that is the same as running commands on this Mac from your phone. Disconnect devices you no longer use.",
+    setupLink: "How to set up Tailscale",
     checkbox: "Turn on Continue on your phone",
     address: "Address to open on your phone",
     noTailscale: "No Tailscale address found. Turn on Tailscale on this Mac and sign in. It opens automatically once Tailscale is up.",
