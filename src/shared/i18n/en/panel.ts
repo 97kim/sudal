@@ -113,6 +113,8 @@ export const panel: DeepPartial<typeof ko> = {
   diff: {
     moreLines_one: "{{count}} more line",
     moreLines_other: "{{count}} more lines",
+    showMoreLines_one: "Show {{count}} more line",
+    showMoreLines_other: "Show {{count}} more lines",
   },
   viewer: {
     skippedLines_one: "{{count}} line skipped",

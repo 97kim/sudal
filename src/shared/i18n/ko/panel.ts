@@ -113,6 +113,8 @@ export const panel = {
   diff: {
     moreLines_one: "{{count}}줄 더 있음",
     moreLines_other: "{{count}}줄 더 있음",
+    showMoreLines_one: "나머지 {{count}}줄 보기",
+    showMoreLines_other: "나머지 {{count}}줄 보기",
   },
   viewer: {
     skippedLines_one: "{{count}}줄 생략",
