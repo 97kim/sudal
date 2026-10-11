@@ -233,7 +233,7 @@ export const settings: DeepPartial<typeof ko> = {
   browserLogin: {
     title: "Keep in-app browser logins",
     description1: "Saves the cookies used for sign-in when you quit the app and restores them when you reopen it. Depending on a site's security policy or session expiry, you may still need to sign in again.",
-    description2: "Saved cookies are stored unencrypted in this computer's app data folder and can be read only by the current user. Turning this off deletes the cookie file saved for restoring.",
+    description2: "Saved cookies are stored encrypted in this computer's app data folder and can be read only by the current user. Turning this off deletes the cookie file saved for restoring.",
     checkbox: "Save login info for the next launch",
   },
   storage: {
