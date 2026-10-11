@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { MobileStatusDto } from "@shared/ipc";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
 import { Icon } from "./Icon";
+import { IS_WIN } from "../platform";
 
 // GitHub 의 안내서 "Tailscale 준비" 절. 앱 언어에 맞는 쪽을 연다.
 const SETUP_URL = {
@@ -47,7 +48,8 @@ export function MobileAccessSettings({ enabled, onToggle }: { enabled: boolean |
       <p className="mb-2 text-[12px] leading-5 text-muted">
         {t("settings.mobile.description")} {setupLink}
       </p>
-      <p className="mb-3 text-[12px] leading-5 text-warn">{t("settings.mobile.warning")}</p>
+      <p className="mb-3 text-[12px] leading-5 text-warn">{t(IS_WIN ? "settings.mobile.warningWin" : "settings.mobile.warning")}</p>
+      {IS_WIN && <p className="-mt-2 mb-3 text-[12px] leading-5 text-muted">{t("settings.mobile.firewallWin")}</p>}
       <label className="flex cursor-pointer items-center gap-2 text-[12.5px]">
         <input type="checkbox" checked={enabled ?? false} disabled={enabled === undefined} onChange={(e) => onToggle(e.target.checked)} data-mobile-access />
         <span>{t("settings.mobile.checkbox")}</span>
@@ -67,9 +69,9 @@ export function MobileAccessSettings({ enabled, onToggle }: { enabled: boolean |
           ) : (
             <div className="text-warn" data-mobile-error>
               {status.error === "noTailscale"
-                ? t("settings.mobile.noTailscale")
+                ? t(IS_WIN ? "settings.mobile.noTailscaleWin" : "settings.mobile.noTailscale")
                 : status.error === "noTailscaleCli"
-                  ? t("settings.mobile.noTailscaleCli")
+                  ? t(IS_WIN ? "settings.mobile.noTailscaleCliWin" : "settings.mobile.noTailscaleCli")
                   : t("settings.mobile.error", { error: status.error ?? "" })}
               {status.error !== null && status.error.startsWith("noTailscale") && <div className="mt-1">{setupLink}</div>}
             </div>

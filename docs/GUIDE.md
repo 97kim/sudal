@@ -388,12 +388,13 @@ changes the text, it may quietly stop working (as of codex-cli 0.153).
 
 When you step away, open Sudal on your Mac from your phone's browser: see the tab list, read conversations live, send messages, stop a turn, and allow or deny permission requests.
 Opening new tabs, changing the model or policy, viewing files, and attaching images are not supported yet. There is no app to install — add the page to your home screen.
+It works the same on Windows; read "Mac" below as your Windows PC.
 
 ### Setting up Tailscale
 
 Tailscale is a private network (VPN) that connects only your own devices. The free Personal plan is enough, and you set it up once.
 
-1. **Mac**: Download the macOS app from [tailscale.com/download](https://tailscale.com/download) (the App Store version works too) and sign in from the Tailscale icon in the menu bar. You can sign up with a Google, Microsoft, or GitHub account, among others.
+1. **Mac or Windows**: Download the macOS or Windows app from [tailscale.com/download](https://tailscale.com/download) (on a Mac the App Store version works too) and sign in from the Tailscale icon in the menu bar (on Windows, the system tray). You can sign up with a Google, Microsoft, or GitHub account, among others.
 2. **Phone**: Install "Tailscale" from the App Store or Play Store, sign in with **the same account as the Mac**, and allow the VPN connection.
 3. **Check**: When the Mac shows up as connected in the phone's Tailscale device list, you are ready. If Tailscale is off on the phone, the Sudal address won't load.
 
@@ -419,6 +420,8 @@ name (Host), from another site (Origin), or to a closed tab are rejected. Traffi
 
 **Can't connect?** If the phone shows `ERR_CONNECTION_RESET`, a firewall or security app on the Mac (for example ESET) is blocking incoming connections.
 Turn it off while you use it, or allow incoming TCP 47800 from Tailscale addresses (100.64.0.0/10).
+On Windows, Windows Firewall asks whether to allow Sudal the first time you turn this on. Choose Allow. If you missed it, go to Windows Security > Firewall & network protection > "Allow an app through firewall" and turn on Sudal.
+If your Tailscale network is set to "Public", check the Public column too.
 
 ## Usage dashboard
 

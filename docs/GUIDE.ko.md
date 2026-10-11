@@ -389,12 +389,13 @@ ANSI 를 벗긴 최근 출력을 이어 붙여 선택지 앞의 "$ <명령> › 
 
 자리를 비워도 휴대폰 브라우저로 Mac의 Sudal에 붙어서 탭 목록을 보고, 대화를 실시간으로 읽고, 메시지 보내기·중단·권한 허용/거부를 할 수 있어요.
 새 탭 열기·모델이나 권한 바꾸기·파일 보기·이미지 첨부는 아직 안 돼요. 앱을 따로 깔지 않고, 휴대폰 브라우저에서 홈 화면에 추가해 쓰면 돼요.
+Windows에서도 똑같이 돼요. 아래의 "Mac"은 Windows PC로 읽으세요.
 
 ### Tailscale 준비
 
 Tailscale은 내 기기끼리만 이어 주는 사설망(VPN)이에요. 개인용 무료 요금제로 충분해요. 처음 한 번만 하면 돼요.
 
-1. **Mac**: [tailscale.com/download](https://tailscale.com/download)에서 macOS 앱을 받아 설치하세요(App Store 판도 돼요). 메뉴 막대의 Tailscale 아이콘에서 로그인하세요. Google·Microsoft·GitHub 계정 등으로 가입할 수 있어요.
+1. **Mac·Windows**: [tailscale.com/download](https://tailscale.com/download)에서 macOS나 Windows 앱을 받아 설치하세요(Mac은 App Store 판도 돼요). 메뉴 막대(Windows는 작업 표시줄 오른쪽 아이콘 모음)의 Tailscale 아이콘에서 로그인하세요. Google·Microsoft·GitHub 계정 등으로 가입할 수 있어요.
 2. **휴대폰**: App Store나 Play 스토어에서 "Tailscale"을 설치하고, **Mac과 같은 계정**으로 로그인한 뒤 VPN 연결을 허용하세요.
 3. **확인**: 휴대폰 Tailscale 앱의 기기 목록에 Mac이 보이고 연결돼 있으면 준비가 끝난 거예요. 휴대폰 쪽 Tailscale이 꺼져 있으면 Sudal 주소에 닿지 않아요.
 
@@ -420,6 +421,8 @@ Tailscale은 내 기기끼리만 이어 주는 사설망(VPN)이에요. 개인�
 
 **연결이 안 될 때**: 휴대폰에서 `ERR_CONNECTION_RESET`이 뜨면 Mac의 방화벽이나 보안 프로그램(예: ESET)이 들어오는 연결을 막고 있는 거예요.
 쓰는 동안 잠깐 끄거나, Tailscale 주소(100.64.0.0/10)에서 TCP 47800으로 들어오는 연결을 허용하세요.
+Windows는 처음 켤 때 Windows 방화벽이 Sudal의 접속 허용을 물어요. "허용"을 누르세요. 그때 놓쳤다면 Windows 보안 > 방화벽 및 네트워크 보호 > "방화벽에서 앱 허용"에서 Sudal을 켜세요.
+Tailscale 네트워크가 "공용"으로 잡혀 있으면 공용 쪽에도 체크해야 해요.
 
 ## 사용량 대시보드
 
