@@ -71,6 +71,9 @@ module.exports = {
     // 지워도 설정·탭 기록(%APPDATA%\Sudal)은 남긴다 — 다시 깔면 이어 쓴다
     deleteAppDataOnUninstall: false,
   },
+  // NSIS 3.12 묶음. 기본(3.0.4.1)의 mac makensis 는 Intel 용이라 Apple 칩에선 Rosetta 로 돌아,
+  // electron-builder 가 고정으로 거는 4분 제한을 자주 넘겼다. 이 묶음에는 arm64 makensis 가 들어 있다.
+  toolsets: { nsis: "1.2.1" },
   // 인앱 브라우저 쿠키를 OS 키 저장소(macOS 키체인·Windows DPAPI)의 키로 암호화한다. 끄면 로그인 쿠키가 디스크에 평문으로 남아
   // 같은 계정의 프로그램(에이전트 포함)이 그대로 읽는다. macOS 는 ad-hoc 서명이라 업데이트마다 키체인 허용을 다시 묻는다 — 받아들였다.
   // 퓨즈는 서명 전에 바꿔야 한다. 설정의 electronFuses 는 afterPack(우리 서명) 뒤에 바꿔 서명을 깨므로 여기서 직접 바꾼다.
