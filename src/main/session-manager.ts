@@ -1599,6 +1599,12 @@ export class SessionManager {
       this.record(s, e);
       return;
     }
+    // 백그라운드 하위 에이전트가 일하는 소식은 메인 턴이 끝난 뒤에도 계속 온다. 그건 메인이 다시 도는 게 아니라서
+    // "도는 중" 으로 올리지 않는다 — 올리면 하위 에이전트가 일하는 내내 탭이 바빠 보이고, 보낸 말이 대기열로 간다.
+    if (e.type === "subagent_activity") {
+      this.record(s, e);
+      return;
+    }
     // 사용자가 끊은 턴이 남긴 이벤트다. 기록은 하되 "도는 중" 으로 되돌리지는 않는다.
     if (!s.ambientStopped && (s.status === "idle" || s.status === "error")) {
       s.turnStartedAt = Date.now();
