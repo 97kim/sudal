@@ -419,7 +419,7 @@ name (Host), from another site (Origin), or to a closed tab are rejected. Traffi
 > Disconnect devices you don't use.
 
 **Can't connect?** First check that both your computer and phone are connected to Tailscale and that you entered the address and port (`47800`) shown in settings.
-A connection timeout or `ERR_CONNECTION_RESET` can mean that a firewall or security app (for example ESET) is blocking incoming connections.
+A connection timeout or `ERR_CONNECTION_RESET` can mean that a firewall or security app is blocking incoming connections.
 Allow incoming TCP 47800 from Tailscale addresses (100.64.0.0/10) instead of turning off the entire firewall.
 On Windows, Windows Firewall asks whether to allow Sudal the first time you turn this on. Choose Allow. If you missed it, go to Windows Security > Firewall & network protection > "Allow an app through firewall" and turn on Sudal.
 Check the Private or Public column that matches your Tailscale network's profile.
