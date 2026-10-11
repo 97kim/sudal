@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
-import type { CookiesSetDetails, Session } from "electron";
+import type { Cookie, CookiesSetDetails, Session } from "electron";
 
 const run = promisify(execFile);
 
@@ -29,13 +29,24 @@ export interface ImportSource {
 export interface ImportSite {
   host: string;
   count: number;
+  /** 옮겨도 쓸 수 없는 사이트 — 고를 수 없다. */
+  blocked?: "google";
+}
+
+/**
+ * Google 로그인은 기기에 묶여 있어 옮긴 쿠키를 거부하거나 곧 만료시킨다.
+ * 가져오지도, 교체하며 지우지도 않는다 — Sudal 안에서 직접 로그인한 세션이 유일하게 쓸 수 있는 것이다.
+ */
+export function isGoogleHost(host: string): boolean {
+  const h = host.replace(/^\./, "").toLowerCase();
+  return h === "google.com" || h.endsWith(".google.com");
 }
 
 export function importSupported(): boolean {
   return process.platform === "darwin";
 }
 
-function cookiesFile(dir: string): string | null {
+export function cookiesFile(dir: string): string | null {
   for (const p of [join(dir, "Network", "Cookies"), join(dir, "Cookies")]) if (existsSync(p)) return p;
   return null;
 }
@@ -67,7 +78,7 @@ export function listSources(base = TEST_BASE || join(homedir(), "Library", "Appl
 }
 
 /** 잠긴 DB 를 복사본으로 연다. 저널(-journal·-wal)도 같이 옮겨야 최근 쓴 것까지 보인다. */
-function withCopy<T>(path: string, fn: (db: DatabaseSync) => T): T {
+export function withCopy<T>(path: string, fn: (db: DatabaseSync) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "sudal-cookies-"));
   try {
     const copy = join(dir, "Cookies");
@@ -92,7 +103,7 @@ export function listSites(cookiesPath: string): ImportSite[] {
     const by = new Map<string, number>();
     for (const r of db.prepare("SELECT host_key AS h, COUNT(*) AS n FROM cookies GROUP BY host_key").all() as { h: string; n: number }[])
       by.set(bare(r.h), (by.get(bare(r.h)) ?? 0) + Number(r.n));
-    return [...by].map(([host, count]) => ({ host, count })).sort((a, b) => b.count - a.count || a.host.localeCompare(b.host));
+    return [...by].map(([host, count]): ImportSite => (isGoogleHost(host) ? { host, count, blocked: "google" } : { host, count })).sort((a, b) => b.count - a.count || a.host.localeCompare(b.host));
   });
 }
 
@@ -114,7 +125,9 @@ export function decryptValue(enc: Uint8Array, key: Buffer, hostKey: string, dbVe
     if (plain.length < 32 || !plain.subarray(0, 32).equals(createHash("sha256").update(hostKey).digest())) return null;
     plain = plain.subarray(32);
   }
-  return plain.toString("utf8");
+  // toString 은 깨진 바이트를 U+FFFD 로 바꿔 다른 값을 만든다 — 그럴 바엔 못 푼 것으로 센다.
+  // ignoreBOM: 기본값이면 맨 앞의 U+FEFF 를 BOM 으로 보고 지워 값이 달라진다.
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(plain);
 }
 
 /** Chrome 시각(1601-01-01 부터 마이크로초) → 유닉스 초. 0 이면 세션 쿠키. */
@@ -126,7 +139,7 @@ export function chromeTimeToUnix(t: number | bigint): number | undefined {
 
 const SAME_SITE: Record<number, CookiesSetDetails["sameSite"]> = { 0: "no_restriction", 1: "lax", 2: "strict" };
 
-interface Row {
+export interface Row {
   host_key: string;
   name: string;
   value: string;
@@ -140,12 +153,34 @@ interface Row {
   top_frame_site_key?: string;
 }
 
+/** 이미 만료된 쿠키를 쓰면 저장소는 같은 쿠키를 지우고 성공으로 답한다 — 가져온 것으로 치면 안 된다. */
+const expired = (c: CookiesSetDetails) => c.expirationDate !== undefined && c.expirationDate <= Date.now() / 1000;
+
+/** 쿠키 DB 의 한 행을 cookies.set 형식으로. value 는 풀어낸 값. */
+export function rowToDetails(r: Row, value: string): CookiesSetDetails {
+  const secure = Number(r.is_secure) === 1;
+  const path = r.path || "/";
+  // __Host- 쿠키는 domain 을 주면 거절된다. "." 로 시작하면 하위 도메인까지, 아니면 그 호스트만.
+  const domain = r.name.startsWith("__Host-") || !r.host_key.startsWith(".") ? undefined : r.host_key;
+  return {
+    url: `${secure ? "https" : "http"}://${bare(r.host_key)}${path}`,
+    name: r.name,
+    value,
+    ...(domain ? { domain } : {}),
+    path,
+    secure,
+    httpOnly: Number(r.is_httponly) === 1,
+    ...(Number(r.has_expires) === 1 && chromeTimeToUnix(r.expires_utc) ? { expirationDate: chromeTimeToUnix(r.expires_utc) } : {}),
+    sameSite: SAME_SITE[Number(r.samesite)] ?? "unspecified",
+  };
+}
+
 /**
  * 고른 사이트들의 쿠키를 풀어 Electron cookies.set 형식으로. 못 푼 것은 failed, 최상위 사이트별로 나뉜(partitioned)
  * 쿠키는 partitioned 로 센다 — 그 격리를 그대로 옮길 방법이 없어 일반 쿠키로 넣으면 범위가 넓어진다.
  */
 export function readCookies(cookiesPath: string, hosts: string[], key: Buffer): { cookies: CookiesSetDetails[]; failed: number; partitioned: number } {
-  const want = new Set(hosts.map(bare));
+  const want = new Set(hosts.map(bare).filter((h) => !isGoogleHost(h)));
   return withCopy(cookiesPath, (db) => {
     const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined)?.value ?? 0);
     const cookies: CookiesSetDetails[] = [];
@@ -163,7 +198,8 @@ export function readCookies(cookiesPath: string, hosts: string[], key: Buffer): 
         partitioned++;
         continue;
       }
-      let value: string | null = r.value || null;
+      // 값이 빈 쿠키도 정상이다 — 두 칸이 다 비어 있으면 빈 값 그대로 옮긴다.
+      let value: string | null = r.value ?? "";
       if (!value && r.encrypted_value?.length) {
         try {
           value = decryptValue(r.encrypted_value, key, r.host_key, version);
@@ -175,21 +211,8 @@ export function readCookies(cookiesPath: string, hosts: string[], key: Buffer): 
         failed++;
         continue;
       }
-      const secure = Number(r.is_secure) === 1;
-      const path = r.path || "/";
-      // __Host- 쿠키는 domain 을 주면 거절된다. "." 로 시작하면 하위 도메인까지, 아니면 그 호스트만.
-      const domain = r.name.startsWith("__Host-") || !r.host_key.startsWith(".") ? undefined : r.host_key;
-      cookies.push({
-        url: `${secure ? "https" : "http"}://${bare(r.host_key)}${path}`,
-        name: r.name,
-        value,
-        ...(domain ? { domain } : {}),
-        path,
-        secure,
-        httpOnly: Number(r.is_httponly) === 1,
-        ...(Number(r.has_expires) === 1 && chromeTimeToUnix(r.expires_utc) ? { expirationDate: chromeTimeToUnix(r.expires_utc) } : {}),
-        sameSite: SAME_SITE[Number(r.samesite)] ?? "unspecified",
-      });
+      const d = rowToDetails(r, value);
+      if (!expired(d)) cookies.push(d);
     }
     return { cookies, failed, partitioned };
   });
@@ -203,23 +226,65 @@ async function keychainPassword(browser: ImportSource["browser"]): Promise<strin
   return stdout.trim();
 }
 
+type CookieJar = Pick<Session["cookies"], "get" | "set">;
+
+/** 쿠키는 이름·도메인·경로로 하나가 정해진다. 도메인은 점 포함 그대로 — 점이 있어야 하위 도메인까지 가는 쿠키다. */
+const keyOf = (domain: string, path: string | undefined, name: string) => `${domain}\n${path || "/"}\n${name}`;
+const detailsDomain = (c: CookiesSetDetails) => c.domain ?? new URL(c.url).hostname;
+
+/** 같은 이름·도메인·경로를 만료된 값으로 쓸 형식 — 쓰면 그 쿠키 하나만 지워진다. */
+function expireDetails(c: Cookie): CookiesSetDetails {
+  return {
+    url: `${c.secure ? "https" : "http"}://${bare(c.domain ?? "")}${c.path || "/"}`,
+    name: c.name,
+    value: "",
+    ...(c.hostOnly ? {} : { domain: c.domain }),
+    path: c.path,
+    secure: c.secure,
+    httpOnly: c.httpOnly,
+    expirationDate: 1,
+  };
+}
+
 /**
- * 고른 사이트의 로그인을 세션으로 가져온다. 기존 쿠키는 지우지 않고 같은 것(이름·도메인·경로)만 덮어쓴다.
- * 함정: cookies.remove(url, name) 은 그 주소로 보내지는 같은 이름 쿠키를 모두 지워 고르지 않은 상위 도메인 쿠키까지 날린다.
- * 지우지 않으니 풀기에 실패해도 쓰던 로그인이 남는다. 키체인을 거절하면 던진다.
+ * 가져온 쿠키로 그 사이트들의 쿠키를 바꾼다. 쓰던 쿠키와 섞이면 사이트가 세션을 거부해서, 하나라도 써진 사이트는
+ * 가져온 것에 없는 옛 쿠키를 지운다. 하나도 못 쓴 사이트의 로그인은 그대로 둔다.
+ * 함정: cookies.remove(url, name) 은 그 주소로 가는 같은 이름 쿠키(상위 도메인·다른 경로)까지 지운다. 그래서 같은
+ * 이름·도메인·경로를 만료된 값으로 써서 그 하나만 지운다. 파티션 쿠키엔 이 쓰기가 닿지 않아 그대로 남는다.
+ * 지우다 실패해도 되돌리지 않고 센다(staleLeft) — Electron 쿠키엔 파티션 정보가 없어 되살리기가 파티션 쿠키를
+ * 일반 쿠키로 복제할 수 있다. 섞여 남은 사이트는 다시 로그인하면 된다.
  */
-export async function importCookies(source: ImportSource, hosts: string[], ses: Session): Promise<{ imported: number; failed: number; partitioned: number }> {
-  const key = chromeKey(await keychainPassword(source.browser));
-  const { cookies, failed, partitioned } = readCookies(source.cookies, hosts, key);
-  let imported = 0;
+export async function replaceCookies(jar: CookieJar, cookies: CookiesSetDetails[]): Promise<{ imported: number; rejected: number; staleLeft: number }> {
+  const before = await jar.get({});
+  const written = new Set<string>();
+  const sites = new Set<string>();
   let rejected = 0;
   for (const c of cookies) {
+    if (expired(c)) continue;
     try {
-      await ses.cookies.set(c);
-      imported++;
+      await jar.set(c);
     } catch {
       rejected++;
+      continue;
     }
+    written.add(keyOf(detailsDomain(c), c.path, c.name ?? ""));
+    sites.add(bare(detailsDomain(c)));
   }
-  return { imported, failed: failed + rejected, partitioned };
+  let staleLeft = 0;
+  for (const c of before) {
+    if (!sites.has(bare(c.domain ?? "")) || written.has(keyOf(c.domain ?? "", c.path, c.name))) continue;
+    await jar.set(expireDetails(c)).catch(() => staleLeft++);
+  }
+  return { imported: written.size, rejected, staleLeft };
+}
+
+/** 고른 사이트의 로그인을 세션으로 가져온다. 키체인을 거절하면 던진다. */
+export async function importCookies(
+  source: ImportSource,
+  hosts: string[],
+  ses: Session,
+): Promise<{ imported: number; failed: number; rejected: number; partitioned: number; staleLeft: number }> {
+  const key = chromeKey(await keychainPassword(source.browser));
+  const { cookies, failed, partitioned } = readCookies(source.cookies, hosts, key);
+  return { ...(await replaceCookies(ses.cookies, cookies)), failed, partitioned };
 }

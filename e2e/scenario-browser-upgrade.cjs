@@ -55,6 +55,7 @@ const importBase = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-e2e-import-"));
   db.exec("CREATE TABLE meta(key TEXT, value TEXT); INSERT INTO meta VALUES('version','24'); CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, has_expires INTEGER, samesite INTEGER)");
   db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run("localhost", "sudal_login", "", encd, "/", 0, 0, 1, 0, 1);
   db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run(".other.example", "x", "y", Buffer.alloc(0), "/", 0, 0, 0, 0, 0);
+  db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?)").run(".google.com", "SID", "g", Buffer.alloc(0), "/", 0, 1, 1, 0, 0);
   db.close();
   // 프로필 2: 다른 비밀번호로 암호화된 localhost 쿠키뿐 — 하나도 못 푼다
   fs.mkdirSync(path.join(chrome, "Profile 2"), { recursive: true });
@@ -399,17 +400,22 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   cli("browser", "open", "--tab", tab, "--url", base + "/whoami");
   await sleep(1500);
   const whoBefore = cli("browser", "read", "--tab", tab).text || "";
+  // 가져오면 그 사이트의 옛 쿠키는 가져온 것으로 바뀐다
+  await wvm(`document.cookie = "stale_old=1; path=/"`);
+  const staleSet = String(await wvm("document.cookie")).includes("stale_old=1");
   await page.click("[data-browser-more] >> visible=true");
   await page.click("[data-browser-import-open] >> visible=true");
   const srcShown = await waitFor(() => !!document.querySelector('[data-browser-import-source="chrome:Profile 1"]'), null, 5000);
   await waitFor(() => !!document.querySelector('[data-browser-import-site="localhost"]'), null, 5000);
   const prechecked = await ev(() => !!document.querySelector('[data-browser-import-site="localhost"] input')?.checked);
   const otherUnchecked = await ev(() => document.querySelector('[data-browser-import-site="other.example"] input')?.checked === false);
+  const googleBlocked = await ev(() => document.querySelector('[data-browser-import-site="google.com"] input')?.disabled === true);
   await ev(() => document.querySelector("[data-browser-import-run]")?.click());
   const closed = await waitFor(() => !document.querySelector("[data-browser-import]"), null, 8000);
   await sleep(1800);
   const whoAfter = cli("browser", "read", "--tab", tab).text || "";
   res("M (다른 브라우저 로그인 가져오기)", srcShown && prechecked && otherUnchecked && closed && !whoBefore.includes("sudal_login") && whoAfter.includes("sudal_login=ok-123"), JSON.stringify({ srcShown, prechecked, otherUnchecked, closed, before: whoBefore.slice(0, 40), after: whoAfter.slice(0, 60) }));
+  res("M-3 (옛 쿠키는 교체 · Google 은 고를 수 없음)", staleSet && !whoAfter.includes("stale_old") && googleBlocked, JSON.stringify({ staleSet, after: whoAfter.slice(0, 60), googleBlocked }));
   // M-2: 하나도 못 푸는 프로필에서 가져오면 실패로 알리고, 이미 있던 로그인은 그대로 남는다
   await page.click("[data-browser-more] >> visible=true");
   await page.click("[data-browser-import-open] >> visible=true");

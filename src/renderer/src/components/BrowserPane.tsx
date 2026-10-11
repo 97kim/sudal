@@ -1330,7 +1330,7 @@ export function BrowserPane({
             onClose={() => setImportOpen(false)}
             onDone={(r) => {
               setImportOpen(false);
-              showToast({ text: t("panel.browser.import.done", { count: r.sites }), detail: r.skipped ? t("panel.browser.import.skipped", { count: r.skipped }) : undefined });
+              showToast({ text: t("panel.browser.import.done", { count: r.sites }), detail: r.skipped });
               // 새 쿠키로 다시 불러와야 로그인한 화면이 보인다.
               try {
                 view.current?.reload();

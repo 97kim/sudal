@@ -1052,9 +1052,9 @@ export interface SudalApi {
     /** 로그인을 가져올 수 있는 다른 브라우저 프로필. macOS 가 아니면 supported:false. */
     importSources(): Promise<{ supported: boolean; sources: { id: string; label: string }[] }>;
     /** 그 프로필의 사이트별 쿠키 수(값은 풀지 않는다). */
-    importSites(sourceId: string): Promise<{ host: string; count: number }[]>;
+    importSites(sourceId: string): Promise<{ host: string; count: number; blocked?: "google" }[]>;
     /** 고른 사이트의 로그인을 가져온다. macOS 가 키체인 접근 허용 창을 띄운다. */
-    importLogins(sourceId: string, hosts: string[]): Promise<{ ok: true; imported: number; failed: number; partitioned: number } | { ok: false; error: string }>;
+    importLogins(sourceId: string, hosts: string[]): Promise<{ ok: true; imported: number; failed: number; rejected: number; partitioned: number; staleLeft: number } | { ok: false; error: string }>;
   };
 }
 

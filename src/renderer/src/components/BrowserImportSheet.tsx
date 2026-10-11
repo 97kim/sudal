@@ -9,12 +9,12 @@ function matchesHost(site: string, host: string): boolean {
   return !!host && (host === site || host.endsWith(`.${site}`));
 }
 
-export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHost: string; onClose: () => void; onDone: (r: { sites: number; imported: number; skipped: number }) => void }) {
+export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHost: string; onClose: () => void; onDone: (r: { sites: number; skipped?: string }) => void }) {
   const { t } = useTranslation();
   const [supported, setSupported] = useState<boolean | null>(null);
   const [sources, setSources] = useState<{ id: string; label: string }[]>([]);
   const [source, setSource] = useState<string | null>(null);
-  const [sites, setSites] = useState<{ host: string; count: number }[] | null>(null);
+  const [sites, setSites] = useState<{ host: string; count: number; blocked?: "google" }[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,7 +32,7 @@ export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHo
     setSites(null);
     void window.sudal.browser.importSites(source).then((list) => {
       setSites(list);
-      setPicked(new Set(list.filter((s) => matchesHost(s.host, currentHost)).map((s) => s.host)));
+      setPicked(new Set(list.filter((s) => !s.blocked && matchesHost(s.host, currentHost)).map((s) => s.host)));
     });
   }, [source, currentHost]);
   useEffect(() => {
@@ -64,10 +64,17 @@ export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHo
     // macOS 가 키체인 접근 허용 창을 띄운다 — 사람이 누를 때까지 기다린다.
     const r = await window.sudal.browser.importLogins(source, [...picked]).catch((e: unknown) => ({ ok: false as const, error: String(e) }));
     setBusy(false);
-    if (!r.ok) setError(r.error);
+    if (!r.ok) return setError(r.error);
+    // 왜 빠졌는지 나눠 알린다 — 개수만 보면 다시 해도 되는지 알 수 없다.
+    const why = [
+      r.failed && t("panel.browser.import.skippedFailed", { count: r.failed }),
+      r.partitioned && t("panel.browser.import.skippedPartitioned", { count: r.partitioned }),
+      r.rejected && t("panel.browser.import.skippedRejected", { count: r.rejected }),
+    ].filter(Boolean);
+    const skipped = why.length ? t("panel.browser.import.skipped", { list: why.join(" · ") }) : undefined;
     // 하나도 못 가져왔으면 성공처럼 닫지 않는다.
-    else if (r.imported === 0) setError(t("panel.browser.import.none", { failed: r.failed + r.partitioned }));
-    else onDone({ sites: picked.size, imported: r.imported, skipped: r.failed + r.partitioned });
+    if (r.imported === 0) setError([t("panel.browser.import.none"), skipped].filter(Boolean).join(" "));
+    else onDone({ sites: picked.size, skipped: [skipped, r.staleLeft ? t("panel.browser.import.staleLeft", { count: r.staleLeft }) : ""].filter(Boolean).join(" ") || undefined });
   };
 
   return (
@@ -113,10 +120,16 @@ export function BrowserImportSheet({ currentHost, onClose, onDone }: { currentHo
                 <div className="px-4 py-3 text-[11.5px] text-muted">{t("common.loading")}</div>
               ) : (
                 shown.slice(0, 200).map((s) => (
-                  <label key={s.host} className="flex cursor-pointer items-center gap-2.5 px-4 py-1.5 text-[12px] hover:bg-panel" data-browser-import-site={s.host}>
-                    <input type="checkbox" checked={picked.has(s.host)} onChange={() => toggle(s.host)} className="accent-[var(--color-accent)]" />
+                  <label
+                    key={s.host}
+                    className={`flex items-center gap-2.5 px-4 py-1.5 text-[12px] ${s.blocked ? "opacity-50" : "cursor-pointer hover:bg-panel"}`}
+                    title={s.blocked ? t("panel.browser.import.googleHint") : undefined}
+                    data-browser-import-site={s.host}
+                  >
+                    <input type="checkbox" checked={picked.has(s.host)} disabled={!!s.blocked} onChange={() => toggle(s.host)} className="accent-[var(--color-accent)]" />
                     <span className="min-w-0 flex-1 truncate text-fg">{s.host}</span>
-                    {matchesHost(s.host, currentHost) && <span className="shrink-0 rounded bg-accent-tint px-1.5 text-[10px] text-accent">{t("panel.browser.import.here")}</span>}
+                    {s.blocked && <span className="shrink-0 rounded border border-line px-1.5 text-[10px] text-muted">{t("panel.browser.import.google")}</span>}
+                    {!s.blocked && matchesHost(s.host, currentHost) && <span className="shrink-0 rounded bg-accent-tint px-1.5 text-[10px] text-accent">{t("panel.browser.import.here")}</span>}
                     <span className="shrink-0 text-[10.5px] text-muted-2">{t("panel.browser.import.cookies", { count: s.count })}</span>
                   </label>
                 ))
