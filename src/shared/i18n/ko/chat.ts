@@ -189,6 +189,7 @@ export const chat = {
   composer: {
     imageLimit: "이미지는 최대 {{count}}장까지 첨부할 수 있습니다.",
     loadingCommands: "커맨드 목록을 불러오는 중…",
+    loadingMentions: "스킬·앱 목록을 불러오는 중…",
     snippet: "스니펫",
     snippetAll: "스니펫 · 전체",
     mentionSkill: "스킬",

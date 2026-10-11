@@ -449,17 +449,28 @@ export function ChatView({
   const [commands, setCommands] = useState<SlashCommandDto[] | null>(null);
   // Codex: "/" 는 앱이 처리하는 명령 목록, "$" 는 app-server 가 주는 스킬·앱 목록.
   const [mentions, setMentions] = useState<CodexMention[] | null>(null);
+  const [mentionsLoading, setMentionsLoading] = useState(false);
   useEffect(() => {
     if (provider !== "codex" || !config || !cwd) {
       setMentions(null);
+      setMentionsLoading(false);
       return;
     }
     let alive = true;
     setMentions([]);
-    window.sudal.chat
-      .codexMentions(tabId)
-      .then((m) => alive && setMentions(m))
-      .catch(console.error);
+    setMentionsLoading(true);
+    // 스킬은 1~2초면 오지만 앱 목록은 20초 넘게 걸리기도 한다 — 스킬부터 보여 주고, 앱까지 받으면 바꾼다
+    void (async () => {
+      const first = await window.sudal.chat.codexMentions(tabId);
+      if (!alive) return;
+      setMentions(first.list);
+      if (!first.complete) {
+        const all = await window.sudal.chat.codexMentions(tabId, true);
+        if (alive) setMentions(all.list);
+      }
+    })()
+      .catch(console.error)
+      .finally(() => alive && setMentionsLoading(false));
     return () => {
       alive = false;
     };
@@ -1037,6 +1048,7 @@ export function ChatView({
               commands={provider === "claude" && commands ? withAppCommands(t, commands) : commands}
               commandsLoading={provider === "claude" && commands !== null && commands.length === 0}
               mentions={mentions}
+              mentionsLoading={mentionsLoading}
               isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null)}
               snippets={snippets}
               workspaceId={tab.workspaceId}

@@ -56,6 +56,7 @@ export function Composer({
   commands,
   commandsLoading,
   mentions = null,
+  mentionsLoading = false,
   isAppCommand = (text: string) => parseAppCommand(text) !== null,
   snippets = [],
   workspaceId = null,
@@ -82,6 +83,8 @@ export function Composer({
   commandsLoading?: boolean;
   /** "$" 자동완성 목록(Codex 스킬·앱). null 이면 "$" 목록을 쓰지 않는다. */
   mentions?: CodexMention[] | null;
+  /** `$` 목록을 아직 받는 중. 맞는 게 아직 없으면 "불러오는 중" 을 보여 준다. */
+  mentionsLoading?: boolean;
   /** 앱이 처리하는 명령인지 — 그러면 첨부 파일 목록을 붙이지 않고 글 그대로 보낸다. */
   isAppCommand?: (text: string) => boolean;
   /** 프롬프트 스니펫 전체. 팔레트에는 전체 범위 + 현재 워크스페이스 것만 보인다. */
@@ -178,10 +181,11 @@ export function Composer({
     slashQuery !== null &&
     (commandsLoading ?? (commands !== null && commands.length === 0)) &&
     snippetRows.length === 0;
+  const loadingMentions = dollar !== null && mentionsLoading && mentionRows.length === 0;
   const popoverOpen =
     (slashQuery !== null || dollar !== null) &&
     !dismissed &&
-    (matches.length > 0 || loadingCommands);
+    (matches.length > 0 || loadingCommands || loadingMentions);
 
   // ===== 스니펫 저장 폼 (입력창 아래 한 줄) =====
   const [saveOpen, setSaveOpen] = useState(false);
@@ -423,10 +427,10 @@ export function Composer({
           className="absolute bottom-full left-6 right-6 z-10 mb-1 overflow-hidden rounded-lg border border-line bg-panel shadow-pop"
           role="listbox"
         >
-          {loadingCommands ? (
-            <div className="flex items-center gap-2 px-3 py-2.5 text-muted">
+          {loadingCommands || loadingMentions ? (
+            <div className="flex items-center gap-2 px-3 py-2.5 text-muted" data-palette-loading>
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
-              {t("chat.composer.loadingCommands")}
+              {t(loadingMentions ? "chat.composer.loadingMentions" : "chat.composer.loadingCommands")}
             </div>
           ) : (
             <>

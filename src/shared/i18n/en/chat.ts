@@ -191,6 +191,7 @@ export const chat: DeepPartial<typeof ko> = {
   composer: {
     imageLimit: "You can attach up to {{count}} images.",
     loadingCommands: "Loading command list…",
+    loadingMentions: "Loading skills and apps…",
     snippet: "Snippet",
     snippetAll: "Snippet · all",
     mentionSkill: "skill",

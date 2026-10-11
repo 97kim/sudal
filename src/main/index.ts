@@ -2600,15 +2600,16 @@ function registerIpc() {
     sendAll(IPC.mobileChanged, st);
     return st;
   });
-  ipcMain.handle(IPC.chatCodexMentions, async (_e, tabId: unknown) => {
-    if (typeof tabId !== "string") return [];
+  ipcMain.handle(IPC.chatCodexMentions, async (_e, tabId: unknown, full: unknown) => {
+    const none = { list: [], complete: true };
+    if (typeof tabId !== "string") return none;
     const snap = sessions.snapshot(tabId);
-    if (snap.provider !== "codex" || !snap.cwd) return [];
+    if (snap.provider !== "codex" || !snap.cwd) return none;
     try {
-      return await listCodexMentions(await codexRuntime(tabId), snap.cwd, (l) => console.log(l));
+      return await listCodexMentions(await codexRuntime(tabId), snap.cwd, (l) => console.log(l), full === true);
     } catch (e) {
       console.warn("[codex] $ 목록을 받지 못했습니다:", e);
-      return [];
+      return none;
     }
   });
   ipcMain.handle(IPC.chatCommands, async (_e, tabId: string) => {

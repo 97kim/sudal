@@ -182,7 +182,7 @@ const api: SudalApi = {
       return () => ipcRenderer.removeListener(IPC.chatEvent, handler);
     },
     commands: (tabId: string) => ipcRenderer.invoke(IPC.chatCommands, tabId),
-    codexMentions: (tabId: string) => ipcRenderer.invoke(IPC.chatCodexMentions, tabId),
+    codexMentions: (tabId: string, full?: boolean) => ipcRenderer.invoke(IPC.chatCodexMentions, tabId, full === true),
     onCommandsChanged: (listener) => {
       const handler = (_e: IpcRendererEvent, cwd: string) => listener(cwd);
       ipcRenderer.on(IPC.chatCommandsChanged, handler);

@@ -473,18 +473,23 @@ export async function forkCodexThread(
 
 /** `$` 목록은 작업 폴더별로 잠깐 재사용한다 — 입력창을 열 때마다, 보낼 때마다 app-server 에 묻지 않게. */
 const MENTIONS_TTL_MS = 60_000;
-const mentionCache = new Map<string, { at: number; list: CodexMention[] }>();
+/** complete: 앱 목록까지 받았는지(못 받고 끝났어도 true — 더 기다릴 게 없다). */
+const mentionCache = new Map<string, { at: number; list: CodexMention[]; complete: boolean }>();
+/** 앱 목록은 스킬보다 훨씬 늦다(실측 28초). 받는 중인 것을 폴더별로 두고, 다시 물으면 그걸 기다린다. */
+const appsPending = new Map<string, Promise<CodexMention[]>>();
+const APPS_TIMEOUT_MS = 60_000;
 
 /** 이 app-server 로 스킬·앱 목록을 묻는다. 앱 목록은 실험 기능이라 실패하거나 늦으면 스킬만 준다. */
 async function codexMentions(server: CodexAppServer, cwd: string): Promise<CodexMention[]> {
   const hit = mentionCache.get(cwd);
-  if (hit && Date.now() - hit.at < MENTIONS_TTL_MS) return hit.list;
+  if (hit?.complete && Date.now() - hit.at < MENTIONS_TTL_MS) return hit.list;
   const [skills, apps] = await Promise.all([
     server.request("skills/list", { cwds: [cwd] }, 10_000).catch(() => null),
     server.request("app/list", { limit: 200 }, 8_000).catch(() => null),
   ]);
   const list = codexMentionsFrom(skills, apps);
-  mentionCache.set(cwd, { at: Date.now(), list });
+  // 이 턴용 app-server 가 앱까지 못 받았으면 입력창 쪽이 받은 더 긴 목록을 덮지 않는다
+  if (apps || !mentionCache.get(cwd)?.complete) mentionCache.set(cwd, { at: Date.now(), list, complete: apps !== null });
   return list;
 }
 
@@ -501,10 +506,25 @@ async function mentionsForTurn(server: CodexAppServer, cwd: string): Promise<Cod
   return mentionCache.get(cwd)?.list ?? skillsOnly;
 }
 
-/** 입력창의 `$` 목록. 턴을 돌리지 않아 비용이 없다. */
-export async function listCodexMentions(runtime: CodexRuntime, cwd: string, log?: (line: string) => void): Promise<CodexMention[]> {
+/**
+ * 입력창의 `$` 목록. 턴을 돌리지 않아 비용이 없다.
+ * 스킬(1~2초)이 오면 바로 돌려주고(complete:false), 앱 목록은 같은 app-server 로 뒤에서 마저 받는다.
+ * full 이면 앱 목록까지 기다려 돌려준다 — 입력창은 먼저 스킬을 보여 주고 full 로 한 번 더 묻는다.
+ */
+export async function listCodexMentions(
+  runtime: CodexRuntime,
+  cwd: string,
+  log?: (line: string) => void,
+  full = false,
+): Promise<{ list: CodexMention[]; complete: boolean }> {
   const hit = mentionCache.get(cwd);
-  if (hit && Date.now() - hit.at < MENTIONS_TTL_MS) return hit.list;
+  const fresh = hit && Date.now() - hit.at < MENTIONS_TTL_MS;
+  const pending = appsPending.get(cwd);
+  if (fresh && (hit.complete || !pending)) return { list: hit.list, complete: true };
+  if (pending) {
+    if (!full && hit) return { list: hit.list, complete: false };
+    return { list: await pending, complete: true };
+  }
   const server = new CodexAppServer({
     log,
     onNotification: () => {},
@@ -513,15 +533,36 @@ export async function listCodexMentions(runtime: CodexRuntime, cwd: string, log?
     },
     onExit: () => {},
   });
-  const run = (async () => {
-    await server.start(runtime.codexPath, runtime.env, cwd);
-    return codexMentions(server, cwd);
-  })();
+  let skills: unknown;
   try {
-    return await withTimeout(run, 25_000, "skills/list");
-  } finally {
+    skills = await withTimeout(
+      (async () => {
+        await server.start(runtime.codexPath, runtime.env, cwd);
+        return server.request("skills/list", { cwds: [cwd] }, 10_000).catch(() => null);
+      })(),
+      20_000,
+      "skills/list",
+    );
+  } catch (e) {
     server.close();
+    throw e;
   }
+  const skillsOnly = codexMentionsFrom(skills, null);
+  mentionCache.set(cwd, { at: Date.now(), list: skillsOnly, complete: false });
+  const apps = server
+    .request("app/list", { limit: 200 }, APPS_TIMEOUT_MS)
+    .then((r) => codexMentionsFrom(skills, r))
+    .catch(() => skillsOnly)
+    .then((list) => {
+      mentionCache.set(cwd, { at: Date.now(), list, complete: true });
+      return list;
+    })
+    .finally(() => {
+      server.close();
+      appsPending.delete(cwd);
+    });
+  appsPending.set(cwd, apps);
+  return full ? { list: await apps, complete: true } : { list: skillsOnly, complete: false };
 }
 
 /**
