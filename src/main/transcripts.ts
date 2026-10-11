@@ -118,19 +118,8 @@ export function parseCodexLines(lines: Iterable<string>): ParseResult {
     const ts = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
     if (!Number.isFinite(ts)) continue;
 
-    // primary/secondary 는 플랜마다 다르다 (primary 가 7일 창이고 secondary 가 null 인 계정도 있다).
-    // 위치가 아니라 창 길이로 세션(≤6시간)/주간을 나눈다.
     const limits = payload.rate_limits as Record<string, unknown> | null | undefined;
-    if (limits) {
-      let session: RateLimitWindowDto | null = null;
-      let weekly: RateLimitWindowDto | null = null;
-      for (const w of [codexWindow(limits.primary), codexWindow(limits.secondary)]) {
-        if (!w) continue;
-        if (w.windowMinutes <= 360) session ??= w;
-        else weekly ??= w;
-      }
-      if (session || weekly) rateLimit = { session, weekly, modelWeekly: null, observedAt: ts };
-    }
+    if (limits) rateLimit = splitCodexWindows([codexWindow(limits.primary), codexWindow(limits.secondary)], ts) ?? rateLimit;
 
     const info = payload.info as Record<string, unknown> | null | undefined;
     const total = info?.total_token_usage as Record<string, unknown> | undefined;
@@ -166,6 +155,37 @@ function codexWindow(raw: unknown): RateLimitWindowDto | null {
   const w = raw as Record<string, unknown> | null | undefined;
   if (!w || typeof w.used_percent !== "number") return null;
   return { usedPercent: w.used_percent, windowMinutes: num(w.window_minutes), resetsAt: num(w.resets_at) };
+}
+
+/**
+ * primary/secondary 는 플랜마다 다르다 (primary 가 7일 창이고 secondary 가 null 인 계정도 있다).
+ * 위치가 아니라 창 길이로 세션(≤6시간)/주간을 나눈다.
+ */
+function splitCodexWindows(windows: (RateLimitWindowDto | null)[], observedAt: number): CodexRateLimit | null {
+  let session: RateLimitWindowDto | null = null;
+  let weekly: RateLimitWindowDto | null = null;
+  for (const w of windows) {
+    if (!w) continue;
+    if (w.windowMinutes <= 360) session ??= w;
+    else weekly ??= w;
+  }
+  return session || weekly ? { session, weekly, modelWeekly: null, observedAt } : null;
+}
+
+/**
+ * app-server account/rateLimits/read 응답 → 한도. 기록 파일의 token_count 와 같은 창이 camelCase 로 온다.
+ * 여러 한도 중 Codex 것(limitId "codex")을 쓰고, 없으면 예전 단일 값(rateLimits)을 쓴다.
+ */
+export function codexRateLimitFromAppServer(resp: unknown, observedAt: number): CodexRateLimit | null {
+  const r = resp as { rateLimits?: unknown; rateLimitsByLimitId?: Record<string, unknown> | null } | null | undefined;
+  const snap = (r?.rateLimitsByLimitId?.codex ?? r?.rateLimits) as Record<string, unknown> | null | undefined;
+  if (!snap) return null;
+  const win = (raw: unknown): RateLimitWindowDto | null => {
+    const w = raw as Record<string, unknown> | null | undefined;
+    if (!w || typeof w.usedPercent !== "number") return null;
+    return { usedPercent: w.usedPercent, windowMinutes: num(w.windowDurationMins), resetsAt: num(w.resetsAt) };
+  };
+  return splitCodexWindows([win(snap.primary), win(snap.secondary)], observedAt);
 }
 
 // ===== 스캐너 =====

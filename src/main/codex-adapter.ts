@@ -15,6 +15,7 @@ import { appMsg, mainI18n, MsgError, mt } from "./i18n";
 import type { Msg } from "@shared/i18n/msg";
 import { clearCodexLangReminder, codexLangHookArgs, queueCodexLangReminder, trustCodexLangHooks } from "./codex-lang-hooks";
 import { isOffLanguage } from "@shared/language-drift";
+import { withTimeout } from "./claude-control";
 import type { Locale } from "@shared/i18n";
 
 
@@ -456,6 +457,31 @@ export async function forkCodexThread(
     const id = r.thread?.id;
     if (!id) throw new Error(mt("session.error.codexForkNoId"));
     return id;
+  } finally {
+    server.close();
+  }
+}
+
+/**
+ * 지금 구독 한도를 묻는다(app-server account/rateLimits/read). 턴을 돌리지 않아 모델 호출·비용이 없다.
+ * 기록 파일의 한도는 Codex 로 대화해야 새로 생기므로, 새로고침 버튼은 이걸로 바로 받아 온다.
+ */
+export async function readCodexRateLimits(runtime: CodexRuntime, cwd: string, log?: (line: string) => void): Promise<unknown> {
+  const server = new CodexAppServer({
+    log,
+    onNotification: () => {},
+    onServerRequest: async () => {
+      throw new Error("unexpected request");
+    },
+    onExit: () => {},
+  });
+  // 시작(initialize)부터 답까지 한꺼번에 시간을 잰다 — 시작이 멈추면 요청별 제한만으로는 2분 넘게 기다린다.
+  const run = (async () => {
+    await server.start(runtime.codexPath, runtime.env, cwd);
+    return server.request("account/rateLimits/read", { excludeResetCreditDetails: true });
+  })();
+  try {
+    return await withTimeout(run, 25_000, "account/rateLimits/read");
   } finally {
     server.close();
   }

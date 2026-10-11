@@ -51,7 +51,7 @@ import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
-import { forkCodexThread, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { forkCodexThread, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
 import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
 import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/handoff";
@@ -114,7 +114,7 @@ import {
   exportFileName,
 } from "@shared/transcript-search";
 import { PROVIDER_LABEL, SessionManager, summarizeToolInput } from "./session-manager";
-import { UsageScanner } from "./transcripts";
+import { codexRateLimitFromAppServer, UsageScanner } from "./transcripts";
 import { TerminalManager } from "./terminals";
 import { fetchUsageText } from "./claude-control";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
@@ -1372,11 +1372,14 @@ function pricing(): PricingEntry[] {
 
 function usageStatus(): UsageStatusDto {
   const { codexRateLimit, ...scan } = usage.getStatus();
+  // Codex 한도는 기록 파일(대화할 때)과 새로고침(app-server)에서 온다 — 더 최근에 본 것을 쓴다.
+  const fetched = store.loadRateLimits().codex ?? null;
+  const codex = fetched && (!codexRateLimit || fetched.observedAt > codexRateLimit.observedAt) ? fetched : codexRateLimit;
   return {
     ...scan,
     rateLimits: {
       claude: store.loadRateLimits().claude ?? null,
-      codex: codexRateLimit,
+      codex,
     },
     customPricing: store.loadPricing() !== null,
     pricing: pricing(),
@@ -2888,6 +2891,19 @@ function registerIpc() {
         } catch (e) {
           console.warn("[usage] Claude 한도 새로고침 실패:", e);
           return null;
+        }
+      })(),
+      // Codex 는 기록 파일 값이 대화해야 갱신되므로 app-server 에 바로 묻는다. CLI 가 없으면 건너뛴다.
+      (async () => {
+        try {
+          const limit = codexRateLimitFromAppServer(
+            await readCodexRateLimits(await codexRuntime(), app.getPath("home"), (l) => console.log(l)),
+            Date.now(),
+          );
+          if (limit) store.saveRateLimit("codex", limit);
+          else console.warn("[usage] Codex 한도 응답을 해석하지 못했습니다.");
+        } catch (e) {
+          console.warn("[usage] Codex 한도 새로고침 실패:", e);
         }
       })(),
       usage.scan(),

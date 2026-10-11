@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compactRecords, parseClaudeLines, parseCodexLines } from "./transcripts";
+import { codexRateLimitFromAppServer, compactRecords, parseClaudeLines, parseCodexLines } from "./transcripts";
 
 const claudeLine = (o: { id: string; model?: string; ts: string; usage: Record<string, number>; cwd?: string; sessionId?: string }) =>
   JSON.stringify({
@@ -105,4 +105,23 @@ test("compactRecords: 같은 세션·모델·시간 버킷을 합친다", () => 
   assert.equal(out.length, 2);
   assert.equal(out[0].requests, 2);
   assert.equal(out[0].ts, t);
+});
+
+test("codexRateLimitFromAppServer: app-server 한도 응답을 창 길이로 세션·주간에 나누고, codex 한도를 먼저 쓴다", () => {
+  const snap = (p: number, s: number) => ({
+    primary: { usedPercent: p, windowDurationMins: 300, resetsAt: 1700000000 },
+    secondary: { usedPercent: s, windowDurationMins: 10080, resetsAt: 1700500000 },
+  });
+  const r = codexRateLimitFromAppServer({ rateLimits: snap(1, 2), rateLimitsByLimitId: { codex: snap(12, 34) } }, 99);
+  assert.deepEqual(r, {
+    session: { usedPercent: 12, windowMinutes: 300, resetsAt: 1700000000 },
+    weekly: { usedPercent: 34, windowMinutes: 10080, resetsAt: 1700500000 },
+    modelWeekly: null,
+    observedAt: 99,
+  });
+  // 여러 한도가 없으면 예전 단일 값, 주간 창만 있는 플랜은 primary 가 주간
+  const old = codexRateLimitFromAppServer({ rateLimits: { primary: { usedPercent: 5, windowDurationMins: 10080, resetsAt: null }, secondary: null }, rateLimitsByLimitId: null }, 1);
+  assert.deepEqual([old?.session, old?.weekly?.usedPercent, old?.weekly?.resetsAt], [null, 5, 0]);
+  assert.equal(codexRateLimitFromAppServer({ rateLimits: { primary: null, secondary: null } }, 1), null);
+  assert.equal(codexRateLimitFromAppServer(null, 1), null);
 });
