@@ -103,6 +103,17 @@ export type WarmTarget = "active" | "off";
 import type { ThemeMode } from "./theme";
 import type { LanguageSetting, Locale } from "./i18n/locale";
 
+export interface MobileStatusDto {
+  enabled: boolean;
+  /** 휴대폰 주소창에 칠 주소("http://100.x.y.z:47800"). 열려 있지 않으면 []. */
+  urls: string[];
+  /** 켰는데 열지 못한 이유. "noTailscale" 은 Tailscale 주소가 없는 것. */
+  error: string | null;
+  /** 살아 있는 짝짓기 코드. */
+  code: { code: string; expiresAt: number } | null;
+  devices: { id: string; name: string; createdAt: number; lastSeenAt: number }[];
+}
+
 export interface AppSettingsDto {
   /** 화면 테마. system 이면 macOS 화면 모드를 따른다. */
   theme: ThemeMode;
@@ -133,6 +144,8 @@ export interface AppSettingsDto {
    * 로그인 증표를 앱 데이터 디렉토리에 두는 일이므로 끌 수 있고, 끄면 적어 둔 것을 지운다.
    */
   keepBrowserLogin: boolean;
+  /** 휴대폰에서 이어 쓰기(Tailscale). 켜면 Tailscale 주소에만 웹 서버를 열고, 짝지은 기기만 들어온다. 기본 꺼짐. */
+  mobileAccess: boolean;
   /**
    * 격리 세션·팬아웃 등이 git worktree를 만드는 폴더. 기본 ~/sudal/worktrees.
    * 바꾸면 앞으로 만드는 것부터 — 이미 만든 worktree 는 옮기지 않는다(git 연결이 깨진다).
@@ -214,6 +227,10 @@ export const IPC = {
   appPickWorktreeDir: "app:pick-worktree-dir",
   appSettingsGet: "app:settings-get",
   appSettingsSet: "app:settings-set",
+  mobileStatus: "mobile:status",
+  mobileNewCode: "mobile:new-code",
+  mobileRevoke: "mobile:revoke",
+  mobileChanged: "mobile:changed",
   appSettingsChanged: "app:settings-changed",
   appUpdateChanged: "app:update-changed",
   appUpdateCheck: "app:update-check",
@@ -812,6 +829,13 @@ export interface ChatEventEnvelope {
 export interface SudalApi {
   /** process.platform. 화면이 첫 렌더부터 알아야 해서(단축키 표기·창 여백) 동기 값으로 둔다. */
   platform: string;
+  /** 휴대폰에서 이어 쓰기(Tailscale): 상태, 짝짓기 코드, 짝지은 기기 끊기. */
+  mobile: {
+    status(): Promise<MobileStatusDto>;
+    newCode(): Promise<MobileStatusDto>;
+    revoke(id: string): Promise<MobileStatusDto>;
+    onChanged(listener: (status: MobileStatusDto) => void): () => void;
+  };
   app: {
     info(): Promise<AppInfoDto>;
     /** GitHub 최신 릴리즈와 지금 버전을 비교한다. */

@@ -15,6 +15,7 @@ const PATHS = {
   minus: "M5 12h14",
   plus: "M12 5v14M5 12h14",
   chevronRight: "M9 18l6-6-6-6",
+  chevronLeft: "M15 18l-6-6 6-6",
   chevronUp: "M18 15l-6-6-6 6",
   panelRight: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15 3v18",
   panelBottom: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 15h18",

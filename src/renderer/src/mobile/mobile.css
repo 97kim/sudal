@@ -1,0 +1,17 @@
+@import "../styles.css";
+
+/* 데스크톱 창용 전역 규칙(글자 선택·스크롤 막기)을 휴대폰에서는 푼다. */
+html,
+body,
+#root {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  user-select: text;
+  -webkit-user-select: text;
+}
+body {
+  font-size: 15px;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: contain;
+}

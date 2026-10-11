@@ -26,6 +26,16 @@ import {
 
 const api: SudalApi = {
   platform: process.platform,
+  mobile: {
+    status: () => ipcRenderer.invoke(IPC.mobileStatus),
+    newCode: () => ipcRenderer.invoke(IPC.mobileNewCode),
+    revoke: (id: string) => ipcRenderer.invoke(IPC.mobileRevoke, id),
+    onChanged: (listener) => {
+      const handler = (_e: IpcRendererEvent, status: Parameters<typeof listener>[0]) => listener(status);
+      ipcRenderer.on(IPC.mobileChanged, handler);
+      return () => ipcRenderer.removeListener(IPC.mobileChanged, handler);
+    },
+  },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),
     checkUpdate: () => ipcRenderer.invoke(IPC.appUpdateCheck),

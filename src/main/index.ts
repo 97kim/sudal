@@ -5,7 +5,7 @@ import { createConnection } from "node:net";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
-import { homedir, tmpdir, userInfo } from "node:os";
+import { homedir, networkInterfaces, tmpdir, userInfo } from "node:os";
 import {
   nativeTheme,
   app,
@@ -28,7 +28,7 @@ import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT,
 import { appMsg, mainI18n, mt, setMainLocale } from "./i18n";
 import { legacyWorktreeDir, migrateUserData, removeLegacyInstall, type UserDataMigration } from "./legacy-name";
 import { msgText, type Msg, type MsgKey } from "@shared/i18n/msg";
-import { NOTIFY_ON_DONE_DEFAULT, isNewTabPolicy, isNotifyOnDone, shouldNotifyDone, PROVIDERS, IPC, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, MAX_CONCURRENT_MIN, SESSION_IDLE_MINUTES_DEFAULT, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_MIN, type AppSettingsDto, type AppInfoDto, type UpdateCheckDto, type UpdateRunResult, type UpdateStatusDto, type ChatEventEnvelope, type ChatSendDto, type ChatSendResult, type CompactResult, type ControlOpenDto, type InstallStatusDto, type CliCandidateDto, type CliDiagnosticsDto, type CliStatusDto, type OverrideSetResultDto, type Provider, type RendererErrorDto, type SessionConfigDto, type ShortcutName, type SwitchProviderDto, type UsageSettingsDto, type VerifyStartResult, type FanoutStartDto, type FanoutStartResult, type FanoutCompareDto, type FanoutAdoptResult, type RateLimitWindowDto, type UsageStatusDto, type WorkspaceStateDto, type ManagedWorktreeDto, SearchResultDto } from "@shared/ipc";
+import { NOTIFY_ON_DONE_DEFAULT, isNewTabPolicy, isNotifyOnDone, shouldNotifyDone, PROVIDERS, IPC, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, MAX_CONCURRENT_MIN, SESSION_IDLE_MINUTES_DEFAULT, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_MIN, type AppSettingsDto, type AppInfoDto, type UpdateCheckDto, type UpdateRunResult, type UpdateStatusDto, type ChatEventEnvelope, type ChatSendDto, type ChatSendResult, type CompactResult, type ControlOpenDto, type InstallStatusDto, type CliCandidateDto, type CliDiagnosticsDto, type CliStatusDto, type OverrideSetResultDto, type Provider, type RendererErrorDto, type SessionConfigDto, type ShortcutName, type SwitchProviderDto, type UsageSettingsDto, type VerifyStartResult, type FanoutStartDto, type FanoutStartResult, type FanoutCompareDto, type FanoutAdoptResult, type RateLimitWindowDto, type UsageStatusDto, type MobileStatusDto, type WorkspaceStateDto, type ManagedWorktreeDto, SearchResultDto } from "@shared/ipc";
 import {
   DEFAULT_PRICING,
   periodRange,
@@ -37,7 +37,7 @@ import {
   type PricingEntry,
   type UsageFilter,
 } from "@shared/usage";
-import { tabTitle, tabsUsingPath, type WorktreeMeta } from "@shared/workspace-model";
+import { tabCwd, tabTitle, tabsUsingPath, type WorktreeMeta } from "@shared/workspace-model";
 import {
   prepareChatImages,
   saveChatImages,
@@ -115,6 +115,9 @@ import {
 } from "@shared/transcript-search";
 import { PROVIDER_LABEL, SessionManager, summarizeToolInput } from "./session-manager";
 import { codexRateLimitFromAppServer, UsageScanner } from "./transcripts";
+import { MobilePairing, parseTailscaleSelf, tailscaleAddresses } from "./mobile-access";
+import { MobileServer } from "./mobile-server";
+import { mobileRoutes, mobileStatics, MobileStream } from "./mobile-api";
 import { TerminalManager } from "./terminals";
 import { fetchUsageText } from "./claude-control";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
@@ -597,6 +600,11 @@ function sendAll(channel: string, ...args: unknown[]) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, ...args);
   }
+  // 휴대폰 화면도 같은 대화 이벤트를 받는다. 탭이 바뀌면 목록을 다시 받으라고만 알린다.
+  if (mobileStream.size > 0) {
+    if (channel === IPC.chatEvent) mobileStream.send("chat", args[0]);
+    else if (channel === IPC.wsChanged) mobileStream.send("tabs", null);
+  }
 }
 
 function notifyIfUnfocused(title: string, body: string, tabId?: string) {
@@ -663,6 +671,132 @@ let attention: AttentionTracker;
 let snippets: SnippetStore;
 let lsp: LspManager;
 let searchIndex: SearchIndex;
+
+// ===== 휴대폰에서 이어 쓰기(Tailscale) =====
+// 켜면 Tailscale 주소에만 웹 서버를 연다(mobile-server.ts). Tailscale 이 늦게 켜지거나 주소가 바뀌어도 따라가게 가끔 다시 본다.
+const MOBILE_PORT = 47800;
+let mobilePairing: MobilePairing;
+let mobileServer: MobileServer | null = null;
+let mobileError: string | null = null;
+let mobileTimer: ReturnType<typeof setInterval> | null = null;
+/** 휴대폰 화면의 실시간 스트림. 앱 화면에 보내는 대화 이벤트·탭 변화를 여기에도 흘린다(sendAll). */
+const mobileStream = new MobileStream((id) => mobilePairing.has(id));
+
+function mobileStatus(): MobileStatusDto {
+  return {
+    enabled: appSettings().mobileAccess,
+    urls: (mobileServer?.addresses ?? []).map((a) => `http://${a}`),
+    error: mobileError,
+    code: mobilePairing.activeCode(),
+    devices: mobilePairing.list(),
+  };
+}
+
+/** Tailscale 이 이 기기의 주소라고 하는 것. CLI 를 못 찾거나 Tailscale 이 꺼져 있으면 null. */
+async function tailscaleSelfAddresses(): Promise<string[] | null> {
+  const candidates =
+    process.platform === "win32"
+      ? [join(process.env.ProgramFiles ?? "C:\\Program Files", "Tailscale", "tailscale.exe"), "tailscale"]
+      : ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale", "tailscale"];
+  for (const cli of candidates) {
+    if (cli.includes("/") || cli.includes("\\")) {
+      if (!existsSync(cli)) continue;
+    }
+    try {
+      const { stdout } = await execFileAsync(cli, ["status", "--json"], { timeout: 4000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+      return parseTailscaleSelf(stdout);
+    } catch (e) {
+      // 다른 후보를 더 본다 — 끝내 못 읽으면 열지 않는다
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") console.warn(`[mobile] ${cli} status 실패:`, (e as Error).message.slice(0, 200));
+    }
+  }
+  return null;
+}
+
+let mobileSyncing: Promise<void> = Promise.resolve();
+/** 설정과 Tailscale 주소에 맞춰 서버를 열고 닫는다. 겹쳐 불려도 차례로 한다. */
+function syncMobile(): Promise<void> {
+  mobileSyncing = mobileSyncing.then(async () => {
+    const enabled = appSettings().mobileAccess;
+    // 대역만 보지 않고 Tailscale 이 자기 주소라고 한 것과 겹치는 것만 연다(다른 VPN·통신사 망이 같은 대역을 쓴다)
+    const local = enabled ? tailscaleAddresses(networkInterfaces()) : [];
+    const self = local.length > 0 ? await tailscaleSelfAddresses() : [];
+    const hosts = local.filter((ip) => (self ?? []).includes(ip));
+    const want = hosts.map((h) => (h.includes(":") ? `[${h}]:${MOBILE_PORT}` : `${h}:${MOBILE_PORT}`));
+    const have = mobileServer?.addresses ?? [];
+    const same = want.length === have.length && want.every((w) => have.includes(w));
+    if (enabled && !mobileTimer) mobileTimer = setInterval(() => void syncMobile(), 15_000);
+    if (!enabled && mobileTimer) {
+      clearInterval(mobileTimer);
+      mobileTimer = null;
+    }
+    if (same && (enabled ? want.length > 0 : true)) return;
+    const before = JSON.stringify(mobileStatus());
+    if (!enabled || hosts.length === 0) {
+      mobileStream.closeAll();
+      await mobileServer?.stop();
+      mobileError = !enabled ? null : local.length > 0 && self === null ? "noTailscaleCli" : "noTailscale";
+    } else {
+      // 닫힌 탭은 목록에 없지만 id 는 남는다 — 예전에 받은 id 로 닫은 탭을 되살려 실행하지 못하게 열린 탭만 받는다
+      const openTab = (tabId: string) => workspaces.tab(tabId)?.open === true;
+      mobileServer ??= new MobileServer({
+        pairing: mobilePairing,
+        routes: mobileRoutes(
+          {
+            tabs: () => {
+              const st = workspaces.state();
+              return st.model.tabs
+                .filter((t) => t.open)
+                .map((t) => {
+                  const s = sessions.snapshot(t.id);
+                  return {
+                    id: t.id,
+                    title: tabTitle(t, mt("shared.untitledTab")),
+                    workspace: st.model.workspaces.find((w) => w.id === t.workspaceId)?.name ?? null,
+                    cwd: s.cwd ?? tabCwd(st.model, t),
+                    provider: s.provider,
+                    status: s.status,
+                    waiting: sessions.pendingPermissions(t.id).length > 0,
+                  };
+                });
+            },
+            events: (tabId) => (openTab(tabId) ? sessions.events(tabId) : null),
+            send: async (tabId, text) => {
+              if (!openTab(tabId)) return { ok: false, error: "tab" };
+              const r = await handleChatSend(tabId, { text });
+              return r.ok ? { ok: true } : { ok: false, error: r.error ?? "send" };
+            },
+            abort: (tabId) => {
+              if (openTab(tabId)) void sessions.abort(tabId);
+            },
+            answer: (tabId, requestId, allow) => {
+              // 이미 답한 요청(앱에서 먼저 답했거나 다른 기기)이면 건드리지 않는다
+              if (!openTab(tabId) || !sessions.pendingPermissions(tabId).some((p) => p.requestId === requestId)) return false;
+              sessions.answerPermission(tabId, requestId, { behavior: allow ? "allow" : "deny" });
+              return true;
+            },
+          },
+          mobileStream,
+        ),
+        statics: mobileStatics(join(import.meta.dirname, "../renderer"), () => mainI18n().language),
+        onPaired: () => {
+          // 기기 수 상한으로 가장 오래된 기기가 밀려났을 수 있다 — 그 기기의 스트림도 바로 닫는다
+          mobileStream.prune();
+          sendAll(IPC.mobileChanged, mobileStatus());
+        },
+        log: (l) => console.log(l),
+      });
+      try {
+        await mobileServer.start(hosts, MOBILE_PORT);
+        mobileError = null;
+      } catch (e) {
+        mobileError = (e as Error).message;
+      }
+    }
+    if (JSON.stringify(mobileStatus()) !== before) sendAll(IPC.mobileChanged, mobileStatus());
+  });
+  return mobileSyncing;
+}
 
 const unknownCwd = () => mt("main.error.unknownCwd");
 
@@ -1436,6 +1570,7 @@ function appSettings(): AppSettingsDto {
     otterRoamRunPct: roamValue(raw.otterRoamRunPct, "runPct"),
     otterRoamDistancePct: roamValue(raw.otterRoamDistancePct, "distancePct"),
     keepBrowserLogin: raw.keepBrowserLogin !== false,
+    mobileAccess: raw.mobileAccess === true,
     worktreeDir: worktreeRootDir(),
     worktreeDirCustom: typeof raw.worktreeDir === "string" && isAbsolute(raw.worktreeDir),
     dataDir: app.getPath("userData"),
@@ -1503,6 +1638,7 @@ function checkBudget() {
 
 function bootstrap() {
   store = new Store(app.getPath("userData"));
+  mobilePairing = new MobilePairing(join(app.getPath("userData"), "mobile-devices.json"));
   adoptLegacyInstall();
   workspaces = new WorkspaceService(store, (state: WorkspaceStateDto) =>
     sendAll(IPC.wsChanged, state),
@@ -2105,6 +2241,7 @@ function registerIpc() {
       // 끄면 적어 둔 것을 지운다 — 설정만 바꾸고 파일이 남아 있으면 끈 게 아니다.
       if (!next.keepBrowserLogin) forgetSessionCookies(app.getPath("userData"));
     }
+    if (patch.mobileAccess !== undefined) next.mobileAccess = patch.mobileAccess === true;
     if (patch.notifyOnDone !== undefined) {
       if (!isNotifyOnDone(patch.notifyOnDone)) throw new Error(mt("main.error.badNotifySetting"));
       next.notifyOnDone = patch.notifyOnDone;
@@ -2131,6 +2268,7 @@ function registerIpc() {
     applyAppSettings(applied);
     // 다른 창과 설정 화면 밖의 화면도 새 값을 받는다(표시 언어를 따라가게)
     sendAll(IPC.appSettingsChanged, applied);
+    if (patch.mobileAccess !== undefined) void syncMobile();
     // 예열을 켰으면 보고 있는 탭을 지금 띄워 둔다
     if (patch.warmTarget === "active") {
       const active = workspaces.state().model.activeTabId;
@@ -2449,6 +2587,19 @@ function registerIpc() {
       return sessions.switchProvider(tabId, { ...opts, summary });
     },
   );
+  ipcMain.handle(IPC.mobileStatus, () => mobileStatus());
+  ipcMain.handle(IPC.mobileNewCode, () => {
+    mobilePairing.newCode();
+    const st = mobileStatus();
+    sendAll(IPC.mobileChanged, st);
+    return st;
+  });
+  ipcMain.handle(IPC.mobileRevoke, (_e, id: unknown) => {
+    if (typeof id === "string" && mobilePairing.revoke(id)) mobileStream.closeDevice(id);
+    const st = mobileStatus();
+    sendAll(IPC.mobileChanged, st);
+    return st;
+  });
   ipcMain.handle(IPC.chatCodexMentions, async (_e, tabId: unknown) => {
     if (typeof tabId !== "string") return [];
     const snap = sessions.snapshot(tabId);
@@ -3228,6 +3379,7 @@ app.whenReady().then(async () => {
   startBackgroundJobWatcher();
   startSchedules();
   void startControlServer();
+  void syncMobile();
   mainWindow = liveMainWindow() ?? createWindow();
   mainWindowReady = true;
   // macOS 는 자동 업데이트를 붙이지 않는다 — 새 버전은 brew 로 갈아 끼우거나 GitHub Releases 의 DMG 를 다시 받는다.
@@ -3265,6 +3417,9 @@ app.on("before-quit", (e) => {
   orchestrator?.stop();
   verifyRunner.dispose();
   previewServer.close();
+  if (mobileTimer) clearInterval(mobileTimer);
+  mobileStream.closeAll();
+  void mobileServer?.stop();
   controlServer?.close();
   try {
     rmSync(join(app.getPath("userData"), "control.json"), { force: true });

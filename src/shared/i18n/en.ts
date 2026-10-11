@@ -6,6 +6,7 @@ import { cli } from "./en/cli";
 import { common } from "./en/common";
 import { fanout } from "./en/fanout";
 import { main } from "./en/main";
+import { mobile } from "./en/mobile";
 import { nav } from "./en/nav";
 import { orchestration } from "./en/orchestration";
 import { panel } from "./en/panel";
@@ -21,4 +22,4 @@ import { usage } from "./en/usage";
 import type { Dictionary } from "./ko";
 import type { DeepPartial } from "./types";
 
-export const en: DeepPartial<Dictionary> = { chat, cli, common, fanout, main, nav, orchestration, panel, prompt, promptDoc, repo, schedules, session, settings, shared, toolCard, usage };
+export const en: DeepPartial<Dictionary> = { chat, cli, common, fanout, main, mobile, nav, orchestration, panel, prompt, promptDoc, repo, schedules, session, settings, shared, toolCard, usage };

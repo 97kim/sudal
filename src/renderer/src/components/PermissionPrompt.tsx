@@ -269,7 +269,8 @@ function QuestionPrompt({
   );
 }
 
-function Preview({ tool, input }: { tool: string; input: Record<string, unknown> }) {
+/** 승인할 내용 미리 보기. 휴대폰 화면도 같은 것을 쓴다 — 무엇을 허용하는지 빠짐없이 보여야 해서. */
+export function Preview({ tool, input }: { tool: string; input: Record<string, unknown> }) {
   const { t } = useTranslation();
   if (tool === "Bash") {
     return <pre className="mono whitespace-pre-wrap break-words rounded-md bg-inset p-2">$ {str(input.command)}</pre>;

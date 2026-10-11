@@ -26,6 +26,7 @@ import type { NotifyOnDone } from "@shared/ipc";
 import { THEME_MODES } from "@shared/theme";
 import { applyThemeMode } from "../theme";
 import { Icon } from "../components/Icon";
+import { MobileAccessSettings } from "../components/MobileAccessSettings";
 import { SchedulesSection } from "../components/SchedulesSection";
 import { ProviderLogo } from "../components/ProviderLogo";
 import sudari from "../assets/otter/idle-0.png";
@@ -753,6 +754,8 @@ function GeneralSection() {
           <span>{t("settings.browserLogin.checkbox")}</span>
         </label>
       </div>
+
+      <MobileAccessSettings enabled={settings?.mobileAccess} onToggle={(on) => void save({ mobileAccess: on })} />
 
       <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="storage">
         <div className="mb-1 flex items-center gap-2 font-medium">

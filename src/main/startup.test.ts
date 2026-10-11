@@ -68,7 +68,7 @@ function harness() {
     appSettings: () => ({ keepBrowserLogin: true }),
     session: { fromPartition() {} }, BROWSER_PARTITION: "test",
     restoreSessionCookies: () => cookies.promise, encryptPlaintextCookies: async () => 0, join: (...p: string[]) => p.join("/"),
-    startBackgroundJobWatcher() {}, startSchedules() {}, startControlServer() {},
+    startBackgroundJobWatcher() {}, startSchedules() {}, startControlServer() {}, syncMobile: async () => {},
     cliStatus: async () => ({ installed: false }),
     createWindow: () => {
       const entry = { ipcReady, focused: 0 };

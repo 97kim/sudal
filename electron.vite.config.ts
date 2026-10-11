@@ -27,7 +27,7 @@ export default defineConfig({
     plugins: [react(), tailwindcss()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, "src/renderer/index.html"), otter: resolve(__dirname, "src/renderer/otter.html") },
+        input: { index: resolve(__dirname, "src/renderer/index.html"), otter: resolve(__dirname, "src/renderer/otter.html"), mobile: resolve(__dirname, "src/renderer/mobile.html") },
       },
     },
     resolve: {

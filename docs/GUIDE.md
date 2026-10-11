@@ -384,6 +384,32 @@ it joins the recent ANSI-stripped output and looks for "$ <command> › 1. Yes, 
 choice frame (approval request), and turns on the hint; "Approved action:" or the same key inputs as above take it down. It relies on TUI text, so if Codex
 changes the text, it may quietly stop working (as of codex-cli 0.153).
 
+## Continue on your phone (Tailscale)
+
+When you step away, open Sudal on your Mac from your phone's browser: see the tab list, read conversations live, send messages, stop a turn, and allow or deny permission requests.
+Opening new tabs, changing the model or policy, viewing files, and attaching images are not supported yet. There is no app to install — add the page to your home screen.
+
+**Turn it on**: Settings > General > Continue on your phone shows the address to open (`http://100.x.y.z:47800`). Both the Mac and the phone must be signed in to
+Tailscale with the same account. It is off by default.
+
+**First connection**: Click "Create connection code" there, open the address on your phone, and enter the 6 digits. A code lasts 5 minutes, works once, and is
+thrown away after 5 wrong tries. More than 10 wrong tries in 10 minutes locks pairing for a while. Connected phones appear under "Connected devices"; disconnect one there
+and that phone goes straight back to the connect screen. Up to 20 devices are remembered; past that, the oldest is disconnected.
+
+**Screens**: The tab list gathers tabs that need you (waiting for permission) at the top and groups the rest by workspace. Permission requests open as a bottom sheet
+with the same preview as the app window — the command, files and diff, working folder, and write-access scope — so you can see what you allow. The theme follows the phone (light or dark).
+When the connection drops, a yellow bar appears; once it reconnects, missed messages are loaded again.
+
+**Security**: The server listens only on the addresses Tailscale reports for this Mac and accepts requests only from Tailscale addresses. The phone keeps the token it got
+when connecting in browser storage and sends it with each request (no cookies). The Mac stores only a hash of the token in `mobile-devices.json`. Requests with a different
+name (Host), from another site (Origin), or to a closed tab are rejected. Traffic is plain HTTP, but it is encrypted inside Tailscale.
+
+> **Warning**: A connected phone can send messages to tabs on this Mac. For a tab set to "Full auto", that is the same as running commands on this Mac from your phone.
+> Disconnect devices you don't use.
+
+**Can't connect?** If the phone shows `ERR_CONNECTION_RESET`, a firewall or security app on the Mac (for example ESET) is blocking incoming connections.
+Turn it off while you use it, or allow incoming TCP 47800 from Tailscale addresses (100.64.0.0/10).
+
 ## Usage dashboard
 
 It reads `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl` and totals terminal and app usage.
@@ -397,6 +423,7 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
 - `threads/<tabId>.jsonl` — per-tab event log (replayed on restart, reopening closed tabs) · `threads/<tabId>.queue.json` — instructions queued while working
 - `renderer-state.json` — input box drafts, open editor files, split view, terminal layout (written the moment they change) · `schedules.json` — scheduled prompts
 - `browser-session-cookies.enc` — cookies for keeping in-app browser logins, encrypted (deleted if you turn it off in settings)
+- `mobile-devices.json` — devices connected for Continue on your phone (token hashes only, mode 0600)
 - `cli-overrides.json` — manual CLI executable paths
 - `attachments/` — pasted images
 - `usage-cache.json` — transcript scan cache (incremental by file mtime/size)
