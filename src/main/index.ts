@@ -625,6 +625,12 @@ function otterBubble(s: OtterState): string | null {
   }
 }
 
+/**
+ * Windows 는 알림 객체가 치워지면 클릭 처리기도 사라져, 눌러도 앱이 오지 않는다. 그래서 붙잡아 둔다.
+ * 닫힘(close)에서 놓지 않는다 — 시간이 지나 닫혀도 알림 센터에 남아 나중에 누를 수 있다. 최근 것만 둔다.
+ */
+const liveNotifications: Notification[] = [];
+
 function notify(title: string, body: string, tabId?: string) {
   if (!Notification.isSupported()) {
     console.log(`[notify] 이 환경은 알림을 지원하지 않습니다: ${title}`);
@@ -633,9 +639,13 @@ function notify(title: string, body: string, tabId?: string) {
   console.log(`[notify] ${title} — ${body.slice(0, 60)}`);
   const n = new Notification({ title, body: body.slice(0, 200), silent: false });
   n.on("click", () => {
+    const i = liveNotifications.indexOf(n);
+    if (i >= 0) liveNotifications.splice(i, 1);
     showMainWindow();
     if (tabId && workspaces.tab(tabId)) workspaces.activateTab(tabId);
   });
+  liveNotifications.push(n);
+  if (liveNotifications.length > 20) liveNotifications.shift();
   n.show();
 }
 
