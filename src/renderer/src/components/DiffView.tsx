@@ -18,15 +18,18 @@ export function UnifiedDiff({ diff }: { diff: string }) {
   const shown = rows.slice(0, MAX_LINES);
   return (
     <pre className="diff mono overflow-x-auto rounded-md border border-line bg-inset p-2 leading-5" style={{ userSelect: "text" }}>
-      {shown.map((line, i) => {
-        const sign = line[0];
-        const cls = sign === "+" ? "bg-ok-bg text-ok" : sign === "-" ? "bg-err-bg text-err" : sign === "@" ? "text-muted-2" : "text-muted";
-        return (
-          <div key={i} className={cls}>
-            {line}
-          </div>
-        );
-      })}
+      {/* 줄 배경이 가로 스크롤 끝까지 이어지게 — 줄 칸은 기본으로 보이는 너비까지만 늘어난다 */}
+      <div className="w-max min-w-full">
+        {shown.map((line, i) => {
+          const sign = line[0];
+          const cls = sign === "+" ? "bg-ok-bg text-ok" : sign === "-" ? "bg-err-bg text-err" : sign === "@" ? "text-muted-2" : "text-muted";
+          return (
+            <div key={i} className={cls}>
+              {line}
+            </div>
+          );
+        })}
+      </div>
       {rows.length > MAX_LINES && <div className="text-muted">… {t("panel.diff.moreLines", { count: rows.length - MAX_LINES })}</div>}
     </pre>
   );
@@ -49,21 +52,23 @@ export function DiffView({ oldText, newText }: { oldText: string; newText: strin
   const shown = rows.slice(0, MAX_LINES);
   return (
     <pre className="diff mono overflow-x-auto rounded-md border border-line bg-inset p-2 leading-5" style={{ userSelect: "text" }}>
-      {shown.map((r, i) => (
-        <div
-          key={i}
-          className={
-            r.sign === "+"
-              ? "bg-ok-bg text-ok"
-              : r.sign === "-"
-                ? "bg-err-bg text-err"
-                : "text-muted"
-          }
-        >
-          <span className="inline-block w-4 select-none opacity-70">{r.sign}</span>
-          {r.text}
-        </div>
-      ))}
+      <div className="w-max min-w-full">
+        {shown.map((r, i) => (
+          <div
+            key={i}
+            className={
+              r.sign === "+"
+                ? "bg-ok-bg text-ok"
+                : r.sign === "-"
+                  ? "bg-err-bg text-err"
+                  : "text-muted"
+            }
+          >
+            <span className="inline-block w-4 select-none opacity-70">{r.sign}</span>
+            {r.text}
+          </div>
+        ))}
+      </div>
       {rows.length > MAX_LINES && (
         <div className="text-muted">… {t("panel.diff.moreLines", { count: rows.length - MAX_LINES })}</div>
       )}
