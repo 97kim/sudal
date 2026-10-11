@@ -418,10 +418,29 @@ name (Host), from another site (Origin), or to a closed tab are rejected. Traffi
 > **Warning**: A connected phone can send messages to tabs on this Mac. For a tab set to "Full auto", that is the same as running commands on this Mac from your phone.
 > Disconnect devices you don't use.
 
-**Can't connect?** If the phone shows `ERR_CONNECTION_RESET`, a firewall or security app on the Mac (for example ESET) is blocking incoming connections.
-Turn it off while you use it, or allow incoming TCP 47800 from Tailscale addresses (100.64.0.0/10).
-On Windows, Windows Firewall asks whether to allow Sudal the first time you turn this on. Choose Allow. If you missed it, go to Windows Security > Firewall & network protection > "Allow an app through firewall" and turn on Sudal.
-If your Tailscale network is set to "Public", check the Public column too.
+**Can't connect?** First check that both your computer and phone are connected to Tailscale and that you entered the address and port (`47800`) shown in settings.
+A connection timeout or `ERR_CONNECTION_RESET` can mean that a firewall or security app is blocking incoming connections.
+Allow incoming TCP 47800 from Tailscale addresses (100.64.0.0/10) instead of turning off the entire firewall.
+On Windows, Windows Firewall asks whether to allow Sudal the first time you turn this on. Choose Allow.
+
+**Check app permissions on Windows**:
+
+1. Search the Start menu for **Windows Defender Firewall** and open it.
+2. Click **Allow an app or feature through Windows Defender Firewall** on the left. You can also open Windows Security > Firewall & network protection > **Allow an app through firewall**.
+3. Click **Change settings** and approve the administrator prompt if shown.
+4. Find **Sudal** or **sudal.exe**. Check the app and the **Private** or **Public** column matching your Tailscale network's profile, then click **OK**. If Tailscale uses a Private network, check **Private**.
+5. On your phone, retry the `http://100.x.y.z:47800` address shown in settings.
+
+**Already allowed Sudal on Windows, but still can't connect?** An allow rule for Public networks can coexist with a block rule for Private networks.
+For example, if Tailscale uses the Private profile, allowing Public connections alone won't help. [Explicit block rules take precedence over allow rules](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules), so check for a remaining block rule too.
+
+The app permissions screen does not have an **Inbound Rules** menu. If you still can't connect after checking app permissions, use the separate advanced settings window.
+
+1. Return to the main **Windows Defender Firewall** screen and click **Advanced settings** on the left. This opens **Windows Defender Firewall with Advanced Security**. Making changes may require administrator privileges.
+2. Select **Inbound Rules** on the left and find entries named **Sudal** or **sudal.exe**.
+3. Look for a rule with **Enabled = Yes**, **Action = Block**, and **Profile = the profile Tailscale uses**. In the example above, that is **Private**.
+4. Double-click the rule. Under **Protocols and Ports**, confirm it uses **TCP**. Under **Programs and Services**, confirm the path matches the running Sudal app. Close the dialog, select that rule, and click **Disable Rule** on the right. Leave existing allow rules unchanged.
+5. On your phone, retry the `http://100.x.y.z:47800` address shown in settings. If it still fails, check that Sudal's allow rule also applies to Tailscale's profile.
 
 ## Usage dashboard
 
