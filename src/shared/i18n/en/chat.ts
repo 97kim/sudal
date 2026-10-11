@@ -284,5 +284,7 @@ export const chat: DeepPartial<typeof ko> = {
     runInTerminalHint: "Put it in the terminal. Press Enter yourself ({{kAlt}}click: run right away)",
     runInTerminalHintPasteOnly: "Put it in the terminal. Press Enter yourself",
     runInTerminal: "Run in terminal",
+    copyCode: "Copy",
+    copiedCode: "Copied",
   },
 };

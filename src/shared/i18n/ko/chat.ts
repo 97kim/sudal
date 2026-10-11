@@ -282,5 +282,7 @@ export const chat = {
     runInTerminalHint: "터미널에 넣습니다. Enter 는 직접 치세요 ({{kAlt}}클릭: 바로 실행)",
     runInTerminalHintPasteOnly: "터미널에 넣습니다. Enter 는 직접 치세요",
     runInTerminal: "터미널에서 실행",
+    copyCode: "복사",
+    copiedCode: "복사했어요",
   },
 };

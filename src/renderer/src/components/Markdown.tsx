@@ -276,29 +276,48 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
   const { node: _node, children, ...rest } = props;
   const run = useContext(RunInTerminalContext);
   const ref = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const lang = Children.toArray(children)
     .map((c) => (isValidElement<{ className?: string }>(c) ? c.props.className : undefined))
     .find(Boolean);
-  if (!run || !isShellLanguage(lang, IS_WIN)) return <pre {...rest}>{children}</pre>;
+  const shell = !!run && isShellLanguage(lang, IS_WIN);
+  const code = () => ref.current?.querySelector("code")?.textContent ?? ref.current?.textContent ?? "";
   const send = (e: MouseEvent<HTMLButtonElement>) => {
-    const cmd = normalizeCommand(ref.current?.querySelector("code")?.textContent ?? "");
+    const cmd = normalizeCommand(code());
     // Windows 는 바로 실행하지 않는다(TerminalPanel 이 프롬프트를 알아볼 수 없다)
-    if (cmd) run(cmd, !IS_WIN && e.altKey);
+    if (cmd && run) run(cmd, !IS_WIN && e.altKey);
   };
+  // 코드 끝의 줄바꿈 하나는 마크다운이 붙인 것이라 뺀다.
+  const copy = () => void navigator.clipboard.writeText(code().replace(/\n$/, "")).then(() => setCopied(true), () => {});
+  const btn =
+    "flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-muted shadow-sm hover:text-fg";
   return (
-    <div className="group relative" data-shell-block>
+    <div className="group relative" {...(shell ? { "data-shell-block": "" } : {})}>
       <pre ref={ref} {...rest}>
         {children}
       </pre>
-      <button
-        onClick={send}
-        className="absolute right-2 top-2 flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-muted opacity-0 shadow-sm hover:text-fg group-hover:opacity-100 focus:opacity-100"
-        title={t(IS_WIN ? "chat.markdown.runInTerminalHintPasteOnly" : "chat.markdown.runInTerminalHint")}
-        data-run-in-terminal
-      >
-        <Icon name="terminal" size={11} />
-        {t("chat.markdown.runInTerminal")}
-      </button>
+      <div className={`absolute right-2 top-2 flex items-center gap-1 ${copied ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
+        <button onClick={copy} className={btn} title={t("chat.markdown.copyCode")} data-copy-code>
+          <Icon name={copied ? "check" : "copy"} size={11} />
+          {copied ? t("chat.markdown.copiedCode") : t("chat.markdown.copyCode")}
+        </button>
+        {shell && (
+          <button
+            onClick={send}
+            className={btn}
+            title={t(IS_WIN ? "chat.markdown.runInTerminalHintPasteOnly" : "chat.markdown.runInTerminalHint")}
+            data-run-in-terminal
+          >
+            <Icon name="terminal" size={11} />
+            {t("chat.markdown.runInTerminal")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
