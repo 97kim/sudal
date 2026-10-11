@@ -452,6 +452,42 @@ test("백그라운드 하위 에이전트가 일하는 소식은 탭을 바쁘�
   rmSync(root, { recursive: true, force: true });
 });
 
+test("백그라운드 하위 에이전트의 권한에 답하면, 쉬던 메인은 다시 쉬는 상태로 돌아간다", () => {
+  const root = mkdtempSync(join(tmpdir(), "wb-sess-"));
+  const { manager } = makeManager(root);
+  const inner = manager as unknown as { ambientEvent(tabId: string, e: ChatEvent): void };
+  const st = (status: "running" | "waiting_permission"): ChatEvent => ({ type: "status", ts: Date.now(), status });
+  const req = (id: string): ChatEvent => ({ type: "permission_request", ts: Date.now(), requestId: id, toolUseId: id, tool: "Bash", input: {}, canAlwaysAllow: false });
+  const resolved = (id: string): ChatEvent => ({ type: "permission_resolved", ts: Date.now(), requestId: id, behavior: "allow" });
+  manager.snapshot("tab1");
+  // 어댑터가 실제로 보내는 순서: 요청 → 권한 대기 → (답) → 풀림 → running
+  inner.ambientEvent("tab1", req("r1"));
+  inner.ambientEvent("tab1", st("waiting_permission"));
+  assert.equal(manager.snapshot("tab1").status, "waiting_permission");
+  inner.ambientEvent("tab1", resolved("r1"));
+  // 답한 뒤 어댑터는 늘 "running" 을 보낸다 — 메인은 쉬고 있었으니 idle 로 돌려야 보낸 말이 대기열에 안 간다
+  inner.ambientEvent("tab1", st("running"));
+  assert.equal(manager.snapshot("tab1").status, "idle");
+  // 병렬로 둘을 물어 한꺼번에 승인하면, 답이 다 나간 뒤 콜백 둘이 차례로 running 을 보낸다 — 끝까지 쉬는 상태다
+  inner.ambientEvent("tab1", req("p1"));
+  inner.ambientEvent("tab1", st("waiting_permission"));
+  inner.ambientEvent("tab1", req("p2"));
+  inner.ambientEvent("tab1", st("waiting_permission"));
+  for (const id of ["p1", "p2"]) {
+    inner.ambientEvent("tab1", resolved(id));
+    inner.ambientEvent("tab1", st("running"));
+  }
+  assert.equal(manager.snapshot("tab1").status, "idle");
+  // 메인이 스스로 이어가던 중에 물었으면 답한 뒤엔 다시 도는 중이다
+  inner.ambientEvent("tab1", { type: "assistant_text", ts: Date.now(), blockId: "a", text: "이어서 할게요" });
+  inner.ambientEvent("tab1", req("r2"));
+  inner.ambientEvent("tab1", st("waiting_permission"));
+  inner.ambientEvent("tab1", resolved("r2"));
+  inner.ambientEvent("tab1", st("running"));
+  assert.equal(manager.snapshot("tab1").status, "running");
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("이어받은 턴은 백그라운드 결과일 때만 그렇게 표시한다", () => {
   const root = mkdtempSync(join(tmpdir(), "wb-sess-"));
   const { manager } = makeManager(root);

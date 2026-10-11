@@ -123,6 +123,10 @@ interface Session {
   bgTaskFinished: boolean;
   /** 지금 도는 이어받은 턴이 그 백그라운드 결과 때문인가. 확실할 때만 true. */
   ambientFromBg: boolean;
+  /** 우리가 시작하지 않은 쪽(백그라운드 하위 에이전트 등)이 권한을 묻기 직전 상태. 답한 뒤 이 상태로 돌린다. */
+  ambientBeforePermission: SessionStatus | null;
+  /** 그쪽 권한 콜백 중 아직 끝나지 않은 수. 한꺼번에 승인하면 답이 다 나간 뒤에도 콜백들이 차례로 "running" 을 보낸다. */
+  ambientPermissionsOpen: number;
   pending: Map<string, (answer: PermissionAnswer) => void>;
   /** 대기 중인 권한 요청 본문(requestId → 이벤트). 교차 리뷰처럼 사람이 안 보는 탭을 main 이 대신 판정할 때 본다. */
   pendingReqs: Map<string, PermissionRequestEvent>;
@@ -340,6 +344,8 @@ export class SessionManager {
         ambientStopped: false,
         bgTaskFinished: false,
         ambientFromBg: false,
+        ambientBeforePermission: null,
+        ambientPermissionsOpen: 0,
         pending: new Map(),
         pendingReqs: new Map(),
         events: null,
@@ -1590,18 +1596,43 @@ export class SessionManager {
       s.ambientStopped = false;
       s.ambientFromBg = false;
       s.bgTaskFinished = false;
+      s.ambientBeforePermission = null;
+      s.ambientPermissionsOpen = 0;
       this.setStatus(s, e.isError && !stopped ? "error" : "idle");
       this.deps.onSnapshot?.(tabId, this.snapshot(tabId));
       return;
     }
     if (e.type === "status") {
-      s.status = e.status;
-      this.record(s, e);
+      // 권한을 물은 쪽이 백그라운드 하위 에이전트면 메인은 쉬고 있었다. 답한 뒤엔 "도는 중" 이 아니라 그 전 상태로 돌린다.
+      // 아직 답을 기다리는 요청이 남았으면(병렬로 물은 경우) 권한 대기를 그대로 둔다.
+      // 사용자가 끊은 뒤 늦게 오는 상태(끊긴 권한 콜백의 "running" 등)는 상태를 되돌리지 않는다
+      if (s.ambientStopped && e.status !== "idle" && e.status !== "error") return;
+      let status = e.status;
+      if (status === "waiting_permission") {
+        if (s.status !== "waiting_permission" && s.ambientBeforePermission === null) s.ambientBeforePermission = s.status;
+      } else if (s.ambientBeforePermission !== null) {
+        const back = s.ambientBeforePermission === "idle" || s.ambientBeforePermission === "error" ? s.ambientBeforePermission : status;
+        // 아직 답을 기다리는 요청이 있으면 권한 대기, 다 답했으면 직전 상태. 마지막 콜백이 끝날 때까지 직전 상태를 기억한다.
+        status = s.pendingReqs.size > 0 ? "waiting_permission" : back;
+        if (s.ambientPermissionsOpen === 0 && s.pendingReqs.size === 0) s.ambientBeforePermission = null;
+      }
+      s.status = status;
+      this.record(s, status === e.status ? e : { ...e, status });
       return;
     }
     // 백그라운드 하위 에이전트가 일하는 소식은 메인 턴이 끝난 뒤에도 계속 온다. 그건 메인이 다시 도는 게 아니라서
     // "도는 중" 으로 올리지 않는다 — 올리면 하위 에이전트가 일하는 내내 탭이 바빠 보이고, 보낸 말이 대기열로 간다.
     if (e.type === "subagent_activity") {
+      this.record(s, e);
+      return;
+    }
+    // 권한 요청은 상태 이벤트(waiting_permission)보다 먼저 온다. 여기서 "도는 중" 으로 올리면 직전 상태를 잃어,
+    // 답한 뒤 쉬던 메인이 바빠 보인다 — 직전 상태만 기억하고 상태는 바로 뒤의 waiting_permission 에 맡긴다.
+    if (e.type === "permission_request" || e.type === "permission_resolved") {
+      if (e.type === "permission_request") {
+        if (s.status !== "waiting_permission" && s.ambientBeforePermission === null) s.ambientBeforePermission = s.status;
+        s.ambientPermissionsOpen += 1;
+      } else s.ambientPermissionsOpen = Math.max(0, s.ambientPermissionsOpen - 1);
       this.record(s, e);
       return;
     }
@@ -1785,8 +1816,11 @@ export class SessionManager {
   private rejectAllPending(s: Session) {
     for (const [id, resolve] of s.pending) {
       s.pending.delete(id);
+      s.pendingReqs.delete(id);
       resolve({ behavior: "deny" });
     }
+    s.ambientBeforePermission = null;
+    s.ambientPermissionsOpen = 0;
   }
 
   private setStatus(s: Session, status: SessionStatus) {
