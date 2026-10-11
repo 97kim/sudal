@@ -211,10 +211,10 @@ Chromium throws them away on quit (it keeps them only in memory). So on quit it 
 (`src/main/browser-cookies.ts`). It adds no expiry when restoring, so they stay session cookies by nature, and host-only cookies get no `domain`, so they
 don't spread to subdomains. Restoring finishes before the window (the webview) is shown, so you're logged in from the first page.
 
-This keeps login credentials in the app data directory (`browser-session-cookies.json`, readable by the owner only) **in plaintext**. It was once encrypted with `safeStorage` (Keychain), but
-that was reverted: using the Keychain makes macOS ask for access permission, and since this app is ad-hoc signed, it asks again with every build change. This **accepts** the risk of exposing session
-credentials to anyone who can read this file (not because the protection is the same, but because for a local tool used by one person, the prompt burden was judged greater than that risk).
-If an `.enc` file from the encrypted days is still there, it's deleted without decrypting, because decrypting is the moment the prompt we wanted to get rid of would appear, and logins are dropped that one time.
+Since this keeps login credentials in the app data directory, the values are encrypted with `safeStorage` (macOS Keychain, Windows DPAPI) and written to `browser-session-cookies.enc`, readable by the owner only.
+The in-app browser's cookie database is encrypted with the same key (the Electron fuse `EnableCookieEncryption`, turned on at packaging). In plaintext, any program running under the same account, including
+agents this app starts, could read those credentials as-is. On macOS the app is ad-hoc signed, so **it asks for Keychain access once after every update.** If encryption isn't available, session cookies
+aren't saved. The plaintext `browser-session-cookies.json` from earlier versions and plaintext rows in the cookie database are moved to ciphertext once at startup.
 You can turn it off in Settings > General, and turning it off deletes what was written down right away. Navigation of the main window itself is blocked with `will-navigate` and sent to the external browser.
 
 **Tabs show a favicon and the page title**, like Chrome. A favicon is a remote address, so the screen can't use it as is: the renderer CSP is `img-src 'self' data:`,
@@ -396,7 +396,7 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
 - `workspaces.json` — workspace and tab metadata (title, provider, policy, provider session id)
 - `threads/<tabId>.jsonl` — per-tab event log (replayed on restart, reopening closed tabs) · `threads/<tabId>.queue.json` — instructions queued while working
 - `renderer-state.json` — input box drafts, open editor files, split view, terminal layout (written the moment they change) · `schedules.json` — scheduled prompts
-- `browser-session-cookies.json` — cookies for keeping in-app browser logins (deleted if you turn it off in settings)
+- `browser-session-cookies.enc` — cookies for keeping in-app browser logins, encrypted (deleted if you turn it off in settings)
 - `cli-overrides.json` — manual CLI executable paths
 - `attachments/` — pasted images
 - `usage-cache.json` — transcript scan cache (incremental by file mtime/size)

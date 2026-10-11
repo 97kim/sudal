@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cookieFilePath, cookieUrl, parseSaved, toSetDetails, type SavedCookie } from "./browser-cookies";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import type { CookiesSetDetails, Session } from "electron";
+import { cookieFilePath, cookieUrl, encryptPlaintextCookies, legacyCookieFilePath, parseSaved, restoreSessionCookies, saveSessionCookies, toSetDetails, type SavedCookie } from "./browser-cookies";
 
 const c = (o: Partial<SavedCookie>): SavedCookie => ({
   name: "sid", value: "v", domain: "example.com", path: "/", secure: true, httpOnly: true, hostOnly: true, ...o,
@@ -30,6 +35,68 @@ test("디스크의 값은 믿지 않는다", () => {
   assert.equal(ok[0].name, "s");
 });
 
-test("저장 파일은 평문 json", () => {
-  assert.match(cookieFilePath("/u"), /browser-session-cookies\.json$/);
+test("저장 파일은 암호문 enc, 예전 평문은 json", () => {
+  assert.match(cookieFilePath("/u"), /browser-session-cookies\.enc$/);
+  assert.match(legacyCookieFilePath("/u"), /browser-session-cookies\.json$/);
+});
+
+test("평문 쿠키 행만 다시 쓰고(파티션 제외), 다 되면 완료 표시를 남겨 다음엔 읽지 않는다", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-enc-"));
+  try {
+    const db = new DatabaseSync(path.join(dir, "Cookies"));
+    db.exec("CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, has_expires INTEGER, samesite INTEGER, top_frame_site_key TEXT)");
+    const ins = db.prepare("INSERT INTO cookies VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+    ins.run("a.com", "plain", "P", Buffer.alloc(0), "/", 0, 0, 0, 0, 1, "");
+    ins.run("a.com", "enc", "", Buffer.from("v10xx"), "/", 0, 0, 0, 0, 1, "");
+    ins.run("a.com", "chip", "C", Buffer.alloc(0), "/", 0, 1, 0, 0, 0, "https://top.example");
+    db.close();
+    const done = path.join(dir, "done");
+    const sets: CookiesSetDetails[] = [];
+    let fail = true;
+    let flushWrites = false;
+    const pending: string[] = [];
+    // 실제 저장소처럼 set 은 메모리에만, flushStore 때 디스크(DB)를 암호문으로 바꾼다.
+    const ses = {
+      cookies: {
+        set: async (d: CookiesSetDetails) => {
+          if (fail) throw new Error("no");
+          sets.push(d);
+          pending.push(d.name!);
+        },
+        flushStore: async () => {
+          if (!flushWrites) return;
+          const w = new DatabaseSync(path.join(dir, "Cookies"));
+          for (const n of pending.splice(0)) w.prepare("UPDATE cookies SET value = '', encrypted_value = x'763130' WHERE name = ?").run(n);
+          w.close();
+        },
+      },
+    } as unknown as Session;
+    assert.equal(await encryptPlaintextCookies(ses, dir, done), 0);
+    assert.equal(fs.existsSync(done), false, "실패하면 다음 실행에서 다시 한다");
+    fail = false;
+    assert.equal(await encryptPlaintextCookies(ses, dir, done), 1);
+    assert.equal(fs.existsSync(done), false, "디스크에 아직 평문이 있으면 표시를 남기지 않는다");
+    flushWrites = true;
+    assert.equal(await encryptPlaintextCookies(ses, dir, done), 1);
+    assert.deepEqual(sets.map((d) => `${d.name}=${d.value}`), ["plain=P", "plain=P"]);
+    assert.equal(fs.existsSync(done), true);
+    assert.equal(await encryptPlaintextCookies(ses, dir, done), 0, "완료 표시가 있으면 읽지 않는다");
+    assert.equal(sets.length, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// 모듈 상태(keepBackup)를 바꾸므로 이 파일의 마지막에 둔다.
+test("예전 평문 파일을 암호문으로 옮기지 못하면 종료할 때도 지우지 않는다", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-legacy-"));
+  try {
+    fs.writeFileSync(legacyCookieFilePath(dir), JSON.stringify([c({})]));
+    const ses = { cookies: { set: async () => { throw new Error("no"); }, get: async () => [] } } as unknown as Session;
+    assert.equal(await restoreSessionCookies(ses, dir), 0);
+    assert.equal(await saveSessionCookies(ses, dir), 0);
+    assert.equal(fs.existsSync(legacyCookieFilePath(dir)), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -1,3 +1,4 @@
+const { FuseV1Options, FuseVersion } = require("@electron/fuses");
 const signAdhoc = require("./scripts/sign-adhoc.cjs");
 
 // 플랫폼마다 빼는 것이 달라 mac·win 의 files 에 각각 붙인다. 최상위 files 와 플랫폼 files 를 같이 두면
@@ -70,5 +71,11 @@ module.exports = {
     // 지워도 설정·탭 기록(%APPDATA%\Sudal)은 남긴다 — 다시 깔면 이어 쓴다
     deleteAppDataOnUninstall: false,
   },
-  afterPack: signAdhoc,
+  // 인앱 브라우저 쿠키를 OS 키 저장소(macOS 키체인·Windows DPAPI)의 키로 암호화한다. 끄면 로그인 쿠키가 디스크에 평문으로 남아
+  // 같은 계정의 프로그램(에이전트 포함)이 그대로 읽는다. macOS 는 ad-hoc 서명이라 업데이트마다 키체인 허용을 다시 묻는다 — 받아들였다.
+  // 퓨즈는 서명 전에 바꿔야 한다. 설정의 electronFuses 는 afterPack(우리 서명) 뒤에 바꿔 서명을 깨므로 여기서 직접 바꾼다.
+  afterPack: async (context) => {
+    await context.packager.addElectronFuses(context, { version: FuseVersion.V1, [FuseV1Options.EnableCookieEncryption]: true });
+    await signAdhoc(context);
+  },
 };

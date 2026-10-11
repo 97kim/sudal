@@ -12,6 +12,7 @@ const NAMES = [
   "nativeTheme",
   "Notification",
   "powerMonitor",
+  "safeStorage",
   "session",
   "shell",
   "webContents",

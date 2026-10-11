@@ -22,7 +22,7 @@ const res = (n, ok, x = "") => { results.push([n, ok]); log(`RESULT ${n}:`, ok ?
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_USERDATA: userData } });
+  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_E2E_MOCK_KEYCHAIN: "1", SUDAL_USERDATA: userData } });
   let b = null;
   for (let i = 0; i < 60 && !b; i++) { await sleep(500); try { b = await chromium.connectOverCDP("http://127.0.0.1:9333"); } catch {} }
   let page = null;

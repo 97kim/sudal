@@ -114,7 +114,7 @@ const freePort = () => new Promise((r) => { const s = net.createServer(); s.list
   await new Promise((r) => srv.listen(0, "127.0.0.1", r));
   const port = srv.address().port;
   const base = `http://localhost:${port}`;
-  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_USERDATA: userData, SUDAL_IMPORT_BASE: importBase, SUDAL_IMPORT_TEST_PASSWORD: "e2e-pass" } });
+  const proc = spawn(app + "/Contents/MacOS/Sudal", ["--remote-debugging-port=9333", `--user-data-dir=${userData}`], { stdio: "ignore", env: { ...process.env, SUDAL_E2E_MOCK_KEYCHAIN: "1", SUDAL_USERDATA: userData, SUDAL_IMPORT_BASE: importBase, SUDAL_IMPORT_TEST_PASSWORD: "e2e-pass" } });
   let b = null;
   for (let i = 0; i < 60 && !b; i++) { await sleep(500); try { b = await chromium.connectOverCDP("http://127.0.0.1:9333"); } catch {} }
   let page = null;

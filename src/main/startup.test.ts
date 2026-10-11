@@ -67,7 +67,7 @@ function harness() {
     buildMenu() {}, watchBrowserNetwork() {}, watchBrowserDownloads() {}, watchBrowserConsole() {},
     appSettings: () => ({ keepBrowserLogin: true }),
     session: { fromPartition() {} }, BROWSER_PARTITION: "test",
-    restoreSessionCookies: () => cookies.promise,
+    restoreSessionCookies: () => cookies.promise, encryptPlaintextCookies: async () => 0, join: (...p: string[]) => p.join("/"),
     startBackgroundJobWatcher() {}, startSchedules() {}, startControlServer() {},
     cliStatus: async () => ({ installed: false }),
     createWindow: () => {

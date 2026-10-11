@@ -4,15 +4,15 @@
 //
 // 이건 사실상 로그인 증표를 디스크에 두는 일이다. 그래서 설정으로 끌 수 있고, 끄면 적어 둔 것을 지운다.
 //
-// 암호화하지 않고 소유자만 읽는 권한(600)으로 둔다. 한때 safeStorage(키체인)로 암호화했지만 되돌렸다:
-// 키체인을 쓰면 macOS 가 접근 허용을 묻고, 이 앱은 ad-hoc 서명이라 빌드가 바뀔 때마다 다시 묻는다.
-// 이 파일을 읽을 수 있는 주체에게 세션 인증정보가 노출되는 위험은 받아들인 것이다 —
-// 보호가 같아서가 아니라, 혼자 쓰는 로컬 도구에서 그 위험보다 프롬프트 부담이 크다고 판단했다.
-// 옆의 Chromium 쿠키 DB 도 평문이지만(퓨즈 EnableCookieEncryption 꺼짐) 그건 근거가 아니라 정황이다.
+// 값은 safeStorage(macOS 키체인·Windows DPAPI)로 암호화해 둔다 — Chromium 쿠키 DB 와 같은 키다(퓨즈 EnableCookieEncryption).
+// 평문이면 같은 계정의 프로그램(에이전트 포함)이 로그인 증표를 그대로 읽는다. macOS 는 ad-hoc 서명이라 업데이트마다
+// 키체인 허용을 다시 묻는다 — 2026-09 에는 그 부담 때문에 평문으로 되돌렸지만, 다른 브라우저 로그인 가져오기가 생겨 다시 켰다.
 
 import fs from "node:fs";
 import path from "node:path";
+import { safeStorage } from "electron";
 import type { Cookie, CookiesSetDetails, Session } from "electron";
+import { cookiesFile, rowToDetails, withCopy, type Row } from "./browser-import";
 
 /** 적어 둘 쿠키의 최소 정보. Electron 의 Cookie 를 그대로 쓰지 않는 이유는 되돌릴 때 필요한 것만 남기려고. */
 export interface SavedCookie {
@@ -87,20 +87,39 @@ export function parseSaved(raw: string): SavedCookie[] {
 }
 
 export function cookieFilePath(userData: string): string {
+  return path.join(userData, "browser-session-cookies.enc");
+}
+
+/** 암호화하지 않던 시절의 평문 파일. 있으면 한 번 옮겨 담고 지운다. */
+export function legacyCookieFilePath(userData: string): string {
   return path.join(userData, "browser-session-cookies.json");
 }
 
-/** 종료 직전에 부른다. 실패해도 종료를 막지 않는다. */
+/**
+ * 이번 실행에서 저장분을 읽거나 옮기지 못했으면 그 파일을 남겨 둔다 — 암호문을 풀지 못했거나(키체인 허용 거절 등)
+ * 예전 평문 파일을 암호문으로 옮기지 못한 경우다. 다음 실행에서 다시 해 볼 수 있게, 종료할 때 지우지 않는다.
+ */
+let keepBackup = false;
+
+/**
+ * 종료 직전에 부른다. 실패해도 종료를 막지 않는다.
+ * 암호화를 못 쓰면 쓰지 않는다 — 있던 파일은 그대로 둔다.
+ */
 export async function saveSessionCookies(ses: Session, userData: string): Promise<number> {
   const file = cookieFilePath(userData);
   try {
     const all = await ses.cookies.get({});
     const saved = all.map(toSaved).filter((c): c is SavedCookie => c !== null).slice(0, SESSION_COOKIE_MAX);
     if (saved.length === 0) {
-      forgetSessionCookies(userData);
+      if (!keepBackup) forgetSessionCookies(userData);
       return 0;
     }
-    fs.writeFileSync(file, JSON.stringify(saved), { encoding: "utf8", mode: 0o600 });
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.error("[browser] 암호화를 쓸 수 없어 세션 쿠키를 저장하지 않습니다(로그인이 유지되지 않습니다).");
+      return 0;
+    }
+    writeEncrypted(file, saved);
+    if (!keepBackup) fs.rmSync(legacyCookieFilePath(userData), { force: true });
     return saved.length;
   } catch (e) {
     console.error("[browser] 세션 쿠키 저장 실패:", e);
@@ -108,13 +127,55 @@ export async function saveSessionCookies(ses: Session, userData: string): Promis
   }
 }
 
-/** 저장해 둔 목록을 읽는다. 못 읽으면 빈 목록 — 로그인만 풀린다. */
-function readSaved(userData: string): SavedCookie[] {
+/**
+ * 임시 파일에 다 쓴 뒤 이름을 바꾼다 — 쓰다 실패해 반쯤 쓴 .enc 가 남으면 다음 실행이 그걸 풀려다 실패하고,
+ * 옆의 멀쩡한 예전 평문 파일을 다시 보지 않는다.
+ */
+function writeEncrypted(file: string, list: SavedCookie[]): void {
+  const tmp = `${file}.tmp`;
   try {
-    return parseSaved(fs.readFileSync(cookieFilePath(userData), "utf8"));
+    fs.writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(list)), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
+/**
+ * 암호문 또는 (예전) 평문에서 목록을 읽는다. 못 읽으면 빈 목록 — 로그인만 풀린다.
+ * 예전 평문 파일은 읽자마자 그 내용 그대로 암호문으로 옮기고 지운다 — 심기에 성공했는지와 상관없이 평문을 바로 없애고,
+ * 못 심은 쿠키도 암호문에 있던 것과 똑같이 다룬다. 옮기지 못하면(암호화 불가·키체인 거절) 평문을 남겨 둔다.
+ */
+function readSaved(userData: string): SavedCookie[] {
+  const enc = cookieFilePath(userData);
+  if (fs.existsSync(enc)) {
+    try {
+      return parseSaved(safeStorage.decryptString(fs.readFileSync(enc)));
+    } catch (e) {
+      // 키체인 허용을 거절했거나 다른 기기에서 옮겨 온 파일. 지우지 않는다 — 거절은 다음 실행에서 바뀔 수 있다.
+      console.error("[browser] 세션 쿠키를 풀지 못했습니다(파일은 남겨 둡니다):", e);
+      keepBackup = true;
+      return [];
+    }
+  }
+  const legacy = legacyCookieFilePath(userData);
+  let list: SavedCookie[];
+  try {
+    list = parseSaved(fs.readFileSync(legacy, "utf8"));
   } catch {
     return [];
   }
+  try {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("암호화를 쓸 수 없음");
+    writeEncrypted(enc, list);
+    fs.rmSync(legacy, { force: true });
+    if (list.length > 0) console.log(`[browser] 평문 세션 쿠키 ${list.length}개를 암호문으로 옮겼습니다`);
+  } catch (e) {
+    console.error("[browser] 평문 세션 쿠키를 암호문으로 옮기지 못했습니다(파일은 남겨 둡니다):", e);
+    keepBackup = true;
+  }
+  return list;
 }
 
 /** 창을 띄우기 전에 부른다. 하나씩 심고, 실패한 것은 건너뛴다(사이트 하나 때문에 전부 날리지 않게). */
@@ -133,11 +194,55 @@ export async function restoreSessionCookies(ses: Session, userData: string): Pro
   return ok;
 }
 
-/** 설정을 끄거나 사용자가 지울 때. */
+/**
+ * 암호화를 켜기 전에 쓴 쿠키는 DB 에 평문으로 남는다. Chromium 은 그걸 읽기만 하고 다시 암호화하지 않으니,
+ * 같은 쿠키를 다시 써서 암호문으로 바꾼다. 페이지가 쿠키를 바꾸기 전에 끝나야 한다 — 늦으면 새 값을 옛 값으로 덮는다.
+ * 최상위 사이트별로 나뉜 쿠키는 다시 쓸 때 그 구분을 줄 방법이 없어 그대로 둔다.
+ * 다 옮기면 doneFile 을 남겨 다음부터는 DB 를 읽지 않는다(새로 쓰는 쿠키는 처음부터 암호문이다).
+ */
+export async function encryptPlaintextCookies(ses: Session, partitionDir: string, doneFile: string): Promise<number> {
+  if (fs.existsSync(doneFile)) return 0;
+  const file = cookiesFile(partitionDir);
+  if (!file) {
+    fs.writeFileSync(doneFile, "");
+    return 0;
+  }
+  const rows = plaintextRows(file);
+  let ok = 0;
+  for (const r of rows) {
+    try {
+      await ses.cookies.set(rowToDetails(r, r.value));
+      ok += 1;
+    } catch {
+      /* 그 쿠키만 평문으로 남는다 — 다음 실행에서 다시 해 본다 */
+    }
+  }
+  // set 은 메모리에만 반영하고 디스크엔 나중에 쓴다. 다 쓴 뒤 DB 에 평문이 정말 없을 때만 표시를 남긴다 —
+  // 먼저 남기고 꺼지면 평문 행이 남은 채 다시는 옮기지 않는다.
+  await ses.cookies.flushStore();
+  if (plaintextRows(file).length === 0) fs.writeFileSync(doneFile, "");
+  return ok;
+}
+
+/** 쿠키 DB 의 평문 행. 최상위 사이트별로 나뉜 쿠키는 다시 쓸 수 없어 빼고 센다. */
+function plaintextRows(file: string): Row[] {
+  return withCopy(file, (db) => {
+    const hasPartition = (db.prepare("PRAGMA table_info(cookies)").all() as { name: string }[]).some((c) => c.name === "top_frame_site_key");
+    const stmt = db.prepare(
+      `SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly, has_expires, samesite FROM cookies WHERE value <> ''${hasPartition ? " AND top_frame_site_key = ''" : ""}`,
+    );
+    stmt.setReadBigInts(true);
+    return stmt.all() as unknown as Row[];
+  });
+}
+
+/** 설정을 끄거나 사용자가 지울 때. 평문으로 쓰던 시절의 파일도 같이 지운다. */
 export function forgetSessionCookies(userData: string): void {
-  try {
-    fs.rmSync(cookieFilePath(userData), { force: true });
-  } catch {
-    /* 없으면 그만 */
+  for (const f of [cookieFilePath(userData), legacyCookieFilePath(userData)]) {
+    try {
+      fs.rmSync(f, { force: true });
+    } catch {
+      /* 없으면 그만 */
+    }
   }
 }

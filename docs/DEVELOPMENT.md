@@ -17,6 +17,7 @@ yarn package    # ad-hoc 서명 arm64 DMG (release/sudal-<version>-arm64.dmg)
 - `yarn dev -- --remote-debugging-port=9333` — CDP 로 UI 자동화/디버깅.
 - `SUDAL_DEBUG_SDK=1` — Claude CLI stderr 를 콘솔에 출력.
 - `SUDAL_APPROVED_ROOTS=경로:경로` — 검증용으로 작업 경로를 미리 승인한다.
+- `SUDAL_E2E_MOCK_KEYCHAIN=1` — (macOS, e2e 전용) 쿠키 암호화에 실제 키체인 대신 고정 키를 쓴다. 패키징 빌드마다 서명이 바뀌어 키체인 허용 창에 막히는 것을 피한다.
 
 ## 릴리스
 
@@ -87,7 +88,7 @@ DMG로 직접 설치한 앱도 새 버전을 확인할 수 있지만 앱 안에�
 ```bash
 yarn package
 cd e2e
-SUDAL_APPROVED_ROOTS="$PWD" ../release/mac-arm64/Sudal.app/Contents/MacOS/Sudal \
+SUDAL_APPROVED_ROOTS="$PWD" SUDAL_E2E_MOCK_KEYCHAIN=1 ../release/mac-arm64/Sudal.app/Contents/MacOS/Sudal \
   --user-data-dir="$PWD/userdata" --remote-debugging-port=9333 > app.log 2>&1 &
 node check-header2.cjs      # 원하는 스크립트
 ```

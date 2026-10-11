@@ -62,7 +62,7 @@ import { browserNetFailures, clearBrowserNetFailures, watchBrowserNetwork } from
 import { browserConsoleLines, watchBrowserConsole } from "./browser-console";
 import type { BrowserRect, KeyInput } from "@shared/browser-control";
 import { fetchDocImage, fetchFavicon } from "./browser-favicon";
-import { forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
+import { encryptPlaintextCookies, forgetSessionCookies, restoreSessionCookies, saveSessionCookies } from "./browser-cookies";
 import { BROWSER_PARTITION } from "./browser-net";
 import { attachWebviewHandlers, cancelDownload, probeUrl, showDownload, watchBrowserDownloads } from "./browser-webview";
 import { importCookies, importSupported, listSites, listSources } from "./browser-import";
@@ -3145,6 +3145,9 @@ function createWindow(): BrowserWindow {
 }
 
 hardenWebviews();
+// e2e 전용: 빌드마다 서명이 바뀌어 키체인이 허용을 다시 묻고 그 창에 막히므로, 쿠키 암호화에 실제 키체인 대신
+// 고정 키를 쓴다. 고정 키는 보호가 아니라서 평소 실행에서는 켜지지 않게 이 변수로만 연다.
+if (process.platform === "darwin" && process.env.SUDAL_E2E_MOCK_KEYCHAIN === "1") app.commandLine.appendSwitch("use-mock-keychain");
 // 한 번에 한 인스턴스만: 두 개가 같은 userData(workspaces.json·threads·localStorage)를 번갈아 쓰면 서로의 저장분을 덮어쓴다.
 // 두 번째로 켜면 먼저 떠 있는 창을 앞으로 가져온다.
 if (!app.requestSingleInstanceLock()) {
@@ -3175,6 +3178,15 @@ app.whenReady().then(async () => {
   if (appSettings().keepBrowserLogin) {
     const n = await restoreSessionCookies(session.fromPartition(BROWSER_PARTITION), app.getPath("userData"));
     if (n > 0) console.log(`[browser] 세션 쿠키 ${n}개 복원`);
+  }
+  // 쿠키 암호화 퓨즈는 패키징할 때만 켜진다 — 개발 실행에서 다시 쓰면 또 평문이라 돌리지 않는다.
+  // 창·제어 서버보다 먼저 끝낸다: 페이지나 에이전트가 쿠키를 바꾼 뒤에 옛 값을 다시 쓰면 안 된다.
+  if (app.isPackaged) {
+    const userData = app.getPath("userData");
+    const partitionDir = join(userData, "Partitions", BROWSER_PARTITION.replace(/^persist:/, ""));
+    await encryptPlaintextCookies(session.fromPartition(BROWSER_PARTITION), partitionDir, join(userData, "browser-cookies-encrypted"))
+      .then((n) => n > 0 && console.log(`[browser] 평문 쿠키 ${n}개를 암호화`))
+      .catch((e) => console.error("[browser] 평문 쿠키 암호화 실패:", e));
   }
   startBackgroundJobWatcher();
   startSchedules();

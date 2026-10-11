@@ -212,10 +212,10 @@ Chromium 이 종료할 때 버린다(메모리에만 둔다). 그래서 끌 때 
 (`src/main/browser-cookies.ts`). 되돌릴 때 만료를 붙이지 않아 성질은 그대로 세션 쿠키이고, 호스트 한정 쿠키에는 `domain` 을 주지 않아 하위 도메인으로
 퍼지지 않는다. 복원은 창(=웹뷰)을 띄우기 전에 끝내므로 첫 페이지부터 로그인 상태다.
 
-로그인 증표를 앱 데이터 디렉토리(`browser-session-cookies.json`, 소유자만 읽기)에 **평문으로** 두는 일이다. 한때 `safeStorage`(키체인)로 암호화했지만
-되돌렸다 — 키체인을 쓰면 macOS 가 접근 허용을 묻고, 이 앱은 ad-hoc 서명이라 빌드가 바뀔 때마다 다시 묻는다. 이 파일을 읽을 수 있는 주체에게 세션
-인증정보가 노출되는 위험을 **받아들인 것**이다(보호가 같아서가 아니라, 혼자 쓰는 로컬 도구에서 그 위험보다 프롬프트 부담이 크다고 판단했다).
-암호화하던 시절의 `.enc` 파일이 남아 있으면 풀지 않고 지운다 — 푸는 순간 없애려던 그 프롬프트가 뜨기 때문이고, 그 한 번은 로그인이 풀린다.
+로그인 증표를 앱 데이터 디렉토리에 두는 일이라, 값은 `safeStorage`(macOS 키체인·Windows DPAPI)로 암호화해 `browser-session-cookies.enc` 에 소유자만 읽게 쓴다.
+인앱 브라우저의 쿠키 DB 도 같은 키로 암호화한다(Electron 퓨즈 `EnableCookieEncryption`, 패키징할 때 켠다). 평문이면 같은 계정에서 도는 프로그램 — 이 앱이 띄운
+에이전트도 — 이 로그인 증표를 그대로 읽는다. macOS 에서는 앱이 ad-hoc 서명이라 **업데이트할 때마다 키체인 허용을 한 번 묻는다.** 암호화를 쓸 수 없는
+환경이면 세션 쿠키를 저장하지 않는다. 평문으로 쓰던 시절의 `browser-session-cookies.json` 과 쿠키 DB 의 평문 행은 시작할 때 한 번 암호문으로 옮긴다.
 설정 > 일반에서 끌 수 있고, 끄면 적어 둔 것을 바로 지운다. 메인 창 자체의 이동은 `will-navigate` 로 막고 외부 브라우저로 보낸다.
 
 **탭에는 파비콘과 페이지 제목이 나온다** — 크롬과 같다. 파비콘은 원격 주소라 화면이 그대로 쓸 수 없다: 렌더러 CSP 가 `img-src 'self' data:` 이고,
@@ -397,7 +397,7 @@ ANSI 를 벗긴 최근 출력을 이어 붙여 선택지 앞의 "$ <명령> › 
 - `workspaces.json` — 워크스페이스·탭 메타(제목, provider, 정책, provider 세션 id)
 - `threads/<tabId>.jsonl` — 탭별 이벤트 로그(재시작 시 재생, 닫힌 탭 다시 열기) · `threads/<tabId>.queue.json` — 작업 중에 써 둔 대기 지시
 - `renderer-state.json` — 입력창 초안·열린 에디터 파일·분할 화면·터미널 배치(바뀌는 즉시 기록) · `schedules.json` — 예약 프롬프트
-- `browser-session-cookies.json` — 인앱 브라우저 로그인 유지용 쿠키(설정에서 끄면 지운다)
+- `browser-session-cookies.enc` — 인앱 브라우저 로그인 유지용 쿠키, 암호화(설정에서 끄면 지운다)
 - `cli-overrides.json` — CLI 실행 파일 수동 지정
 - `attachments/` — 붙여넣은 이미지
 - `usage-cache.json` — 트랜스크립트 스캔 캐시(파일 mtime/size 기준 증분)
