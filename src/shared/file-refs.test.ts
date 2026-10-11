@@ -2,6 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { findFileRefs, localFileHref, parseFileRef } from "./file-refs";
 
+test("localFileHref: 이미지 확장자·URL 인코딩·UNC 호스트를 유지한다", () => {
+  assert.deepEqual(localFileHref("images/작은%20눈.gif"), { path: "images/작은 눈.gif" });
+  assert.deepEqual(localFileHref("C:/%EA%B0%9C%EB%B0%9C/a%20b.png"), { path: "C:/개발/a b.png" });
+  assert.deepEqual(localFileHref("/C:/repo/a.gif"), { path: "C:/repo/a.gif" });
+  assert.deepEqual(localFileHref("file://server/share/a%20b.gif"), { path: "//server/share/a b.gif" });
+  assert.deepEqual(localFileHref("file:///C:/repo/a%2520b.gif"), { path: "C:/repo/a%20b.gif" });
+  assert.equal(localFileHref("./%E0%A4%A.png"), null);
+});
+
 test("parseFileRef: 파일명·경로·줄·범위를 읽고, 전체가 참조가 아니면 null", () => {
   assert.deepEqual(parseFileRef("ProductByPoController.kt:63"), { path: "ProductByPoController.kt", line: 63 });
   assert.deepEqual(parseFileRef(" application.yml:3 "), { path: "application.yml", line: 3 });

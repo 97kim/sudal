@@ -1,5 +1,5 @@
 import { Children, createContext, isValidElement, memo, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import ReactMarkdown, { defaultUrlTransform, type Options } from "react-markdown";
+import ReactMarkdown, { type Options } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -12,8 +12,8 @@ import { Icon } from "./Icon";
 import { LinkChooser } from "./LinkChooser";
 import { linkTargetFor, setLinkOpenMode } from "../link-open";
 import { RunInTerminalContext, isShellLanguage, normalizeCommand } from "../terminal-run";
-import { dirnameAny, relativeAny } from "@shared/any-path";
-import { resolveUnder } from "../doc-path";
+import { relativeAny } from "@shared/any-path";
+import { loadMarkdownImage, markdownUrlTransform } from "../markdown-image";
 import { IS_WIN } from "../platform";
 
 // ===== 답변 속 파일 참조("ProductByPoController.kt:63") → 에디터로 열기 =====
@@ -311,32 +311,26 @@ interface DocBase {
 }
 const DocBaseContext = createContext<DocBase | null>(null);
 
-/** 그림 주소 → data URL. CSP 가 img-src 'self' data: 라 원격·로컬 그림 모두 main 이 받아 넘긴다. */
-async function loadDocImage(src: string, base: DocBase): Promise<string | null> {
-  if (/^https?:/i.test(src)) return window.sudal.files.remoteImage(src);
-  if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return null;
-  const clean = decodeURIComponent(src.replace(/[?#].*$/, ""));
-  // GitHub 처럼 "/" 로 시작하면 저장소(cwd) 기준, 아니면 문서가 있는 폴더 기준
-  const dir = clean.startsWith("/") ? base.cwd : dirnameAny(base.file);
-  const view = await window.sudal.files.read(base.cwd, resolveUnder(dir, clean));
-  return view.image?.dataUrl ?? null;
-}
-
 function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
   const { node: _node, src, ...rest } = props;
   const base = useContext(DocBaseContext);
-  const [url, setUrl] = useState<string | null>(null);
+  const { cwd } = useLocateFile();
+  const imageCwd = base?.cwd ?? cwd;
+  const file = base?.file;
+  const key = JSON.stringify([imageCwd, file, src]);
+  const [loaded, setLoaded] = useState<{ key: string; url: string | null } | null>(null);
   useEffect(() => {
-    if (!base || typeof src !== "string" || !src) return;
+    if (!imageCwd || typeof src !== "string" || !src) return;
     let alive = true;
-    loadDocImage(src, base).then(
-      (u) => alive && setUrl(u),
-      () => alive && setUrl(null),
+    loadMarkdownImage(src, { cwd: imageCwd, file }, window.sudal.files).then(
+      (url) => alive && setLoaded({ key, url }),
+      () => alive && setLoaded({ key, url: null }),
     );
     return () => {
       alive = false;
     };
-  }, [base, src]);
+  }, [imageCwd, file, src, key]);
+  const url = loaded?.key === key ? loaded.url : null;
   // 못 받았거나 받는 중이면 대체 글만 — 깨진 그림 아이콘을 띄우지 않는다.
   if (!url) return rest.alt ? <span className="text-muted">{rest.alt}</span> : null;
   return <img src={url} {...rest} />;
@@ -348,7 +342,7 @@ const CHAT_REHYPE: Options["rehypePlugins"] = [rehypeHighlight, rehypeFileRefs];
 // 기본 정리는 href 의 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내므로 그 스킴만 더한다.
 const DOC_SANITIZE = { ...defaultSchema, protocols: { ...defaultSchema.protocols, href: [...(defaultSchema.protocols?.href ?? []), "file"] } };
 const DOC_REHYPE: Options["rehypePlugins"] = [rehypeRaw, [rehypeSanitize, DOC_SANITIZE], rehypeHighlight, rehypeFileRefs];
-const CHAT_COMPONENTS: Options["components"] = { a: MdLink, span: MdSpan, code: MdCode, pre: MdPre };
+const CHAT_COMPONENTS: Options["components"] = { a: MdLink, span: MdSpan, code: MdCode, pre: MdPre, img: MdImg };
 const DOC_COMPONENTS: Options["components"] = { ...CHAT_COMPONENTS, img: MdImg };
 
 /** variant "doc": 파일 미리보기처럼 문서 한 편을 읽는 화면. 채팅보다 큰 제목·넉넉한 간격·읽기 좋은 폭(styles.css .md-doc). */
@@ -363,7 +357,7 @@ export const Markdown = memo(function Markdown({ text, variant, base }: { text: 
         rehypePlugins={doc ? DOC_REHYPE : CHAT_REHYPE}
         components={doc ? DOC_COMPONENTS : CHAT_COMPONENTS}
         // 기본 정리는 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내고 이동은 하지 않으므로 그 스킴만 남긴다.
-        urlTransform={(url) => (/^file:/i.test(url) ? url : defaultUrlTransform(url))}
+        urlTransform={markdownUrlTransform}
       >
         {text}
       </ReactMarkdown>
