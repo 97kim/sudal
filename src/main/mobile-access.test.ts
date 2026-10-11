@@ -39,7 +39,8 @@ test("MobilePairing: 코드로 짝짓고 토큰은 해시로만 저장, 코드�
     assert.equal(p.pair(code, "다시"), null, "코드는 한 번만");
     const saved = fs.readFileSync(file, "utf8");
     assert.equal(saved.includes(r.token), false, "토큰 자체는 저장하지 않는다");
-    assert.equal((fs.statSync(file).mode & 0o777).toString(8), "600");
+    // Windows 에는 POSIX 파일 권한이 없다(늘 666) — 거기선 사용자 폴더의 ACL 이 막는다
+    if (process.platform !== "win32") assert.equal((fs.statSync(file).mode & 0o777).toString(8), "600");
     assert.equal(new MobilePairing(file, () => t).verify(r.token)?.id, r.device.id, "다시 읽어도 알아본다");
     assert.equal(p.verify("엉뚱한 토큰"), null);
     assert.equal(p.verify(undefined), null);
@@ -70,7 +71,7 @@ test("parseTailscaleSelf: Tailscale 이 이 기기 주소라고 한 것만", () 
   assert.deepEqual(parseTailscaleSelf(JSON.stringify({ BackendState: "Stopped" })), []);
 });
 
-test("MobilePairing: 넓은 권한으로 남아 있던 기기 파일은 0600 으로 좁힌다", () => {
+test("MobilePairing: 넓은 권한으로 남아 있던 기기 파일은 0600 으로 좁힌다", { skip: process.platform === "win32" && "POSIX 파일 권한 전용" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-mobile-perm-"));
   try {
     const file = path.join(dir, "d.json");
