@@ -6,6 +6,7 @@ import { join, parse } from "node:path";
 import { IPC, type BrowserEventDto } from "@shared/ipc";
 import { mt } from "./i18n";
 import { BROWSER_PARTITION } from "./browser-net";
+import { webSearchUrl } from "@shared/web-search";
 
 const isWeb = (u: string) => /^https?:\/\//i.test(u);
 
@@ -71,7 +72,7 @@ export function attachWebviewHandlers(contents: WebContents): void {
         { label: mt("main.browser.menu.copy"), click: () => contents.copy() },
         {
           label: mt("main.browser.menu.search", { text: short }),
-          click: () => openInTab(contents, `https://duckduckgo.com/?q=${encodeURIComponent(selected)}`),
+          click: () => openInTab(contents, webSearchUrl(selected)),
         },
       );
       sep();
