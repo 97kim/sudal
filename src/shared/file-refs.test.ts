@@ -9,6 +9,14 @@ test("localFileHref: 이미지 확장자·URL 인코딩·UNC 호스트를 유지
   assert.deepEqual(localFileHref("file://server/share/a%20b.gif"), { path: "//server/share/a b.gif" });
   assert.deepEqual(localFileHref("file:///C:/repo/a%2520b.gif"), { path: "C:/repo/a%20b.gif" });
   assert.equal(localFileHref("./%E0%A4%A.png"), null);
+  // 이미지(svg)도 줄 표기를 읽는다
+  assert.deepEqual(localFileHref("src/icon.svg#L12-L20"), { path: "src/icon.svg", line: 12, endLine: 20 });
+});
+
+test("findFileRefs: 앞에 한글이 붙은 이름은 일부만 떼지 않고, 뒤에 붙은 조사는 괜찮다", () => {
+  assert.deepEqual(findFileRefs("한글image.png를 확인하세요"), []);
+  assert.deepEqual(findFileRefs("image.png를 확인하세요").map((r) => r.path), ["image.png"]);
+  assert.deepEqual(findFileRefs("설정은 config.ts:12에서").map((r) => [r.path, r.line]), [["config.ts", 12]]);
 });
 
 test("parseFileRef: 파일명·경로·줄·범위를 읽고, 전체가 참조가 아니면 null", () => {

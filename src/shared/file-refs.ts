@@ -28,9 +28,11 @@ const EXTENSIONS = new Set(
 );
 
 // 경로: (./ ../ / C:\)? 디렉토리들/ 이름.확장자  — 앞뒤가 경로 글자면 안 됨(URL 의 host/path 조각, 이메일 등을 피한다).
+// 앞에는 한글 같은 다른 글자도 붙으면 안 된다 — "한글image.png" 에서 "image.png" 만 떼어 다른 파일을 가리키게 된다.
+// 뒤에 붙는 한글은 괜찮다("image.png를").
 // 구분자는 / 와 \ 둘 다(Windows). 줄: ":12", ":12-20", ":12–20", ":12:5"(열은 무시), "#L12", "#L12-L20".
 const REF_RE =
-  /(?<![\w./\\@~-])((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-]+(?:\.[\w-]+)*\.([A-Za-z]\w{0,11}))(?::(\d+)(?:(-|–|:)(\d+))?|#L(\d+)(?:-L?(\d+))?)?(?![\w/\\])/g;
+  /(?<![\p{L}\p{N}\w./\\@~-])((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-]+(?:\.[\w-]+)*\.([A-Za-z]\w{0,11}))(?::(\d+)(?:(-|–|:)(\d+))?|#L(\d+)(?:-L?(\d+))?)?(?![\w/\\])/gu;
 
 function fromMatch(m: RegExpExecArray): FileRef | null {
   const [, path, ext, l1, sep, l2, hl1, hl2] = m;
@@ -99,12 +101,8 @@ export function localFileHref(href: string): FileRef | null {
   const path = m[1];
   if (!path) return null;
   const explicit = drive || /^(\/|~[\\/]|\.\.?[\\/]|\\\\)/.test(path);
-  if (!explicit) {
-    // 이미지 링크에는 한글·공백도 들어갈 수 있다.
-    if (/\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i.test(path)) return { path };
-    const ref = parseFileRef(h);
-    return ref;
-  }
+  // 이미지 링크에는 한글·공백도 들어갈 수 있어 모양 검사(parseFileRef)를 건너뛴다. 줄 표기(svg#L12)는 아래에서 그대로 읽는다.
+  if (!explicit && !/\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i.test(path)) return parseFileRef(h);
   const ref: FileRef = { path };
   const line = Number(m[2] ?? m[4]);
   if (line > 0) {

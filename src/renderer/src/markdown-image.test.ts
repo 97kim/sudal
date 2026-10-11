@@ -34,7 +34,7 @@ test("채팅 PNG/GIF: 마크다운 URL → 실제 파일 찾기 → 에디터와
   const cwd = await mkdtemp(join(tmpdir(), "sudal-markdown-image-"));
   try {
     const files = {
-      locate: (cwd: string, path: string) => locateFiles(cwd, path, process.env),
+      locate: (cwd: string, path: string, inside?: boolean) => locateFiles(cwd, path, process.env, { inside }),
       read: (cwd: string, path: string) => readFileView(cwd, path, process.env),
       remoteImage: async () => null,
     };
@@ -73,5 +73,28 @@ test("문서 상대 이미지·저장소 루트 이미지·원격 이미지와 �
   assert.equal(await loadMarkdownImage("https://example.com/a.png", base, files), "remote-data");
   for (const src of ["missing.png", "javascript:alert(1)", "%E0%A4%A.png"]) {
     assert.equal(await loadMarkdownImage(src, { cwd: base.cwd }, files), null);
+  }
+});
+
+test("채팅 이미지는 저장소 밖 파일·네트워크 공유를 읽지 않는다", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "sudal-markdown-image-"));
+  const outside = await mkdtemp(join(tmpdir(), "sudal-markdown-outside-"));
+  try {
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5WQAAAAASUVORK5CYII=", "base64");
+    await writeFile(join(outside, "secret.png"), png);
+    const files = {
+      locate: (cwd: string, path: string, inside?: boolean) => locateFiles(cwd, path, process.env, { inside }),
+      read: (cwd: string, path: string) => readFileView(cwd, path, process.env),
+      remoteImage: async () => null,
+    };
+    for (const src of [join(outside, "secret.png"), pathToFileURL(join(outside, "secret.png")).href, `../${outside.split(/[\\/]/).pop()}/secret.png`]) {
+      assert.equal(await loadMarkdownImage(src, { cwd }, files), null, src);
+    }
+    assert.equal(await loadMarkdownImage("file://attacker.example/share/a.png", { cwd }, files), null);
+    assert.equal(await loadMarkdownImage("\\\\attacker.example\\share\\a.png", { cwd }, files), null);
+    assert.equal(await locateFiles(cwd, "//attacker.example/share/a.png", process.env, { inside: true }).then((r) => r.length), 0);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
   }
 });

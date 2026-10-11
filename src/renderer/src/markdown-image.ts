@@ -17,7 +17,7 @@ export function markdownUrlTransform(url: string): string {
 
 interface ImageFiles {
   read(cwd: string, path: string): Promise<Pick<FileViewDto, "image">>;
-  locate(cwd: string, path: string): Promise<string[]>;
+  locate(cwd: string, path: string, inside?: boolean): Promise<string[]>;
   remoteImage(url: string): Promise<string | null>;
 }
 
@@ -31,7 +31,8 @@ export async function loadMarkdownImage(src: string, base: ImageBase, files: Ima
     // 문서의 /images/... 는 기존처럼 저장소 루트 기준이다.
     path = resolveUnder(path.startsWith("/") ? base.cwd : dirnameAny(base.file), path);
   } else {
-    const found = await files.locate(base.cwd, path);
+    // 그림은 누르지 않아도 그리는 순간 읽는다 — 답변에 적힌 경로가 저장소 밖·네트워크 공유를 가리켜도 손대지 않게 저장소 안만 찾는다.
+    const found = await files.locate(base.cwd, path, true);
     if (found.length !== 1) return null;
     path = found[0];
   }
