@@ -33,3 +33,26 @@ export function modelFromArg(arg: string): string {
   if (!a || /^(기본|default|reset)$/i.test(a)) return "";
   return a.split(/\s+/)[0];
 }
+
+/**
+ * Codex 탭의 "/" 명령. Codex 의 "/" 명령은 터미널 화면(TUI) 쪽 기능이라 app-server 는 목록도 실행도 주지 않는다 —
+ * Codex CLI 와 같은 이름 중 Sudal 기능으로 할 수 있는 것만 앱이 처리한다. 나머지는 모델에게 글로 가 버리므로 넣지 않는다.
+ */
+export type CodexCommandName = "model" | "config" | "new" | "clear" | "compact" | "rename" | "cd" | "init" | "skills";
+const CODEX_COMMANDS: CodexCommandName[] = ["model", "new", "clear", "compact", "rename", "cd", "init", "skills", "config"];
+
+export function codexCommands(t: TFunction): SlashCommandDto[] {
+  return CODEX_COMMANDS.map((name) => ({
+    name,
+    description: t(`session.codexCommand.${name}`),
+    argumentHint: name === "model" ? t("session.codexCommand.modelHint") : name === "rename" ? t("session.codexCommand.renameHint") : "",
+    ...(name === "skills" ? { insert: "$" } : {}),
+  }));
+}
+
+/** Codex 탭 입력이 앱이 처리할 "/" 명령이면 이름과 인자. 그 외는 null. */
+export function parseCodexCommand(text: string): { name: CodexCommandName; arg: string } | null {
+  const m = /^\/([a-z]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!m || !(CODEX_COMMANDS as string[]).includes(m[1])) return null;
+  return { name: m[1] as CodexCommandName, arg: (m[2] ?? "").trim() };
+}

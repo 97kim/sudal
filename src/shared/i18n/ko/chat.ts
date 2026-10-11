@@ -191,6 +191,8 @@ export const chat = {
     loadingCommands: "커맨드 목록을 불러오는 중…",
     snippet: "스니펫",
     snippetAll: "스니펫 · 전체",
+    mentionSkill: "스킬",
+    mentionApp: "앱",
     keyMove: "↑↓ 이동",
     keySelect: "{{kTab}} / {{kReturn}} 선택",
     keyClose: "esc 닫기",

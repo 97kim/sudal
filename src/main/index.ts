@@ -51,7 +51,7 @@ import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
-import { forkCodexThread, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
 import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
 import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/handoff";
@@ -2449,6 +2449,17 @@ function registerIpc() {
       return sessions.switchProvider(tabId, { ...opts, summary });
     },
   );
+  ipcMain.handle(IPC.chatCodexMentions, async (_e, tabId: unknown) => {
+    if (typeof tabId !== "string") return [];
+    const snap = sessions.snapshot(tabId);
+    if (snap.provider !== "codex" || !snap.cwd) return [];
+    try {
+      return await listCodexMentions(await codexRuntime(tabId), snap.cwd, (l) => console.log(l));
+    } catch (e) {
+      console.warn("[codex] $ 목록을 받지 못했습니다:", e);
+      return [];
+    }
+  });
   ipcMain.handle(IPC.chatCommands, async (_e, tabId: string) => {
     const snap = sessions.snapshot(tabId);
     if (snap.provider !== "claude" || !snap.cwd) return [];

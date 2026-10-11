@@ -193,6 +193,8 @@ export const chat: DeepPartial<typeof ko> = {
     loadingCommands: "Loading command list…",
     snippet: "Snippet",
     snippetAll: "Snippet · all",
+    mentionSkill: "skill",
+    mentionApp: "app",
     keyMove: "↑↓ move",
     keySelect: "{{kTab}} / {{kReturn}} select",
     keyClose: "esc close",

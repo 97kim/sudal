@@ -16,6 +16,7 @@ import type { Msg } from "@shared/i18n/msg";
 import { clearCodexLangReminder, codexLangHookArgs, queueCodexLangReminder, trustCodexLangHooks } from "./codex-lang-hooks";
 import { isOffLanguage } from "@shared/language-drift";
 import { withTimeout } from "./claude-control";
+import { codexMentionsFrom, findCodexMentions, type CodexMention } from "@shared/codex-mentions";
 import type { Locale } from "@shared/i18n";
 
 
@@ -376,6 +377,13 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
     clearTimeout(s.idleTimer);
     s.idleTimer = null;
   }
+  // 글 속 `$스킬`·`$앱` 은 Codex CLI 처럼 skill·mention 항목으로도 붙인다 — 글만 보내면 확실히 불리지 않는다.
+  // 턴을 준비하기 전에 찾고(유휴 종료는 위에서 멈췄다), 찾는 사이 중단했으면 시작하지 않고 유휴 종료를 다시 건다.
+  const mentions = /\$[A-Za-z0-9_:-]/.test(req.prompt) ? findCodexMentions(req.prompt, await mentionsForTurn(s.server, req.cwd)) : [];
+  if (req.abort.signal.aborted) {
+    if (live.get(s.key) === s && !s.dead) armIdle(s);
+    throw new MsgError("session.msg.interrupted");
+  }
   // 스레드 id 를 세션 id 로 알린다(새 스레드면 이때 처음 알게 된다).
   // 고른 모델이 없으면(CLI 기본값) app-server 가 알려 준 실제 모델을 쓴다 — 헤더에 모델이 안 보이고 사용량이 모델 없이 쌓이지 않게.
   const model = req.model || s.model || undefined;
@@ -408,6 +416,7 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
     const input: Record<string, unknown>[] = [
       ...req.images.map((i) => ({ type: "localImage", path: i.filePath })),
       { type: "text", text: req.prompt },
+      ...mentions.map((m) => ({ type: m.kind === "skill" ? "skill" : "mention", name: m.name, path: m.path })),
     ];
     const r = await s.server.request<{ turn?: { id?: string } }>("turn/start", {
       threadId: s.threadId,
@@ -457,6 +466,59 @@ export async function forkCodexThread(
     const id = r.thread?.id;
     if (!id) throw new Error(mt("session.error.codexForkNoId"));
     return id;
+  } finally {
+    server.close();
+  }
+}
+
+/** `$` 목록은 작업 폴더별로 잠깐 재사용한다 — 입력창을 열 때마다, 보낼 때마다 app-server 에 묻지 않게. */
+const MENTIONS_TTL_MS = 60_000;
+const mentionCache = new Map<string, { at: number; list: CodexMention[] }>();
+
+/** 이 app-server 로 스킬·앱 목록을 묻는다. 앱 목록은 실험 기능이라 실패하거나 늦으면 스킬만 준다. */
+async function codexMentions(server: CodexAppServer, cwd: string): Promise<CodexMention[]> {
+  const hit = mentionCache.get(cwd);
+  if (hit && Date.now() - hit.at < MENTIONS_TTL_MS) return hit.list;
+  const [skills, apps] = await Promise.all([
+    server.request("skills/list", { cwds: [cwd] }, 10_000).catch(() => null),
+    server.request("app/list", { limit: 200 }, 8_000).catch(() => null),
+  ]);
+  const list = codexMentionsFrom(skills, apps);
+  mentionCache.set(cwd, { at: Date.now(), list });
+  return list;
+}
+
+/**
+ * 보낼 때 쓸 `$` 목록. 보내기를 늦추지 않게 캐시가 있으면 오래됐어도 그대로 쓰고 뒤에서 새로 받는다.
+ * 캐시가 없으면 빠른 스킬 목록만 잠깐 묻는다 — 앱 목록은 네트워크를 타서 기다리지 않는다.
+ */
+async function mentionsForTurn(server: CodexAppServer, cwd: string): Promise<CodexMention[]> {
+  const hit = mentionCache.get(cwd);
+  if (!hit || Date.now() - hit.at >= MENTIONS_TTL_MS) void codexMentions(server, cwd).catch(() => {});
+  if (hit) return hit.list;
+  const skillsOnly = codexMentionsFrom(await server.request("skills/list", { cwds: [cwd] }, 3_000).catch(() => null), null);
+  // 그사이 뒤에서 앱까지 받아졌으면 그걸 쓴다
+  return mentionCache.get(cwd)?.list ?? skillsOnly;
+}
+
+/** 입력창의 `$` 목록. 턴을 돌리지 않아 비용이 없다. */
+export async function listCodexMentions(runtime: CodexRuntime, cwd: string, log?: (line: string) => void): Promise<CodexMention[]> {
+  const hit = mentionCache.get(cwd);
+  if (hit && Date.now() - hit.at < MENTIONS_TTL_MS) return hit.list;
+  const server = new CodexAppServer({
+    log,
+    onNotification: () => {},
+    onServerRequest: async () => {
+      throw new Error("unexpected request");
+    },
+    onExit: () => {},
+  });
+  const run = (async () => {
+    await server.start(runtime.codexPath, runtime.env, cwd);
+    return codexMentions(server, cwd);
+  })();
+  try {
+    return await withTimeout(run, 25_000, "skills/list");
   } finally {
     server.close();
   }

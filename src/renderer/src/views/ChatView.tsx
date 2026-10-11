@@ -47,7 +47,8 @@ import { VerifyPopover } from "../components/VerifyPopover";
 import { FanoutModal } from "../components/FanoutModal";
 import { FanoutCompare } from "../components/FanoutCompare";
 import { OrchestrationPanel } from "../components/OrchestrationPanel";
-import { modelFromArg, parseAppCommand } from "@shared/app-commands";
+import { codexCommands, modelFromArg, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
+import type { CodexMention } from "@shared/codex-mentions";
 import { RightPanel } from "../components/RightPanel";
 import { TabBar } from "../components/TabBar";
 import { TerminalPanel } from "../components/TerminalPanel";
@@ -333,22 +334,6 @@ export function ChatView({
     [tabId, setConfig],
   );
 
-  const onSend = useCallback(
-    async (text: string, images: ChatImageDto[]) => {
-      const cmd = images.length === 0 ? parseAppCommand(text) : null;
-      if (cmd?.name === "mcp") return onOpenMcp();
-      if (cmd?.name === "config") return onOpenSettings();
-      if (cmd?.name === "model") {
-        if (cmd.arg) await setModel(modelFromArg(cmd.arg));
-        else setModelPicker(true);
-        return;
-      }
-      const r = await window.sudal.chat.send(tabId, { text, images });
-      if (!r.ok) throw new Error(r.error);
-      setConfig(await window.sudal.chat.snapshot(tabId));
-    },
-    [tabId, setConfig, onOpenMcp, onOpenSettings, setModel],
-  );
 
   const onAnswer = useCallback(
     (answer: PermissionAnswer) => {
@@ -429,10 +414,61 @@ export function ChatView({
   const paneLabel = [fileTabCount > 0 ? t("chat.header.codeCount", { count: fileTabCount }) : null, browserTabCount > 0 ? t("chat.header.browserCount", { count: browserTabCount }) : null].filter(Boolean).join(" · ");
   const provider = config?.provider ?? tab.provider;
 
+  const onSend = useCallback(
+    async (text: string, images: ChatImageDto[]) => {
+      // Codex 의 "/" 명령은 app-server 가 모르니 앱이 Sudal 기능으로 처리한다(나머지 글은 그대로 모델에게).
+      const codexCmd = provider === "codex" && images.length === 0 ? parseCodexCommand(text) : null;
+      if (codexCmd) {
+        if (codexCmd.name === "new" || codexCmd.name === "clear") return onClear();
+        if (codexCmd.name === "compact") return compactContext();
+        if (codexCmd.name === "cd") return pickCwd();
+        if (codexCmd.name === "rename") {
+          if (codexCmd.arg) await window.sudal.workspaces.renameTab(tabId, codexCmd.arg);
+          else startRename();
+          return;
+        }
+        if (codexCmd.name === "init") text = t("session.codexCommand.initPrompt");
+      }
+      const cmd = images.length === 0 ? parseAppCommand(text) : null;
+      if (cmd?.name === "mcp") return onOpenMcp();
+      if (cmd?.name === "config") return onOpenSettings();
+      if (cmd?.name === "model") {
+        if (cmd.arg) await setModel(modelFromArg(cmd.arg));
+        else setModelPicker(true);
+        return;
+      }
+      const r = await window.sudal.chat.send(tabId, { text, images });
+      if (!r.ok) throw new Error(r.error);
+      setConfig(await window.sudal.chat.snapshot(tabId));
+    },
+    [tabId, provider, setConfig, onOpenMcp, onOpenSettings, setModel, startRename, t],
+  );
+
   const snippets = useSnippets();
   // "/" 자동완성용 슬래시 커맨드 목록. null = 해당 없음(Codex), [] = 아직 로딩 중.
   const [commands, setCommands] = useState<SlashCommandDto[] | null>(null);
+  // Codex: "/" 는 앱이 처리하는 명령 목록, "$" 는 app-server 가 주는 스킬·앱 목록.
+  const [mentions, setMentions] = useState<CodexMention[] | null>(null);
   useEffect(() => {
+    if (provider !== "codex" || !config || !cwd) {
+      setMentions(null);
+      return;
+    }
+    let alive = true;
+    setMentions([]);
+    window.sudal.chat
+      .codexMentions(tabId)
+      .then((m) => alive && setMentions(m))
+      .catch(console.error);
+    return () => {
+      alive = false;
+    };
+  }, [tabId, provider, cwd, config !== null]);
+  useEffect(() => {
+    if (provider === "codex" && config) {
+      setCommands(codexCommands(t));
+      return;
+    }
     if (provider !== "claude" || !config) {
       setCommands(null);
       return;
@@ -998,7 +1034,10 @@ export function ChatView({
               runningHint={agentBusy ? t(agentViaCodex ? "chat.composerHint.codex" : "chat.composerHint.subagent", { name: agentBusy }) : undefined}
               providerLabel={PROVIDER_LABEL[provider]}
               policy={config?.policy ?? "ask"}
-              commands={commands}
+              commands={provider === "claude" && commands ? withAppCommands(t, commands) : commands}
+              commandsLoading={provider === "claude" && commands !== null && commands.length === 0}
+              mentions={mentions}
+              isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null)}
               snippets={snippets}
               workspaceId={tab.workspaceId}
               draftKey={tabId}

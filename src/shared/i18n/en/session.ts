@@ -90,6 +90,20 @@ export const session: DeepPartial<typeof ko> = {
     config: "Open settings (handled by the app)",
     mcp: "Show MCP server status (handled by the app)",
   },
+  codexCommand: {
+    model: "Choose a model",
+    modelHint: "[model name|default]",
+    config: "Open settings",
+    new: "Start a new chat",
+    clear: "Clear the chat and start over",
+    compact: "Summarize the chat to free up context",
+    rename: "Rename this tab",
+    renameHint: "[new name]",
+    cd: "Change the working folder",
+    init: "Ask Codex to create an AGENTS.md for this repository",
+    initPrompt: "Create an AGENTS.md file that serves as a contributor guide for this repository. Look at the project structure, build and test commands, code style, and conventions, and keep it concise.",
+    skills: "Open the skill list (you can also type $)",
+  },
   msg: {
     aiReview: {
       denied: "AI review denied this action: {{action}}",

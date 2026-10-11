@@ -15,7 +15,6 @@ import {
   parseSlashQuery,
   type SlashCommandDto,
 } from "@shared/slash-commands";
-import { withAppCommands } from "@shared/app-commands";
 import {
   filterSnippets,
   snippetSummary,
@@ -23,15 +22,16 @@ import {
 } from "@shared/snippets";
 import { Icon } from "./Icon";
 import { parseAppCommand } from "@shared/app-commands";
+import { filterCodexMentions, parseDollarQuery, type CodexMention } from "@shared/codex-mentions";
 import { clearComposerDraft, loadComposerDraft, loadComposerFiles, onComposerDraftAppend, onComposerFilesDrop, saveComposerDraft, saveComposerFiles, withAttachedFiles, type ComposerFile } from "../composer-draft";
 import { appendToDraft } from "@shared/attachments";
 
 /** "/" 팔레트 한 줄: 스니펫(본문을 입력창에 넣음) 또는 슬래시 커맨드(이름을 넣음). */
 type PaletteRow =
   | { kind: "snippet"; key: string; snippet: SnippetDto }
-  | { kind: "command"; key: string; command: SlashCommandDto };
+  | { kind: "command"; key: string; command: SlashCommandDto }
+  | { kind: "mention"; key: string; mention: CodexMention };
 
-const MAX_COMMAND_ROWS = 10;
 const MAX_SNIPPET_ROWS = 5;
 
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -54,6 +54,9 @@ export function Composer({
   providerLabel,
   policy,
   commands,
+  commandsLoading,
+  mentions = null,
+  isAppCommand = (text: string) => parseAppCommand(text) !== null,
   snippets = [],
   workspaceId = null,
   draftKey,
@@ -73,8 +76,14 @@ export function Composer({
   runningHint?: string;
   providerLabel: string;
   policy: PermissionPolicy;
-  /** "/" 자동완성 목록. null 이면 이 provider 에선 지원하지 않음, [] 는 로딩 중. */
+  /** "/" 자동완성 목록(앱이 처리하는 명령 포함). null 이면 이 provider 에선 지원하지 않음, [] 는 로딩 중. */
   commands: SlashCommandDto[] | null;
+  /** 명령 목록을 불러오는 중인지. 없으면 commands 가 [] 인 것을 불러오는 중으로 본다. */
+  commandsLoading?: boolean;
+  /** "$" 자동완성 목록(Codex 스킬·앱). null 이면 "$" 목록을 쓰지 않는다. */
+  mentions?: CodexMention[] | null;
+  /** 앱이 처리하는 명령인지 — 그러면 첨부 파일 목록을 붙이지 않고 글 그대로 보낸다. */
+  isAppCommand?: (text: string) => boolean;
   /** 프롬프트 스니펫 전체. 팔레트에는 전체 범위 + 현재 워크스페이스 것만 보인다. */
   snippets?: SnippetDto[];
   workspaceId?: string | null;
@@ -140,6 +149,12 @@ export function Composer({
     commands !== null || snippets.length > 0 ? parseSlashQuery(text) : null;
   const [dismissed, setDismissed] = useState(false); // Esc 로 닫은 뒤 텍스트가 바뀌기 전까지 유지
   const [selected, setSelected] = useState(0);
+  // "$" 목록은 커서 앞 글로 판단한다(문장 중간에서도 쓴다). 커서는 입력·선택·클릭 때 따라간다.
+  const [caret, setCaret] = useState(0);
+  const dollar = slashQuery === null && mentions ? parseDollarQuery(text.slice(0, caret)) : null;
+  const mentionRows: PaletteRow[] = dollar
+    ? filterCodexMentions(mentions ?? [], dollar.query).map((m) => ({ kind: "mention", key: `m:${m.kind}:${m.name}`, mention: m }))
+    : [];
   const snippetRows: PaletteRow[] =
     slashQuery !== null
       ? filterSnippets(snippets, slashQuery, workspaceId).map((sn) => ({
@@ -151,25 +166,20 @@ export function Composer({
   // 앱이 직접 처리하는 커맨드(/model·/config·/mcp)는 CLI 목록과 합쳐 보여 준다. "로딩 중" 판정은 CLI 목록(commands) 기준.
   const commandRows: PaletteRow[] =
     slashQuery !== null && commands
-      ? filterCommands(withAppCommands(t, commands), slashQuery).map((c) => ({
+      ? filterCommands(commands, slashQuery).map((c) => ({
           kind: "command",
           key: `c:${c.name}`,
           command: c,
         }))
       : [];
-  // 스니펫은 최대 5줄, 나머지는 커맨드 — 스니펫이 많아도 커맨드가 밀려나지 않게
-  const snippetCap = commandRows.length > 0 ? MAX_SNIPPET_ROWS : MAX_COMMAND_ROWS;
-  const matches = [
-    ...snippetRows.slice(0, snippetCap),
-    ...commandRows,
-  ].slice(0, MAX_COMMAND_ROWS);
+  // 커맨드는 전부 보여 준다(목록은 스크롤된다). 스니펫은 커맨드가 있으면 5줄까지 — 커맨드가 아래로 밀려나지 않게.
+  const matches = dollar ? mentionRows : [...(commandRows.length > 0 ? snippetRows.slice(0, MAX_SNIPPET_ROWS) : snippetRows), ...commandRows];
   const loadingCommands =
     slashQuery !== null &&
-    commands !== null &&
-    commands.length === 0 &&
+    (commandsLoading ?? (commands !== null && commands.length === 0)) &&
     snippetRows.length === 0;
   const popoverOpen =
-    slashQuery !== null &&
+    (slashQuery !== null || dollar !== null) &&
     !dismissed &&
     (matches.length > 0 || loadingCommands);
 
@@ -201,13 +211,27 @@ export function Composer({
   }, [selected]);
 
   const pickRow = (row: PaletteRow) => {
-    // 스니펫은 본문을 통째로 넣고, 커맨드는 이름만 넣어 인자를 이어 치게 한다.
-    setText(row.kind === "snippet" ? row.snippet.text : `/${row.command.name} `);
+    // 스니펫은 본문을 통째로 넣고, 커맨드는 이름만 넣어 인자를 이어 치게 한다. "$" 언급은 그 자리만 바꾼다.
+    let next: string;
+    let at: number;
+    if (row.kind === "mention" && dollar) {
+      // 이름 중간("$sud|al-cli")에서 골라도 커서 오른쪽에 이어진 이름까지 바꾼다
+      let end = caret;
+      while (end < text.length && /[A-Za-z0-9_:-]/.test(text[end])) end++;
+      const head = `${text.slice(0, dollar.start)}$${row.mention.name} `;
+      next = head + text.slice(end).replace(/^ /, "");
+      at = head.length;
+    } else {
+      next = row.kind === "snippet" ? row.snippet.text : row.kind === "command" ? (row.command.insert ?? `/${row.command.name} `) : text;
+      at = next.length;
+    }
+    setText(next);
+    setCaret(at);
     requestAnimationFrame(() => {
       const el = ref.current;
       if (!el) return;
       el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
+      el.setSelectionRange(at, at);
     });
   };
 
@@ -243,6 +267,13 @@ export function Composer({
     // 화면은 앱이 따로 쌓아 둔 기록으로 그려지므로 아무것도 달라지지 않는다.
     // 커맨드 목록에 clear 가 있다고 비켜서지 않는다 — SDK 가 주는 159개 안에 들어 있어서,
     // 그걸 보고 물러나면 이 가로채기가 영영 동작하지 않는다(처음 만들 때 그렇게 걸렸다).
+    // 고르면 다른 글을 넣는 명령(/skills → "$")은 쳐서 보내도 같게 — 보내지 않고 그 글로 바꾼다.
+    const insert = images.length === 0 ? commands?.find((c) => c.insert !== undefined && trimmed === `/${c.name}`)?.insert : undefined;
+    if (insert !== undefined) {
+      setText(insert);
+      setCaret(insert.length);
+      return;
+    }
     if (trimmed === "/clear" && images.length === 0 && files.length === 0 && onClear) {
       if (draftKey) clearComposerDraft(draftKey);
       setText("");
@@ -252,7 +283,7 @@ export function Composer({
     try {
       // 앱이 처리하는 명령(/model 등)은 글 그대로 보내고 첨부 파일은 남긴다 — 합치면 명령 인자가 깨지고,
       // 명령은 파일을 쓰지 않으니 보낸 셈이 아니다. 판별 기준은 ChatView 와 같다(이미지가 있으면 명령 아님).
-      const appCommand = images.length === 0 && parseAppCommand(trimmed) !== null;
+      const appCommand = images.length === 0 && isAppCommand(trimmed);
       await onSend(
         appCommand ? trimmed : withAttachedFiles(trimmed, files, t("chat.composer.attachedFiles")),
         images.map(({ name, mime, base64 }) => ({ name, mime, base64 })),
@@ -268,7 +299,7 @@ export function Composer({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [text, images, files, disabled, onSend, draftKey, onClear, t]);
+  }, [text, images, files, disabled, onSend, draftKey, onClear, t, commands, isAppCommand]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // 한국어 IME 조합 중 Enter 는 조합 확정이지 전송이 아니다.
@@ -418,7 +449,15 @@ export function Composer({
                     }`}
                     data-palette-row={row.kind}
                   >
-                    {row.kind === "snippet" ? (
+                    {row.kind === "mention" ? (
+                      <>
+                        <span className="mono shrink-0 text-[12px]">${row.mention.name}</span>
+                        <span className="label shrink-0 rounded bg-accent-tint px-1 py-px text-[9px] text-accent">
+                          {row.mention.kind === "skill" ? t("chat.composer.mentionSkill") : t("chat.composer.mentionApp")}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{row.mention.description}</span>
+                      </>
+                    ) : row.kind === "snippet" ? (
                       <>
                         <span className="mono shrink-0 text-[12px]">
                           /{row.snippet.name}
@@ -513,7 +552,11 @@ export function Composer({
         <textarea
           ref={ref}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           disabled={disabled}

@@ -7,6 +7,8 @@ export interface SlashCommandDto {
   /** 인자 힌트. 예: "<file>" */
   argumentHint: string;
   aliases?: string[];
+  /** 고르면 "/이름 " 대신 입력창에 넣을 글. Codex 의 /skills 는 "$" 를 넣어 스킬 목록을 연다. */
+  insert?: string;
 }
 
 /**

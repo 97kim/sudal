@@ -15,6 +15,7 @@ import type { Handoff } from "./handoff";
 import type { OrchRunState } from "./orchestration";
 import type { LspServerId } from "./lsp-servers";
 import type { SlashCommandDto } from "./slash-commands";
+import type { CodexMention } from "./codex-mentions";
 import type { SnippetDto } from "./snippets";
 import type { SearchHit } from "./transcript-search";
 import type { WorkspaceModel } from "./workspace-model";
@@ -241,6 +242,7 @@ export const IPC = {
   chatEvent: "chat:event",
   chatCommands: "chat:commands",
   chatCommandsChanged: "chat:commands-changed",
+  chatCodexMentions: "chat:codex-mentions",
   chatSearch: "chat:search",
   chatQueueRemove: "chat:queue-remove",
   chatLimitRetry: "chat:limit-retry",
@@ -915,6 +917,8 @@ export interface SudalApi {
     commands(tabId: string): Promise<SlashCommandDto[]>;
     /** 어떤 cwd 의 커맨드 목록이 바뀌었을 때 (턴 도중 갱신 포함). */
     onCommandsChanged(listener: (cwd: string) => void): () => void;
+    /** Codex 탭 입력창의 `$` 목록(스킬·앱). Codex 탭이 아니면 []. */
+    codexMentions(tabId: string): Promise<CodexMention[]>;
     /** 하이브리드: 세션 제어를 터미널(CLI TUI)로 넘긴다. 같은 세션 id 로 claude --resume / codex resume 를 pty 에 띄운다. */
     attachTerminal(
       tabId: string,

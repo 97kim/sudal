@@ -88,6 +88,20 @@ export const session = {
     config: "설정 화면을 연다 (앱에서 처리)",
     mcp: "MCP 서버 상태를 본다 (앱에서 처리)",
   },
+  codexCommand: {
+    model: "모델을 골라요",
+    modelHint: "[모델 이름|기본]",
+    config: "설정 화면을 열어요",
+    new: "새 대화를 시작해요",
+    clear: "대화를 비우고 새로 시작해요",
+    compact: "대화를 요약해 컨텍스트를 줄여요",
+    rename: "탭 이름을 바꿔요",
+    renameHint: "[새 이름]",
+    cd: "작업 폴더를 바꿔요",
+    init: "이 저장소용 AGENTS.md를 만들어 달라고 해요",
+    initPrompt: "이 저장소의 기여 안내서 역할을 하는 AGENTS.md 파일을 만들어 주세요. 프로젝트 구조, 빌드·테스트 명령, 코드 스타일과 관례를 살펴보고 간결하게 써 주세요.",
+    skills: "스킬 목록을 열어요($로도 열 수 있어요)",
+  },
   msg: {
     aiReview: {
       denied: "AI가 이 작업을 거절했어요: {{action}}",
