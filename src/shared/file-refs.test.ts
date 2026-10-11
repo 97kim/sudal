@@ -2,6 +2,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { findFileRefs, localFileHref, parseFileRef } from "./file-refs";
 
+test("localFileHref: 이미지 확장자·URL 인코딩·UNC 호스트를 유지한다", () => {
+  assert.deepEqual(localFileHref("images/작은%20눈.gif"), { path: "images/작은 눈.gif" });
+  assert.deepEqual(localFileHref("C:/%EA%B0%9C%EB%B0%9C/a%20b.png"), { path: "C:/개발/a b.png" });
+  assert.deepEqual(localFileHref("/C:/repo/a.gif"), { path: "C:/repo/a.gif" });
+  assert.deepEqual(localFileHref("file://server/share/a%20b.gif"), { path: "//server/share/a b.gif" });
+  assert.deepEqual(localFileHref("file:///C:/repo/a%2520b.gif"), { path: "C:/repo/a%20b.gif" });
+  assert.equal(localFileHref("./%E0%A4%A.png"), null);
+  // 이미지(svg)도 줄 표기를 읽는다
+  assert.deepEqual(localFileHref("src/icon.svg#L12-L20"), { path: "src/icon.svg", line: 12, endLine: 20 });
+});
+
+test("findFileRefs: 앞에 한글이 붙은 이름은 일부만 떼지 않고, 뒤에 붙은 조사는 괜찮다", () => {
+  assert.deepEqual(findFileRefs("한글image.png를 확인하세요"), []);
+  assert.deepEqual(findFileRefs("image.png를 확인하세요").map((r) => r.path), ["image.png"]);
+  assert.deepEqual(findFileRefs("설정은 config.ts:12에서").map((r) => [r.path, r.line]), [["config.ts", 12]]);
+});
+
 test("parseFileRef: 파일명·경로·줄·범위를 읽고, 전체가 참조가 아니면 null", () => {
   assert.deepEqual(parseFileRef("ProductByPoController.kt:63"), { path: "ProductByPoController.kt", line: 63 });
   assert.deepEqual(parseFileRef(" application.yml:3 "), { path: "application.yml", line: 3 });

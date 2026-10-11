@@ -360,6 +360,9 @@ async function isFile(p: string): Promise<boolean> {
  * 소스 위치)에서 쓴다 — 저장소 안 링크가 /etc/hosts 를 가리키면 기본 검색은 링크 경로를 그대로 돌려준다.
  */
 export async function locateFiles(cwd: string, requested: string, env: NodeJS.ProcessEnv, opts: { inside?: boolean } = {}): Promise<string[]> {
+  // 네트워크 공유(\\server\share, //server/share)는 찾아보는 것만으로 접속한다(Windows 는 로그인 정보까지 보낼 수 있다).
+  // 저장소 밖인지는 찾은 뒤에야 알 수 있으니, 믿을 수 없는 경로면 손대기 전에 버린다.
+  if (opts.inside && /^[\\/]{2}/.test(requested.trim())) return [];
   const found = await locateRaw(cwd, requested, env);
   if (!opts.inside || found.length === 0) return found;
   const root = await realishDeep(await repoRoot(cwd, env));

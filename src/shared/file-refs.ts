@@ -22,14 +22,17 @@ const EXTENSIONS = new Set(
     "kt kts java scala groovy py pyi rb go rs c h cc cpp hpp cs swift m mm php sh bash zsh fish ps1 bat cmd " +
     "md mdx txt rst adoc css scss sass less styl html htm xml svg vue svelte astro sql prisma graphql gql proto " +
     "tf tfvars hcl lock csv tsv plist dart lua r jl ex exs erl hs elm clj cljs edn zig sol ipynb tex bib log " +
-    "cjsx coffee pug ejs hbs mustache njk liquid wxs xsl xslt dockerfile makefile cmake editorconfig gitignore"
+    "cjsx coffee pug ejs hbs mustache njk liquid wxs xsl xslt dockerfile makefile cmake editorconfig gitignore " +
+    "png jpg jpeg gif webp bmp ico avif"
   ).split(" "),
 );
 
 // 경로: (./ ../ / C:\)? 디렉토리들/ 이름.확장자  — 앞뒤가 경로 글자면 안 됨(URL 의 host/path 조각, 이메일 등을 피한다).
+// 앞에는 한글 같은 다른 글자도 붙으면 안 된다 — "한글image.png" 에서 "image.png" 만 떼어 다른 파일을 가리키게 된다.
+// 뒤에 붙는 한글은 괜찮다("image.png를").
 // 구분자는 / 와 \ 둘 다(Windows). 줄: ":12", ":12-20", ":12–20", ":12:5"(열은 무시), "#L12", "#L12-L20".
 const REF_RE =
-  /(?<![\w./\\@~-])((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-]+(?:\.[\w-]+)*\.([A-Za-z]\w{0,11}))(?::(\d+)(?:(-|–|:)(\d+))?|#L(\d+)(?:-L?(\d+))?)?(?![\w/\\])/g;
+  /(?<![\p{L}\p{N}\w./\\@~-])((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-]+(?:\.[\w-]+)*\.([A-Za-z]\w{0,11}))(?::(\d+)(?:(-|–|:)(\d+))?|#L(\d+)(?:-L?(\d+))?)?(?![\w/\\])/gu;
 
 function fromMatch(m: RegExpExecArray): FileRef | null {
   const [, path, ext, l1, sep, l2, hl1, hl2] = m;
@@ -81,10 +84,15 @@ export function localFileHref(href: string): FileRef | null {
     try {
       const u = new URL(h);
       // file:///C:/x 의 pathname 은 "/C:/x" — 앞 슬래시를 뗀다
-      h = decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:[\\/])/, "$1") + u.hash;
+      h = (u.hostname ? `//${u.hostname}` : "") + u.pathname + u.hash;
     } catch {
       return null;
     }
+  }
+  try {
+    h = decodeURIComponent(h).replace(/^\/([A-Za-z]:[\\/])/, "$1");
+  } catch {
+    return null;
   }
   const drive = /^[A-Za-z]:[\\/]/.test(h); // "C:\x" 는 스킴이 아니라 Windows 절대 경로
   if (!drive && /^[a-z][a-z0-9+.-]*:(?!\d)/i.test(h)) return null; // 다른 스킴(vscode: 등). "AGENTS.md:3" 의 :숫자 는 줄 번호
@@ -93,10 +101,8 @@ export function localFileHref(href: string): FileRef | null {
   const path = m[1];
   if (!path) return null;
   const explicit = drive || /^(\/|~[\\/]|\.\.?[\\/]|\\\\)/.test(path);
-  if (!explicit) {
-    const ref = parseFileRef(h);
-    return ref;
-  }
+  // 이미지 링크에는 한글·공백도 들어갈 수 있어 모양 검사(parseFileRef)를 건너뛴다. 줄 표기(svg#L12)는 아래에서 그대로 읽는다.
+  if (!explicit && !/\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i.test(path)) return parseFileRef(h);
   const ref: FileRef = { path };
   const line = Number(m[2] ?? m[4]);
   if (line > 0) {
