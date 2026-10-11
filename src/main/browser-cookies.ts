@@ -180,6 +180,9 @@ function readSaved(userData: string): SavedCookie[] {
 
 /** 창을 띄우기 전에 부른다. 하나씩 심고, 실패한 것은 건너뛴다(사이트 하나 때문에 전부 날리지 않게). */
 export async function restoreSessionCookies(ses: Session, userData: string): Promise<number> {
+  // 키체인 키는 쿠키 저장소(Chromium)와 여기(safeStorage)가 따로 받아 온다. 동시에 물으면 업데이트 뒤 허용 창이 두 개
+  // 뜬다 — 쿠키 저장소가 키를 받아 올 때까지 기다렸다가 물으면, 첫 창에서 "항상 허용" 한 뒤라 창 없이 통과한다.
+  await ses.cookies.get({ domain: "sudal.invalid" }).catch(() => {});
   const list = readSaved(userData);
   if (list.length === 0) return 0;
   let ok = 0;
