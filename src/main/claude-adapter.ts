@@ -451,6 +451,14 @@ async function pump(s: LiveSession) {
   }
 }
 
+/** 작업의 지금 회차를 기억한다. 오래 사는 세션에서 끝없이 쌓이지 않게 오래된 것부터 버린다. */
+const TASK_RUNS_MAX = 200;
+function rememberRun(s: LiveSession, id: string, runId: string): void {
+  s.taskRuns.delete(id);
+  s.taskRuns.set(id, runId);
+  if (s.taskRuns.size > TASK_RUNS_MAX) s.taskRuns.delete(s.taskRuns.keys().next().value as string);
+}
+
 function sendBackgroundTasks(s: LiveSession, sessionId: string | undefined) {
   const tasks = s.liveTasks.filter((t) => !s.foregroundTasks.has(t.id));
   s.onBackgroundTasks?.(sessionId ?? s.sessionId ?? "", tasks, "sdk");
@@ -496,14 +504,16 @@ function handleMessage(s: LiveSession, message: SDKMessage) {
       // 유휴 종료 판단(liveTaskCount)은 포그라운드 작업까지 센다. 화면에만 빼고 보낸다.
       s.liveTasks = parseLiveTasks(message.tasks);
       s.liveTaskCount = s.liveTasks.length;
-      for (const lt of s.liveTasks) if (lt.runId && !isLateRun(s.taskRuns.get(lt.id), lt.runId)) s.taskRuns.set(lt.id, lt.runId);
+      for (const lt of s.liveTasks) if (lt.runId && !isLateRun(s.taskRuns.get(lt.id), lt.runId)) rememberRun(s, lt.id, lt.runId);
       sendBackgroundTasks(s, message.session_id);
     } else if (message.subtype === "task_started" || message.subtype === "task_updated") {
       // 전체 목록은 보통 이 신호보다 먼저 온다. 그때 보낸 목록은 판단 전이라 틀렸으므로, 판단이 바뀌면 다시 보낸다.
       const run = (message as { task_id?: unknown; run_id?: unknown }).run_id;
       const tid = (message as { task_id?: unknown }).task_id;
-      if (typeof run === "string" && typeof tid === "string" && !isLateRun(s.taskRuns.get(tid), run)) s.taskRuns.set(tid, run);
-      const f = parseTaskForeground(message);
+      const late = typeof run === "string" && typeof tid === "string" && isLateRun(s.taskRuns.get(tid), run);
+      if (typeof run === "string" && typeof tid === "string" && !late) rememberRun(s, tid, run);
+      // 이전 회차의 늦은 신호로 지금 회차의 포그라운드/백그라운드 판정을 바꾸지 않는다
+      const f = late ? null : parseTaskForeground(message);
       const changed = f ? (f.foreground ? !s.foregroundTasks.has(f.id) && !!s.foregroundTasks.add(f.id) : s.foregroundTasks.delete(f.id)) : false;
       if (changed && s.liveTasks.some((t) => t.id === f?.id)) sendBackgroundTasks(s, message.session_id);
     } else if (message.subtype === "task_notification") {

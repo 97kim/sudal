@@ -1766,7 +1766,7 @@ function bootstrap() {
     },
     onBackgroundTasks(tabId, sessionId, tasks, source) {
       if (process.env.SUDAL_DEBUG_SDK) console.log(`[bgtasks ${tabId.slice(0, 6)}] ${tasks.length}개 출처=${source}`);
-      scheduleEngine?.onSignal(tabId, { kind: "tasks", count: tasks.length, source });
+      scheduleEngine?.onSignal(tabId, { kind: "tasks", count: tasks.length, source, ids: tasks.map((t) => t.id) });
       // 늘 "살아 있는 전체" 라 갈아 끼운다. 턴이 끝난 뒤에도 오므로, 노는 것처럼 보이던 구간이 채워진다.
       bgTasks.replace(tabId, sessionId, sessions.snapshot(tabId).cwd ?? "", tasks);
       sendBackgroundJobs();
@@ -1776,7 +1776,7 @@ function bootstrap() {
     },
     onTaskFinished(tabId, note) {
       // 예약 회차 판정에는 어떻게 끝났든 넘긴다 — 그 결과를 들고 CLI 가 후속 턴을 돈다.
-      scheduleEngine?.onSignal(tabId, { kind: "task_finished" });
+      scheduleEngine?.onSignal(tabId, { kind: "task_finished", id: note.id });
       // 사용자가 세운 것(stopped)은 알리지 않는다 — 자기가 한 일이다. 시간 제한에 걸려 멈춘 것은 실패처럼 알린다.
       if (note.status === "stopped" && !note.timedOut) return;
       const job = bgTasks.recall(note.id);
@@ -3103,6 +3103,8 @@ function registerIpc() {
               ...keep(claude.modelWeekly, prev?.modelWeekly),
             }
           : null,
+        // /usage 출력에는 추가 사용량이 없다 — 이벤트로 알던 값을 지운 채 저장하지 않는다
+        ...((claude.overage ?? prev?.overage) ? { overage: claude.overage ?? prev?.overage } : {}),
       });
     }
     sendAll(IPC.usageChanged, null);

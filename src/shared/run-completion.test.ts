@@ -178,3 +178,33 @@ test("작업 둘 — 하나는 새 순서, 하나는 예전 순서로 와도 둘
   const whole: RunSignal[] = [...seq, { kind: "task_finished" }, { kind: "turn_started" }, { kind: "result", isError: false }];
   assert.deepEqual(judgeRun(whole), { state: "completed", isError: false });
 });
+
+test("id 로 짝짓기 — 포그라운드로 옮겨 가 알림 없이 빠진 작업의 몫을 다른 작업이 가져가지 않는다", () => {
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: 1, source: "sdk", ids: ["a"] },
+    { kind: "tasks", count: 0, source: "sdk", ids: [] }, // a 가 포그라운드로 — 알림은 오지 않는다
+    { kind: "tasks", count: 1, source: "sdk", ids: ["b"] },
+    { kind: "result", isError: false },
+    { kind: "task_finished", id: "b" }, // 새 순서: b 알림이 먼저
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+    { kind: "tasks", count: 0, source: "sdk", ids: [] },
+  ];
+  assert.deepEqual(judgeRun(seq), { state: "completed", isError: false }, "a 의 남은 짝을 b 가 가져가 영영 도는 중으로 남지 않는다");
+});
+
+test("id 로 짝짓기 — 예전 순서·새 순서가 섞여도 작업마다 맞는다", () => {
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: 2, source: "sdk", ids: ["a", "b"] },
+    { kind: "result", isError: false },
+    { kind: "task_finished", id: "a" }, // a: 알림 먼저
+    { kind: "tasks", count: 1, source: "sdk", ids: ["a"] }, // b: 목록에서 먼저 빠짐
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+  ];
+  assert.equal(judgeRun(seq).state, "running", "a 가 아직 목록에 있다");
+  const whole: RunSignal[] = [...seq, { kind: "tasks", count: 0, source: "sdk", ids: [] }, { kind: "task_finished", id: "b" }, { kind: "turn_started" }, { kind: "result", isError: false }];
+  assert.deepEqual(judgeRun(whole), { state: "completed", isError: false });
+});

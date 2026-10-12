@@ -107,6 +107,14 @@ export class CodexAppServer {
 
   close(): void {
     if (!this.proc) return;
+    // 닫으면 exit 처리가 ended 를 보고 건너뛰므로, 기다리던 요청과 타이머는 여기서 정리한다
+    if (!this.ended) {
+      for (const p of this.pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(new AppServerError("exited", "closed"));
+      }
+      this.pending.clear();
+    }
     this.ended = true;
     try {
       this.proc.stdin.end();

@@ -26,9 +26,9 @@ export type RunSignal =
   /** 턴 하나가 끝났다(SDK result). 회차의 끝이라는 뜻은 아니다. */
   | { kind: "result"; isError: boolean }
   /** 살아 있는 백그라운드 작업 전체 집합이 바뀌었다. source 가 판정을 가른다. */
-  | { kind: "tasks"; count: number; source: "sdk" | "cleanup" }
+  | { kind: "tasks"; count: number; source: "sdk" | "cleanup"; /** 목록의 작업 id. 있으면 끝났다는 알림과 id 로 짝짓는다. */ ids?: string[] }
   /** 백그라운드 작업 하나가 끝났다는 알림(task_notification). 목록에서 빠지는 것과 순서가 CLI 판마다 다르다. */
-  | { kind: "task_finished" }
+  | { kind: "task_finished"; id?: string }
   /** 새 턴이 시작됐다(우리가 보낸 것이든, CLI 가 스스로 이어간 것이든). */
   | { kind: "turn_started" }
   /** 사용자 응답을 기다리는 요청 수(권한·질문). */
@@ -57,7 +57,17 @@ export interface RunState {
   finishedUnlisted: number;
   /** 목록에서는 빠졌는데 끝났다는 알림이 아직 안 온 작업 수(예전 순서). 알림이 와도 후속 턴을 두 번 세지 않는다. */
   unlistedUnfinished: number;
+  /**
+   * id 를 알 때는 개수 대신 id 로 짝짓는다. 개수로만 맞추면 포그라운드로 옮겨 가 알림 없이 빠진 작업의 몫을
+   * 다른 작업의 알림이 가져가, 회차가 끝나지 않고 남는다.
+   */
+  liveIds: string[] | null;
+  finishedIds: string[];
+  unlistedIds: string[];
 }
+
+/** 짝을 못 찾은 채 남는 id 는 이만큼만 둔다(포그라운드로 옮겨 가 알림 없이 빠진 작업 등). */
+const PAIR_MAX = 50;
 
 export type RunVerdict =
   | { state: "running" }
@@ -68,7 +78,19 @@ export type RunVerdict =
   | { state: "interrupted"; reason: string; reasonMsg?: Msg };
 
 export function newRunState(): RunState {
-  return { sawResult: false, followUpExpected: false, resultIsError: false, liveTasks: null, awaiting: 0, ended: null, finishedUnlisted: 0, unlistedUnfinished: 0 };
+  return {
+    sawResult: false,
+    followUpExpected: false,
+    resultIsError: false,
+    liveTasks: null,
+    awaiting: 0,
+    ended: null,
+    finishedUnlisted: 0,
+    unlistedUnfinished: 0,
+    liveIds: null,
+    finishedIds: [],
+    unlistedIds: [],
+  };
 }
 
 export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
@@ -79,6 +101,23 @@ export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
     case "tasks": {
       // cleanup 이 만든 목록은 판정 근거가 아니다 — 프로세스가 죽었다는 뜻일 뿐이다.
       if (sig.source === "cleanup") return s;
+      if (sig.ids) {
+        // 빠진 작업마다: 알림이 먼저 왔던 것이면(새 순서) 짝만 맞추고, 아니면(예전 순서) 이제부터 후속 턴을 기다린다
+        const now = new Set(sig.ids);
+        let followUpExpected = s.followUpExpected;
+        const finishedIds = [...s.finishedIds];
+        const unlistedIds = [...s.unlistedIds];
+        for (const id of s.liveIds ?? []) {
+          if (now.has(id)) continue;
+          const k = finishedIds.indexOf(id);
+          if (k >= 0) finishedIds.splice(k, 1);
+          else {
+            unlistedIds.push(id);
+            followUpExpected = true;
+          }
+        }
+        return { ...s, liveTasks: sig.count, liveIds: sig.ids, followUpExpected, finishedIds, unlistedIds: unlistedIds.slice(-PAIR_MAX) };
+      }
       const had = s.liveTasks ?? 0;
       // 작업이 줄었다 = 끝난 작업이 있다 = 그 결과를 처리하는 턴이 뒤따른다.
       // 단, 끝났다는 알림이 먼저 와서 이미 기다리고 있던 작업이면(새 순서) 다시 기다리지 않는다 — 후속 턴이 이미 끝났을 수 있다.
@@ -94,6 +133,13 @@ export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
       };
     }
     case "task_finished":
+      if (sig.id !== undefined) {
+        // 목록에서 먼저 빠진 그 작업이면(예전 순서) 짝만 맞춘다. 아니면 이제부터 후속 턴을 기다리고, 목록에 있는 작업이면 빠질 때를 위해 기억한다.
+        const k = s.unlistedIds.indexOf(sig.id);
+        if (k >= 0) return { ...s, unlistedIds: s.unlistedIds.filter((_, i) => i !== k) };
+        const listed = (s.liveIds ?? []).includes(sig.id);
+        return { ...s, followUpExpected: true, finishedIds: listed ? [...s.finishedIds, sig.id].slice(-PAIR_MAX) : s.finishedIds };
+      }
       // 목록에서 먼저 빠져 이미 기다리는 중이면(예전 순서) 짝만 맞춘다. 아니면 이제부터 후속 턴을 기다린다.
       if (s.unlistedUnfinished > 0) return { ...s, unlistedUnfinished: s.unlistedUnfinished - 1 };
       return { ...s, followUpExpected: true, finishedUnlisted: s.finishedUnlisted + 1 };
