@@ -34,7 +34,10 @@ const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT 
   // 앱 목록은 뒤에서 마저 온다(늦으면 60초까지) — 늘어나는지 본다
   let later = rows;
   for (let i = 0; i < 140 && later <= rows; i++) { await page.waitForTimeout(500); later = await page.locator("[data-palette-row]").count(); }
-  console.log(`앱까지: ${later}줄 · ${Date.now() - t1}ms`);
+  const appsMs = Date.now() - t1;
+  console.log(`앱까지: ${later}줄 · ${appsMs}ms`);
+  // app/list 응답(28초) 대신 먼저 오는 app/list/updated 알림으로 채운다
+  result("앱 목록도 10초 안에 더해진다", later > rows && appsMs < 10000, `${appsMs}ms`);
   await page.screenshot({ path: E2E + "/shot-codex-dollar.png" });
   result("$ 를 치면 목록이 뜬다", rows > 0);
   await b.close();

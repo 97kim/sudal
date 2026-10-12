@@ -512,9 +512,16 @@ async function mentionsForTurn(server: CodexAppServer, cwd: string): Promise<Cod
 /** 이 폴더의 목록 받기를 새로 시작한다. app-server 는 앱 목록까지 끝나면(성공·실패·시간 초과) 닫는다. */
 function startMentionJob(runtime: CodexRuntime, cwd: string, log?: (line: string) => void) {
   const startedAt = Date.now();
+  // app/list 응답은 30초 가까이 걸리지만, 서버는 같은 목록을 app/list/updated 알림으로 1초 안에 먼저 보낸다(0.162.1 실측).
+  // 먼저 오는 쪽을 쓴다. 비어 있는 알림(캐시가 빈 첫 실행 등)은 믿지 않고 응답을 기다린다.
+  let earlyApps: (apps: unknown) => void = () => {};
+  const appsUpdated = new Promise<unknown>((resolve) => (earlyApps = resolve));
   const server = new CodexAppServer({
     log,
-    onNotification: () => {},
+    onNotification: (method, params) => {
+      const data = (params as { data?: unknown } | null)?.data;
+      if (method === "app/list/updated" && Array.isArray(data) && data.length > 0) earlyApps(params);
+    },
     onServerRequest: async () => {
       throw new Error("unexpected request");
     },
@@ -536,8 +543,7 @@ function startMentionJob(runtime: CodexRuntime, cwd: string, log?: (line: string
   });
   const all = skillsResp
     .then((r) =>
-      server
-        .request("app/list", { limit: 200 }, APPS_TIMEOUT_MS)
+      Promise.race([server.request("app/list", { limit: 200 }, APPS_TIMEOUT_MS), appsUpdated])
         .then((apps) => ({ list: codexMentionsFrom(r, apps), apps: true }))
         .catch(() => ({ list: codexMentionsFrom(r, null), apps: false })),
     )
