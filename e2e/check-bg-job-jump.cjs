@@ -16,17 +16,27 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const tab = cli("tab", "new", "--ws", ws, "--provider", "claude", "--title", "백그라운드이동" + Date.now(), "--activate").tab.id;
   await page.evaluate((t) => window.sudal.chat.configure(t, { policy: "full" }), tab);
   const snap = () => page.evaluate((t) => window.sudal.chat.snapshot(t), tab);
+  await page.evaluate((t) => {
+    window.__sub = 0;
+    window.sudal.chat.onEvent((env) => { if (env?.tabId === t && env.event?.type === "subagent_activity") window.__sub += 1; });
+  }, tab);
+  const subs = () => page.evaluate(() => window.__sub);
 
   cli("tab", "send", "--tab", tab, "--text",
-    `Task 도구를 run_in_background: true 로 한 번 써라(subagent_type: general-purpose). 하위 에이전트에게는 'Bash 도구로 node -e "setTimeout(()=>console.log(1),15000)" 을 세 번 차례로 실행해라' 를 맡겨라. 너는 '맡겼어요' 한 마디만 하고 바로 턴을 끝내라.`);
+    `Task 도구를 run_in_background: true 로 한 번 써라(subagent_type: general-purpose). 하위 에이전트에게는 'Bash 도구로 node -e "setTimeout(()=>console.log(1),3000)" 을 여섯 번, 한 번에 하나씩 차례로 실행해라(run_in_background 쓰지 말 것). 실행 사이사이 몇 번째인지 한 마디씩 말해라' 를 맡겨라. 너는 '맡겼어요' 한 마디만 하고 바로 턴을 끝내라.`);
 
   let idleAt = 0;
   for (let i = 0; i < 90 && !idleAt; i++) { await sleep(1000); if ((await snap()).status === "idle") idleAt = Date.now(); }
   result("메인 턴이 끝난다", !!idleAt);
 
-  await sleep(3000);
-  const jobs = await page.evaluate(() => window.sudal.jobs.list());
-  const job = jobs.find((j) => j.label === "general-purpose");
+  // task_started 가 오기까지 조금 걸릴 수 있다 — toolUseId 가 붙을 때까지 기다린다
+  const sessionId = (await snap()).sessionId;
+  let job = null;
+  for (let i = 0; i < 15 && !job?.toolUseId; i++) {
+    await sleep(1000);
+    const jobs = await page.evaluate(() => window.sudal.jobs.list());
+    job = jobs.find((j) => j.sessionId === sessionId && j.label === "general-purpose");
+  }
   result("백그라운드 작업에 띄운 tool_use 의 id 가 붙는다", !!job?.toolUseId, JSON.stringify(job));
 
   const before = await page.evaluate((id) => document.querySelector(`[data-block-id="${id}"] [data-tool-card]`)?.getAttribute("data-tool-open"), job?.toolUseId);
@@ -43,7 +53,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   result("그 카드가 화면 안으로 스크롤된다", !!after?.inView);
 
   // 하위 에이전트가 아직 돌고 있다 — 그 사이 온 새 소식이 바닥에 붙어 있던 목록을 다시 끌어내리면 안 된다
-  await sleep(4000);
+  const subBefore = await subs();
+  await sleep(10000);
+  const subAfter = await subs();
+  result("그 사이 실제로 새 소식이 왔다(시험이 의미 있다)", subAfter > subBefore, `${subBefore} → ${subAfter}`);
   const stillInView = await page.evaluate((id) => {
     const el = document.querySelector(`[data-block-id="${id}"] [data-tool-card]`);
     if (!el) return null;
