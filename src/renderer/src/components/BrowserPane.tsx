@@ -420,10 +420,12 @@ export function BrowserPane({
         const u = el.getURL();
         setUrl(u);
         setInput(u);
-        addHistory(u); // 주소창 자동완성용 — http(s) 가 아니면 recordVisit 이 거른다
         // 페이지가 실제로 바뀐 첫 순간에만 제목·파비콘을 비운다.
         const moved = u !== pageRef.current;
         if (moved) {
+          // 방문도 이때만 센다. sync 는 주소가 바뀔 때와 로딩이 끝날 때(iframe 이 다시 불러도) 불려,
+          // 여기 밖에서 세면 한 번 들어간 곳이 2회 이상으로 쌓인다. http(s) 가 아니면 recordVisit 이 거른다.
+          addHistory(u);
           const hostChanged = hostOf(u) !== hostOf(pageRef.current);
           pageRef.current = u;
           titleRef.current = "";
@@ -484,10 +486,14 @@ export function BrowserPane({
       const list = (e as Event & { favicons?: string[] }).favicons ?? [];
       const first = list.find((u) => /^https?:\/\//i.test(u));
       if (!first) return onFaviconRef.current?.(null);
-      rememberFavicon(el.getURL(), first);
+      const pageUrl = el.getURL();
       void window.sudal.browser
         .favicon(first)
-        .then((d) => onFaviconRef.current?.(d))
+        .then((d) => {
+          // 받은 것만 기억한다 — 지정이 없는 페이지의 기본 /favicon.ico 처럼 그림이 없는 주소가 앞서 기억한 것을 덮지 않게
+          if (d) rememberFavicon(pageUrl, first);
+          onFaviconRef.current?.(d);
+        })
         .catch(() => onFaviconRef.current?.(null));
     };
     el.addEventListener("page-favicon-updated", onFav);

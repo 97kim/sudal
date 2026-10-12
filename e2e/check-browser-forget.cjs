@@ -12,6 +12,8 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const serve = () => new Promise((r) => {
   const s = http.createServer((req, res) => {
     if (req.url === "/icon.png") { res.writeHead(200, { "content-type": "image/png" }); return res.end(PNG); }
+    // iframe 이 혼자 세 번 다시 불린다 — 로딩이 끝날 때마다 방문을 세면 안 된다
+    if (req.url === "/frame") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<!doctype html><title>frame</title><iframe id=f src="/inner"></iframe><script>let n=0;const t=setInterval(()=>{f.src="/inner?"+(++n);if(n>=3)clearInterval(t)},400)</script>`); }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(`<!doctype html><link rel="icon" href="/icon.png"><title>${req.url}</title>${req.url}`);
   });
@@ -38,10 +40,14 @@ const serve = () => new Promise((r) => {
   await page.waitForTimeout(300);
   cli("browser", "open", "--tab", title, "--url", `${A}/start`);
   await page.waitForTimeout(3000);
-  for (const u of [`${A}/alpha`, `${A}/beta`, `${A}/alpha`, `${C}/other`]) {
+  for (const u of [`${A}/alpha`, `${A}/beta`, `${A}/alpha`, `${C}/other`, `${C}/frame`]) {
     await ev((x) => [...document.querySelectorAll("webview")].find((w) => w.getBoundingClientRect().width > 50)?.loadURL(x).catch(() => {}), u);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(u.endsWith("/frame") ? 2500 : 1500);
   }
+  // 방문 횟수: 들어간 만큼만 센다(로딩이 끝날 때·iframe 이 다시 불릴 때는 세지 않는다)
+  const visits = Object.fromEntries(JSON.parse(JSON.parse(require("fs").readFileSync(E2E + "/userdata/renderer-state.json", "utf8"))["browser.history"] ?? "[]").map((h) => [h.url, h.visits]));
+  console.log("방문 횟수:", JSON.stringify(visits));
+  result("방문 횟수는 들어간 만큼만 센다", visits[`${A}/alpha`] === 2 && visits[`${A}/beta`] === 1 && visits[`${C}/other`] === 1 && visits[`${C}/frame`] === 1);
 
   // 1) 주소창 추천에서 × 로 한 주소만 지운다
   const typeAddr = (q) => ev((v) => {

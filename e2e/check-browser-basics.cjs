@@ -31,11 +31,13 @@ const srv = http.createServer((req, res) => {
   const ev = (fn, arg) => page.evaluate(fn, arg);
 
   const ws = cli("ws", "add", "--path", E2E + "/repo");
-  cli("tab", "new", "--ws", ws.workspaceId, "--provider", "claude", "--title", "기본기", "--activate");
+  // 앞 실행이 남긴 같은 이름 탭과 겹치지 않게 이름을 매번 다르게 한다
+  const title = "기본기" + Date.now();
+  cli("tab", "new", "--ws", ws.workspaceId, "--provider", "claude", "--title", title, "--activate");
   await page.waitForTimeout(2000);
 
   // ---------- 1) 강력 새로고침 ----------
-  cli("browser", "open", "--tab", "기본기", "--url", `${base}/cached`);
+  cli("browser", "open", "--tab", title, "--url", `${base}/cached`);
   await page.waitForTimeout(3500);
   const first = hits;
   // 보통 새로고침: 캐시가 살아 있으면 서버까지 안 온다
