@@ -13,7 +13,7 @@ import type { ChatImageDto } from "@shared/ipc";
 import { PICKER_STOP_SCRIPT, formatNotesAttachment, pickerRelabelScript, type PickedElement, dataUrlImage, elementImage, formatElementAttachment, formatSource, parsePickMessage, pickerScript } from "@shared/element-pick";
 import { DIAG_MAX_CONSOLE, formatDiagnostics, pushCapped, type ConsoleLine } from "@shared/browser-diagnostics";
 import { DEFAULT_VIEWPORT, VIEWPORTS, nextZoom, type ViewportId, viewportById, zoomLevelToPercent } from "../browser-viewport";
-import { frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "@shared/browser-history";
+import { forgetOrigin, forgetUrl, frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "@shared/browser-history";
 import { browserErrorKind, type BrowserErrorKind } from "../browser-error";
 import type { BrowserEventDto } from "@shared/ipc";
 import { kvGet, kvSet } from "../kv-store";
@@ -27,11 +27,13 @@ function readHistory(): HistoryEntry[] {
   if (!historyCache) historyCache = parseHistory(kvGet(HISTORY_KEY));
   return historyCache;
 }
-function addHistory(url: string): void {
-  const next = recordVisit(readHistory(), url, Date.now());
-  if (next === historyCache) return;
+function saveHistory(next: HistoryEntry[]): void {
   historyCache = next;
   kvSet(HISTORY_KEY, JSON.stringify(next));
+}
+function addHistory(url: string): void {
+  const next = recordVisit(readHistory(), url, Date.now());
+  if (next !== historyCache) saveHistory(next);
 }
 
 /** 메모 모음에 담을 수 있는 요소 수. 많아지면 한 번에 보내는 요청이 흐려진다. */
@@ -807,6 +809,13 @@ export function BrowserPane({
     return () => window.sudal.browser.register(chatTabId, null, "");
   }, [chatTabId, visible, url, mounted, attached]);
 
+  // 기록은 모듈에 한 벌만 둔다 — 지운 뒤 다시 그리게 하는 신호만 상태로 둔다
+  const [, setHistoryRev] = useState(0);
+  const [clearAsk, setClearAsk] = useState(false);
+  const forget = (next: HistoryEntry[]) => {
+    saveHistory(next);
+    setHistoryRev((n) => n + 1);
+  };
   // 자동완성 후보. 목록이 열려 있을 때만 계산한다.
   const sugs = sugOpen ? suggest(readHistory(), input) : [];
 
@@ -886,6 +895,13 @@ export function BrowserPane({
                 return;
               }
               if (!sugOpen || sugs.length === 0) return;
+              // 크롬처럼 Shift+Delete 로 고른 추천을 기록에서 지운다
+              if (e.key === "Delete" && e.shiftKey && sugAt >= 0 && sugs[sugAt]) {
+                e.preventDefault();
+                forget(forgetUrl(readHistory(), sugs[sugAt].url));
+                setSugAt((i) => Math.min(i, sugs.length - 2));
+                return;
+              }
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setSugAt((i) => (i + 1) % sugs.length);
@@ -928,7 +944,7 @@ export function BrowserPane({
               data-browser-suggest
             >
               {sugs.map((h, k) => (
-                <li key={h.url}>
+                <li key={h.url} className={`group flex items-center ${k === sugAt ? "bg-panel-2 text-fg" : "text-muted hover:bg-panel-2/60"}`} onMouseEnter={() => setSugAt(k)}>
                   <button
                     type="button"
                     // blur 로 목록이 닫히기 전에 눌리도록 mousedown 에서 처리한다.
@@ -938,14 +954,24 @@ export function BrowserPane({
                       setSugAt(-1);
                       go(h.url);
                     }}
-                    onMouseEnter={() => setSugAt(k)}
-                    className={`flex w-full items-center gap-2 px-2.5 py-1 text-left text-[12px] ${
-                      k === sugAt ? "bg-panel-2 text-fg" : "text-muted hover:bg-panel-2/60"
-                    }`}
+                    className="flex min-w-0 flex-1 items-center gap-2 py-1 pl-2.5 text-left text-[12px]"
                   >
                     <Icon name="clock" size={11} className="shrink-0 opacity-60" />
                     <span className="truncate">{h.url}</span>
-                    {h.visits > 1 && <span className="ml-auto shrink-0 text-[10px] opacity-50">{t("panel.browser.visits", { count: h.visits })}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    // 입력창 포커스를 잃지 않게 mousedown 에서 처리한다(잃으면 목록이 닫힌다)
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      forget(forgetUrl(readHistory(), h.url));
+                    }}
+                    className="mx-1 shrink-0 rounded p-0.5 text-muted-2 opacity-0 hover:bg-panel hover:text-fg group-hover:opacity-100"
+                    title={t("panel.browser.forget")}
+                    aria-label={t("panel.browser.forget")}
+                    data-browser-suggest-forget
+                  >
+                    <Icon name="x" size={11} />
                   </button>
                 </li>
               ))}
@@ -1195,23 +1221,56 @@ export function BrowserPane({
                 {frequent.map((f) => {
                   const p = urlParts(f.url);
                   return (
-                    <button
-                      key={f.origin}
-                      onClick={() => go(f.url)}
-                      className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[12px] hover:bg-panel-2"
-                      title={f.url}
-                    >
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-[11px] font-semibold uppercase text-muted">
-                        {p.local ? <Icon name="laptop" size={12} /> : p.host.replace(/^www\./, "").charAt(0)}
-                      </span>
-                      <span className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap">
-                        <span className="text-fg">{p.host}</span>
-                        <span className="truncate text-muted-2">{p.rest}</span>
-                      </span>
-                      <span className="shrink-0 text-[10.5px] text-muted-2">{t("panel.browser.visits", { count: f.visits })}</span>
-                    </button>
+                    <div key={f.origin} className="group flex items-center rounded-lg hover:bg-panel-2">
+                      <button
+                        onClick={() => go(f.url)}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left text-[12px]"
+                        title={f.url}
+                      >
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-[11px] font-semibold uppercase text-muted">
+                          {p.local ? <Icon name="laptop" size={12} /> : p.host.replace(/^www\./, "").charAt(0)}
+                        </span>
+                        <span className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+                          <span className="text-fg">{p.host}</span>
+                          <span className="truncate text-muted-2">{p.rest}</span>
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => forget(forgetOrigin(readHistory(), f.origin))}
+                        className="mr-1.5 shrink-0 rounded p-1 text-muted-2 opacity-0 hover:bg-panel hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
+                        title={t("panel.browser.forgetSite", { host: p.host })}
+                        aria-label={t("panel.browser.forgetSite", { host: p.host })}
+                        data-browser-frequent-forget
+                      >
+                        <Icon name="x" size={12} />
+                      </button>
+                    </div>
                   );
                 })}
+                <div className="mt-2 flex justify-end gap-2 px-2 text-[11px]">
+                  {clearAsk ? (
+                    <>
+                      <span className="text-muted">{t("panel.browser.clearHistoryAsk")}</span>
+                      <button
+                        onClick={() => {
+                          forget([]);
+                          setClearAsk(false);
+                        }}
+                        className="font-medium text-err hover:underline"
+                        data-browser-clear-history-yes
+                      >
+                        {t("panel.browser.clearHistoryYes")}
+                      </button>
+                      <button onClick={() => setClearAsk(false)} className="text-muted hover:text-fg">
+                        {t("panel.browser.clearHistoryNo")}
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => setClearAsk(true)} className="text-muted-2 hover:text-fg hover:underline" data-browser-clear-history>
+                      {t("panel.browser.clearHistory")}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             <div className="mono mt-6 text-[10.5px] text-muted-2">{t("panel.browser.emptyKeys")}</div>

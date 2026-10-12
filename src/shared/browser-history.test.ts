@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HISTORY_MAX, frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "./browser-history";
+import { HISTORY_MAX, forgetOrigin, forgetUrl, frequentSites, parseHistory, recordVisit, suggest, type HistoryEntry } from "./browser-history";
 
 const e = (url: string, at: number, visits = 1): HistoryEntry => ({ url, at, visits });
 
@@ -75,4 +75,11 @@ test("frequentSites: 출처별로 묶고, 그 안에서 가장 많이 간 주소
     { origin: "http://localhost:5173", url: "http://localhost:5173/", visits: 1 },
   ]);
   assert.equal(frequentSites(h, 1).length, 1);
+});
+
+test("forgetUrl·forgetOrigin: 그 주소만, 그 출처만 지운다", () => {
+  const h = [e("http://localhost:5173/a", 3), e("http://localhost:5173/b", 2), e("http://localhost:3000/", 1), e("https://example.com/", 0)];
+  assert.deepEqual(forgetUrl(h, "http://localhost:5173/a").map((x) => x.url), ["http://localhost:5173/b", "http://localhost:3000/", "https://example.com/"]);
+  // 포트가 다르면 다른 출처다
+  assert.deepEqual(forgetOrigin(h, "http://localhost:5173").map((x) => x.url), ["http://localhost:3000/", "https://example.com/"]);
 });

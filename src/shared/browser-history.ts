@@ -23,6 +23,22 @@ export function recordVisit(history: HistoryEntry[], url: string, at: number): H
   return [{ url: u, at, visits: (prev?.visits ?? 0) + 1 }, ...rest].slice(0, HISTORY_MAX);
 }
 
+/** 그 주소 하나를 기록에서 지운다(주소창 추천의 ×). */
+export function forgetUrl(history: HistoryEntry[], url: string): HistoryEntry[] {
+  return history.filter((h) => h.url !== url);
+}
+
+/** 그 출처(호스트+포트)의 주소를 모두 지운다(빈 탭 자주 간 곳의 × — 그 줄은 출처로 묶은 것이다). */
+export function forgetOrigin(history: HistoryEntry[], origin: string): HistoryEntry[] {
+  return history.filter((h) => {
+    try {
+      return new URL(h.url).origin !== origin;
+    } catch {
+      return true;
+    }
+  });
+}
+
 /** 검색어와 얼마나 맞나. 높을수록 위. 안 맞으면 0. */
 function score(entry: HistoryEntry, q: string): number {
   const url = entry.url.toLowerCase();

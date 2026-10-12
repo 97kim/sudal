@@ -76,7 +76,6 @@ const srv = http.createServer((req, res) => {
   const rows = await ev(() => [...document.querySelectorAll("[data-browser-suggest] button")].map((b) => b.textContent.trim()));
   console.log("자동완성:", JSON.stringify(sug), rows);
   console.log("RESULT (기록에서 자동완성이 뜬다):", rows.some((r) => r.includes("alpha")) ? "PASS" : "FAIL");
-  console.log("RESULT (자주 간 곳에 횟수가 보인다):", rows.some((r) => /\d+회/.test(r)) ? "PASS" : "FAIL");
 
   // ---------- 3) 닫은 탭 다시 열기 ----------
   await ev(() => document.querySelector("[data-browser-url]")?.blur());
