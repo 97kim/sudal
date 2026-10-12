@@ -41,6 +41,65 @@ const TRAY_MAX = 10;
 /** 입력창이 받는 이미지 수(Composer 의 MAX_IMAGES)와 같다. */
 const NOTES_MAX_IMAGES = 4;
 
+// 빈 탭 "자주 간 곳" 에 그릴 파비콘. 출처(호스트+포트)마다 마지막으로 본 파비콘 주소만 둔다 — 그림은 그릴 때 main 이 받아 준다.
+const FAVICONS_KEY = "browser.favicons";
+const FAVICONS_MAX = 200;
+function readFavicons(): Record<string, string> {
+  try {
+    const v = JSON.parse(kvGet(FAVICONS_KEY) ?? "{}");
+    return v && typeof v === "object" ? (v as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+function rememberFavicon(pageUrl: string, iconUrl: string): void {
+  let origin: string;
+  try {
+    origin = new URL(pageUrl).origin;
+  } catch {
+    return;
+  }
+  if (!/^https?:/.test(origin)) return;
+  const all = readFavicons();
+  if (all[origin] === iconUrl) return;
+  // 최근 것이 뒤로 가게 지웠다 넣고, 넘치면 앞(오래된 것)부터 버린다
+  delete all[origin];
+  all[origin] = iconUrl;
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - FAVICONS_MAX))) delete all[k];
+  kvSet(FAVICONS_KEY, JSON.stringify(all));
+}
+/** 기록을 지울 때 그 출처(없으면 전부)의 파비콘 주소도 지운다 — 어디를 갔는지 남지 않게. */
+function forgetFavicons(origin: string | null): void {
+  if (origin === null) return kvSet(FAVICONS_KEY, null);
+  const all = readFavicons();
+  if (!(origin in all)) return;
+  delete all[origin];
+  kvSet(FAVICONS_KEY, JSON.stringify(all));
+}
+
+/** 자주 간 곳 한 줄의 아이콘. 파비콘을 받으면 그것, 못 받거나 받는 중이면 글자(개발 서버는 노트북). */
+function SiteIcon({ origin, local, letter }: { origin: string; local: boolean; letter: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    const icon = readFavicons()[origin];
+    if (!icon) return;
+    let alive = true;
+    void window.sudal.browser
+      .favicon(icon)
+      .then((d) => alive && setSrc(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [origin]);
+  return (
+    <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-[11px] font-semibold uppercase text-muted">
+      {src ? <img src={src} alt="" className="size-4" /> : local ? <Icon name="laptop" size={12} /> : letter}
+    </span>
+  );
+}
+
 // 보기 폭은 앱 전체에 하나 — 폰 폭으로 확인하던 중이면 새 탭도 그 폭으로 연다.
 const VIEWPORT_KEY = "browser.viewport";
 // 확대 배율은 크롬처럼 호스트마다. 0(100%)은 지워서 기본으로 돌린다.
@@ -425,6 +484,7 @@ export function BrowserPane({
       const list = (e as Event & { favicons?: string[] }).favicons ?? [];
       const first = list.find((u) => /^https?:\/\//i.test(u));
       if (!first) return onFaviconRef.current?.(null);
+      rememberFavicon(el.getURL(), first);
       void window.sudal.browser
         .favicon(first)
         .then((d) => onFaviconRef.current?.(d))
@@ -1227,16 +1287,17 @@ export function BrowserPane({
                         className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left text-[12px]"
                         title={f.url}
                       >
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-[11px] font-semibold uppercase text-muted">
-                          {p.local ? <Icon name="laptop" size={12} /> : p.host.replace(/^www\./, "").charAt(0)}
-                        </span>
+                          <SiteIcon origin={f.origin} local={p.local} letter={p.host.replace(/^www\./, "").charAt(0)} />
                         <span className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap">
                           <span className="text-fg">{p.host}</span>
                           <span className="truncate text-muted-2">{p.rest}</span>
                         </span>
                       </button>
                       <button
-                        onClick={() => forget(forgetOrigin(readHistory(), f.origin))}
+                        onClick={() => {
+                          forgetFavicons(f.origin);
+                          forget(forgetOrigin(readHistory(), f.origin));
+                        }}
                         className="mr-1.5 shrink-0 rounded p-1 text-muted-2 opacity-0 hover:bg-panel hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
                         title={t("panel.browser.forgetSite", { host: p.host })}
                         aria-label={t("panel.browser.forgetSite", { host: p.host })}
@@ -1253,6 +1314,7 @@ export function BrowserPane({
                       <span className="text-muted">{t("panel.browser.clearHistoryAsk")}</span>
                       <button
                         onClick={() => {
+                          forgetFavicons(null);
                           forget([]);
                           setClearAsk(false);
                         }}

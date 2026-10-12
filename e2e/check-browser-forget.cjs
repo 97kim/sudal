@@ -7,8 +7,14 @@ const { chromium } = require("playwright-core");
 
 let __fails = 0;
 const result = (name, ok, note) => { if (!ok) __fails += 1; console.log(`RESULT (${name}):`, ok ? "PASS" : `FAIL${note ? " " + note : ""}`); };
+// 1x1 PNG — 빈 탭 자주 간 곳에 파비콘이 그려지는지 본다
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const serve = () => new Promise((r) => {
-  const s = http.createServer((req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(`<!doctype html><title>${req.url}</title>${req.url}`); });
+  const s = http.createServer((req, res) => {
+    if (req.url === "/icon.png") { res.writeHead(200, { "content-type": "image/png" }); return res.end(PNG); }
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(`<!doctype html><link rel="icon" href="/icon.png"><title>${req.url}</title>${req.url}`);
+  });
   s.listen(0, "127.0.0.1", () => r(s));
 });
 
@@ -61,6 +67,11 @@ const serve = () => new Promise((r) => {
   await page.waitForTimeout(1500);
   const sites = () => ev(() => [...document.querySelectorAll("[data-browser-frequent] [data-browser-frequent-forget]")].map((b) => b.getAttribute("title")));
   const s1 = await sites();
+  const imgs = await ev(() => document.querySelectorAll("[data-browser-frequent] img[src^='data:']").length);
+  const noIcon = await ev(() => [...document.querySelectorAll("[data-browser-frequent] [data-browser-frequent-forget]")].filter((b) => !b.parentElement.querySelector("img")).map((b) => b.getAttribute("title")));
+  // 이 시험이 연 두 서버(A·C)는 파비콘을 준다 — 앞 시험이 남긴 탭이 꺼진 서버를 다시 열면 그건 글자로 남는 게 맞다
+  const port = (u) => new URL(u).port;
+  result("이 시험의 사이트에는 파비콘이 그려진다", !noIcon.some((t) => t.includes(port(A)) || t.includes(port(C))), `파비콘 없음: ${JSON.stringify(noIcon)} · ${imgs}/${s1.length}`);
   const cPort = String(c.address().port);
   await ev((port) => {
     const btn = [...document.querySelectorAll("[data-browser-frequent-forget]")].find((b) => b.getAttribute("title")?.includes(port));
