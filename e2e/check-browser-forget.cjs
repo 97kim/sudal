@@ -13,6 +13,9 @@ const serve = () => new Promise((r) => {
   const s = http.createServer((req, res) => {
     if (req.url === "/icon.png") { res.writeHead(200, { "content-type": "image/png" }); return res.end(PNG); }
     // iframe 이 혼자 세 번 다시 불린다 — 로딩이 끝날 때마다 방문을 세면 안 된다
+    // iframe 안에서 해시·pushState 로만 주소가 바뀐다 — 부모 페이지 방문으로 세면 안 된다
+    if (req.url === "/hashframe") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<!doctype html><title>hashframe</title><iframe src="/hashinner"></iframe>`); }
+    if (req.url === "/hashinner") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<!doctype html><script>let n=0;const t=setInterval(()=>{n++;if(n%2)location.hash="#"+n;else history.pushState(null,"","/hashinner?"+n);if(n>=4)clearInterval(t)},300)</script>inner`); }
     if (req.url === "/frame") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(`<!doctype html><title>frame</title><iframe id=f src="/inner"></iframe><script>let n=0;const t=setInterval(()=>{f.src="/inner?"+(++n);if(n>=3)clearInterval(t)},400)</script>`); }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(`<!doctype html><link rel="icon" href="/icon.png"><title>${req.url}</title>${req.url}`);
@@ -40,9 +43,9 @@ const serve = () => new Promise((r) => {
   await page.waitForTimeout(300);
   cli("browser", "open", "--tab", title, "--url", `${A}/start`);
   await page.waitForTimeout(3000);
-  for (const u of [`${A}/alpha`, `${A}/beta`, `${A}/alpha`, `${C}/other`, `${C}/frame`]) {
+  for (const u of [`${A}/alpha`, `${A}/beta`, `${A}/alpha`, `${C}/other`, `${A}/hashframe`, `${C}/frame`]) {
     await ev((x) => [...document.querySelectorAll("webview")].find((w) => w.getBoundingClientRect().width > 50)?.loadURL(x).catch(() => {}), u);
-    await page.waitForTimeout(u.endsWith("/frame") ? 2500 : 1500);
+    await page.waitForTimeout(/frame$/.test(u) ? 2500 : 1500);
   }
   // 새로고침은 한 번 들어간 것으로 센다(iframe 이 혼자 다시 불리는 것은 세지 않는다)
   await ev(() => [...document.querySelectorAll("webview")].find((w) => w.getBoundingClientRect().width > 50)?.reload());
@@ -51,7 +54,7 @@ const serve = () => new Promise((r) => {
   const state = () => JSON.parse(require("fs").readFileSync(E2E + "/userdata/renderer-state.json", "utf8"));
   const visits = Object.fromEntries(JSON.parse(state()["browser.history"] ?? "[]").map((h) => [h.url, h.visits]));
   console.log("방문 횟수:", JSON.stringify(visits));
-  result("방문 횟수는 들어간 만큼만 센다(새로고침은 한 번)", visits[`${A}/alpha`] === 2 && visits[`${A}/beta`] === 1 && visits[`${C}/other`] === 1 && visits[`${C}/frame`] === 2);
+  result("방문 횟수는 들어간 만큼만 센다(새로고침은 한 번)", visits[`${A}/alpha`] === 2 && visits[`${A}/beta`] === 1 && visits[`${C}/other`] === 1 && visits[`${C}/frame`] === 2 && visits[`${A}/hashframe`] === 1);
   const favs = JSON.parse(state()["browser.favicons"] ?? "{}");
   result("파비콘은 주소가 아니라 받아 온 그림으로 둔다", Object.keys(favs).length > 0 && Object.values(favs).every((v) => String(v).startsWith("data:image/")), JSON.stringify(Object.values(favs).map((v) => String(v).slice(0, 20))));
 

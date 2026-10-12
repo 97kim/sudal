@@ -71,6 +71,12 @@ function readFavicons(): Record<string, string> {
     return {};
   }
 }
+/** 읽을 때 거른 것을 그대로 쓴다 — 예전 판의 주소 값은 이때 저장소에서도 빠진다. */
+function writeFavicons(all: Record<string, string>): void {
+  kvSet(FAVICONS_KEY, Object.keys(all).length > 0 ? JSON.stringify(all) : null);
+}
+/** 출처마다 가장 최근에 시작한 파비콘 요청 번호. 패널이 여럿이어도 늦게 끝난 앞 요청이 새 그림을 덮지 않게 모듈에 한 벌 둔다. */
+const faviconSeq = new Map<string, number>();
 function rememberFavicon(pageUrl: string, dataUrl: string): void {
   const origin = originOf(pageUrl);
   if (!origin || !dataUrl.startsWith("data:image/") || dataUrl.length > FAVICON_DATA_MAX) return;
@@ -83,15 +89,22 @@ function rememberFavicon(pageUrl: string, dataUrl: string): void {
   all[origin] = dataUrl;
   const keys = Object.keys(all);
   for (const k of keys.slice(0, Math.max(0, keys.length - FAVICONS_MAX))) delete all[k];
-  kvSet(FAVICONS_KEY, JSON.stringify(all));
+  writeFavicons(all);
 }
 /** 기록을 지울 때 그 출처(없으면 전부)의 파비콘 주소도 지운다 — 어디를 갔는지 남지 않게. */
 function forgetFavicons(origin: string | null): void {
   if (origin === null) return kvSet(FAVICONS_KEY, null);
+  // 거르기 전 원본에 있었는지로 본다 — 예전 판의 주소 값도 지워야 한다
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(kvGet(FAVICONS_KEY) ?? "{}");
+  } catch {
+    /* 망가진 값은 아래에서 다시 쓴다 */
+  }
+  if (raw && typeof raw === "object" && !(origin in raw)) return;
   const all = readFavicons();
-  if (!(origin in all)) return;
   delete all[origin];
-  kvSet(FAVICONS_KEY, JSON.stringify(all));
+  writeFavicons(all);
 }
 
 /** 주소 하나를 기록에서 지운다. 그 사이트의 마지막 주소였으면 파비콘도 지운다. */
@@ -467,11 +480,14 @@ export function BrowserPane({
     };
     // 방문은 메인 프레임이 이동할 때마다 한 번 센다(새로고침·같은 주소 다시 열기 포함, iframe 은 이 이벤트를 내지 않는다).
     // sync 는 로딩이 끝날 때도 불려서 거기서 세면 한 번 들어간 곳이 여러 번 쌓인다. http(s) 가 아니면 recordVisit 이 거른다.
-    const onNavigated = () => {
-      try {
-        addHistory(el.getURL());
-      } catch {
-        /* 무시 */
+    const onNavigated = (e: Event) => {
+      // did-navigate-in-page 는 iframe 안의 해시·pushState 에도 온다 — 그건 이 페이지에 들어간 것이 아니다
+      if ((e as Event & { isMainFrame?: boolean }).isMainFrame !== false) {
+        try {
+          addHistory(el.getURL());
+        } catch {
+          /* 무시 */
+        }
       }
       sync();
     };
@@ -507,13 +523,16 @@ export function BrowserPane({
       const seq = ++favSeq;
       if (!first) return onFaviconRef.current?.(null);
       const pageUrl = el.getURL();
+      const origin = originOf(pageUrl);
+      const originSeq = (origin ? faviconSeq.get(origin) ?? 0 : 0) + 1;
+      if (origin) faviconSeq.set(origin, originSeq);
       void window.sudal.browser
         .favicon(first)
         .then((d) => {
           // 앞 페이지의 늦은 응답이 지금 페이지 것을 덮지 않게 가장 최근 요청만 쓴다
           if (seq !== favSeq) return;
           // 받은 그림만 기억한다 — 지정이 없는 페이지의 기본 /favicon.ico 처럼 그림이 없는 주소가 앞서 기억한 것을 덮지 않게
-          if (d) rememberFavicon(pageUrl, d);
+          if (d && (!origin || faviconSeq.get(origin) === originSeq)) rememberFavicon(pageUrl, d);
           onFaviconRef.current?.(d);
         })
         .catch(() => seq === favSeq && onFaviconRef.current?.(null));
@@ -913,6 +932,10 @@ export function BrowserPane({
   };
   // 자동완성 후보. 목록이 열려 있을 때만 계산한다.
   const sugs = sugOpen ? suggest(readHistory(), input) : [];
+  // 다른 패널에서 기록을 지워 목록이 줄었으면 고른 자리를 목록 안으로 당긴다(넘친 채면 Enter 가 입력값으로 간다)
+  useEffect(() => {
+    if (sugAt >= sugs.length) setSugAt(sugs.length - 1);
+  }, [sugs.length, sugAt]);
 
   const vp = viewportById(viewport);
   const frequent = url ? [] : frequentSites(readHistory());
