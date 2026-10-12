@@ -523,7 +523,8 @@ function handleMessage(s: LiveSession, message: SDKMessage) {
       const tid = (message as { task_id?: unknown }).task_id;
       const late = typeof run === "string" && typeof tid === "string" && isLateRun(s.taskRuns.get(tid), run);
       if (typeof run === "string" && typeof tid === "string" && !late) rememberRun(s, tid, run);
-      const toolUse = parseTaskToolUseId(message);
+      // 이전 회차의 늦은 신호로 지금 회차가 띄운 tool_use 를 덮어쓰지 않는다(재개한 작업 등)
+      const toolUse = late ? null : parseTaskToolUseId(message);
       const toolUseChanged = !!toolUse && s.taskToolUseIds.get(toolUse.id) !== toolUse.toolUseId;
       if (toolUse) rememberToolUseId(s, toolUse.id, toolUse.toolUseId);
       // 이전 회차의 늦은 신호로 지금 회차의 포그라운드/백그라운드 판정을 바꾸지 않는다

@@ -29,11 +29,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const job = jobs.find((j) => j.label === "general-purpose");
   result("백그라운드 작업에 띄운 tool_use 의 id 가 붙는다", !!job?.toolUseId, JSON.stringify(job));
 
-  const before = await page.evaluate((id) => document.querySelector(`[data-tool-id="${id}"]`)?.getAttribute("data-tool-open"), job?.toolUseId);
+  const before = await page.evaluate((id) => document.querySelector(`[data-block-id="${id}"] [data-tool-card]`)?.getAttribute("data-tool-open"), job?.toolUseId);
   await page.click("[data-background-job]");
   await sleep(500);
   const after = await page.evaluate((id) => {
-    const el = document.querySelector(`[data-tool-id="${id}"]`);
+    const el = document.querySelector(`[data-block-id="${id}"] [data-tool-card]`);
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { open: el.getAttribute("data-tool-open"), inView: rect.top >= 0 && rect.top < window.innerHeight };
@@ -41,6 +41,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log("클릭 전 open:", before, "클릭 후:", JSON.stringify(after));
   result("줄을 누르면 접혀 있던 카드가 펼쳐진다", before === "false" && after?.open === "true");
   result("그 카드가 화면 안으로 스크롤된다", !!after?.inView);
+
+  // 하위 에이전트가 아직 돌고 있다 — 그 사이 온 새 소식이 바닥에 붙어 있던 목록을 다시 끌어내리면 안 된다
+  await sleep(4000);
+  const stillInView = await page.evaluate((id) => {
+    const el = document.querySelector(`[data-block-id="${id}"] [data-tool-card]`);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return rect.top >= 0 && rect.top < window.innerHeight;
+  }, job?.toolUseId);
+  result("새 소식이 와도 보던 자리가 유지된다", !!stillInView, `stillInView=${stillInView}`);
 
   await page.screenshot({ path: E2E + "/shot-bg-job-jump.png" });
   await b.close();

@@ -71,6 +71,8 @@ export function MessageList({
     );
     if (!el) return;
     clearReveal();
+    // 프로그램이 올린 스크롤이라도 보고 있던 자리다. 바닥에 붙어 있었다면 바로 뒤의 응답·백그라운드 소식이 다시 끌어내린다.
+    release();
     el.scrollIntoView({ block: "center" });
     el.classList.add("reveal-flash");
     const t = setTimeout(() => el.classList.remove("reveal-flash"), 1600);

@@ -14,19 +14,23 @@ import { useTranslation } from "react-i18next";
 import { jobRunningLabel, jobsSummaryLabel, nestJobs, type BackgroundJobDto } from "@shared/background-jobs";
 import { Icon } from "./Icon";
 import { useNow } from "../hooks/useNow";
+import { requestReveal } from "../reveal";
 
 /** 펼쳤을 때의 최대 높이(줄이 많아도 대화를 가리지 않게). 넘치면 그 안에서 스크롤한다. */
 const LIST_MAX_H = "max-h-32";
 
-/** 백그라운드 작업 줄을 누르면 띄운 도구 카드로 간다. 접혀 있으면 펼쳐서 로그가 바로 보이게 한다. */
-function jumpToToolCard(toolUseId: string): void {
-  const el = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(toolUseId)}"]`);
-  if (!el) return;
-  if (el.getAttribute("data-tool-open") === "false") el.querySelector<HTMLElement>("[data-tool-toggle]")?.click();
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
+/**
+ * 백그라운드 작업 줄을 누르면 띄운 도구 카드로 간다. 스크롤·바닥 따라가기 해제·강조는 검색 결과 이동과 같은
+ * 통로(reveal)를 쓴다 — 직접 scrollIntoView 하면 바닥에 붙어 있던 목록이 다음 소식에 다시 끌려 내려간다.
+ * 접힌 카드까지는 reveal 이 못 여니, 토글 버튼만 따로 눌러 준다.
+ */
+function jumpToJob(tabId: string, toolUseId: string): void {
+  requestReveal(tabId, toolUseId);
+  const wrap = document.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(toolUseId)}"]`);
+  wrap?.querySelector<HTMLElement>('[data-tool-open="false"] [data-tool-toggle]')?.click();
 }
 
-export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
+export function BackgroundJobsBar({ tabId, sessionId }: { tabId: string; sessionId: string | null }) {
   const { t } = useTranslation();
   const [jobs, setJobs] = useState<BackgroundJobDto[]>([]);
   const [open, setOpen] = useState(false);
@@ -50,7 +54,7 @@ export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
   return (
     <div className="flex flex-col items-center gap-1 px-4 pb-1.5 pt-2" data-background-jobs={mine.length}>
       {mine.length === 1 ? (
-        <JobLine job={mine[0]} now={now} />
+        <JobLine tabId={tabId} job={mine[0]} now={now} />
       ) : (
         <>
           <button
@@ -70,7 +74,7 @@ export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
             <div className={`flex w-full max-w-[680px] flex-col gap-1 overflow-y-auto rounded-lg bg-panel-2 px-3 py-2 ${LIST_MAX_H}`}>
               {/* 하위 에이전트가 띄운 명령은 그 에이전트 아래에 들여 쓴다 */}
               {nestJobs(mine).map(({ job, depth }) => (
-                <JobLine key={job.id} job={job} now={now} plain depth={depth} />
+                <JobLine key={job.id} tabId={tabId} job={job} now={now} plain depth={depth} />
               ))}
             </div>
           )}
@@ -87,7 +91,7 @@ function Spinner() {
 }
 
 /** 한 줄. 접힌 줄(알약)과 펼친 목록에서 같이 쓴다 — 목록 안에서는 배경이 이미 있으므로 알약을 입히지 않는다. */
-function JobLine({ job, now, plain = false, depth = 0 }: { job: BackgroundJobDto; now: number; plain?: boolean; depth?: number }) {
+function JobLine({ tabId, job, now, plain = false, depth = 0 }: { tabId: string; job: BackgroundJobDto; now: number; plain?: boolean; depth?: number }) {
   const { t } = useTranslation();
   const Wrap = job.toolUseId ? "button" : "div";
   return (
@@ -97,7 +101,7 @@ function JobLine({ job, now, plain = false, depth = 0 }: { job: BackgroundJobDto
       data-background-job={job.id}
       data-background-job-depth={depth}
       title={job.toolUseId ? t("chat.background.jumpHint") : undefined}
-      {...(job.toolUseId ? { type: "button" as const, onClick: () => jumpToToolCard(job.toolUseId as string) } : {})}
+      {...(job.toolUseId ? { type: "button" as const, onClick: () => jumpToJob(tabId, job.toolUseId as string) } : {})}
     >
       {depth > 0 && <span className="shrink-0 opacity-50">└</span>}
       <Spinner />
