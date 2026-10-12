@@ -95,6 +95,15 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
               label={r.limit.modelWeekly.label}
             />
           )}
+          {r.limit.overage?.enabled && (
+            // 한도에 닿아도 결제로 이어 쓸 수 있는지 — 다 쓴 때·쓰는 중일 때 눈에 띄게
+            <span
+              className={`text-[10px] ${r.limit.overage.status === "rejected" ? "text-err" : r.limit.overage.inUse ? "text-warn" : "text-muted-2"}`}
+              data-limits-overage={r.limit.overage.status === "rejected" ? "rejected" : r.limit.overage.inUse ? "in-use" : "enabled"}
+            >
+              {t(r.limit.overage.status === "rejected" ? "nav.limits.overageRejected" : r.limit.overage.inUse ? "nav.limits.overageInUse" : "nav.limits.overageOn")}
+            </span>
+          )}
         </div>
       ))}
     </button>

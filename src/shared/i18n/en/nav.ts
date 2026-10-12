@@ -83,6 +83,9 @@ export const nav: DeepPartial<typeof ko> = {
     used: "{{percent}}% used",
     windowTitle: "{{label}} window · {{status}}",
     windowTitleReset: "{{label}} window · {{status}} · resets {{date}} {{time}}",
+    overageOn: "Extra usage on",
+    overageInUse: "Using extra usage",
+    overageRejected: "Extra usage used up",
   },
   empty: {
     newWorkspace: "New workspace",

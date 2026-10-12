@@ -413,6 +413,7 @@ export function parseClaudeRateLimit(
     ? { ...modelBucket, label: MODEL_WINDOW_LABEL.seven_day_overage_included }
     : null;
   const rejected = i.status === "rejected" && typeof i.resetsAt === "number" ? i.resetsAt : undefined;
+  const overage = claudeOverage(i);
   if (!session && !weekly && !modelWeekly) {
     const type = typeof i.rateLimitType === "string" ? i.rateLimitType : "";
     // 거절된 창은 utilization 이 없어도 다 쓴 것이다. 그 창을 100% 로 채워 목록에서 사라지지 않게 한다.
@@ -426,10 +427,24 @@ export function parseClaudeRateLimit(
     else if (type.startsWith("seven_day")) weekly = single;
   }
   if (!session && !weekly && !modelWeekly) {
-    // 창 정보 없이 거절만 온 경우에도 재시도 예약은 할 수 있어야 한다.
-    return rejected ? { session: null, weekly: null, modelWeekly: null, observedAt, rejectedResetsAt: rejected } : null;
+    // 창 정보 없이 거절만 온 경우에도 재시도 예약은 할 수 있어야 한다. 추가 사용량 소식만 와도 남긴다.
+    if (!rejected && !overage) return null;
+    return { session: null, weekly: null, modelWeekly: null, observedAt, ...(rejected ? { rejectedResetsAt: rejected } : {}), ...(overage ? { overage } : {}) };
   }
-  return { session, weekly, modelWeekly, observedAt, ...(rejected ? { rejectedResetsAt: rejected } : {}) };
+  return { session, weekly, modelWeekly, observedAt, ...(rejected ? { rejectedResetsAt: rejected } : {}), ...(overage ? { overage } : {}) };
+}
+
+/** 추가 사용량 상태(SDK 0.3.295+). 켜짐 여부·쓰는 중·상태 중 하나라도 와야 만든다. */
+function claudeOverage(i: Record<string, unknown>): ProviderRateLimitDto["overage"] | undefined {
+  const status = i.overageStatus === "allowed" || i.overageStatus === "allowed_warning" || i.overageStatus === "rejected" ? i.overageStatus : undefined;
+  const inUse = i.isUsingOverage === true || i.overageInUse === true;
+  if (typeof i.overageEnabled !== "boolean" && !status && !inUse) return undefined;
+  return {
+    enabled: i.overageEnabled === true || inUse,
+    inUse,
+    ...(status ? { status } : {}),
+    ...(typeof i.overageResetsAt === "number" ? { resetsAt: i.overageResetsAt } : {}),
+  };
 }
 
 /**
@@ -447,6 +462,7 @@ export function mergeRateLimit(
     session: next.session ?? prev.session,
     weekly: next.weekly ?? prev.weekly,
     modelWeekly: next.modelWeekly ?? prev.modelWeekly,
+    ...((next.overage ?? prev.overage) ? { overage: next.overage ?? prev.overage } : {}),
   };
 }
 

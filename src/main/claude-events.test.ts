@@ -572,3 +572,16 @@ test("forkPoint: 정상 턴의 마지막 최상위 체인 항목 uuid 를 붙이
   asst("a2");
   assert.equal(result({ subtype: "error_during_execution", is_error: true }).forkPoint, undefined, "오류·중단 턴은 분기 지점이 없다");
 });
+
+test("parseClaudeRateLimit: 추가 사용량 켜짐·쓰는 중·다 씀을 읽고, 합칠 때 이전 값을 지킨다", () => {
+  const on = parseClaudeRateLimit({ status: "allowed_warning", rateLimitType: "five_hour", utilization: 0.9, resetsAt: 100, overageEnabled: true, overageStatus: "allowed" }, 1);
+  assert.deepEqual(on?.overage, { enabled: true, inUse: false, status: "allowed" });
+  const using = parseClaudeRateLimit({ status: "rejected", resetsAt: 100, isUsingOverage: true, overageStatus: "allowed_warning", overageResetsAt: 200 }, 2);
+  assert.deepEqual(using?.overage, { enabled: true, inUse: true, status: "allowed_warning", resetsAt: 200 });
+  // 추가 사용량 정보만 와도 버리지 않는다
+  assert.equal(parseClaudeRateLimit({ status: "allowed", overageEnabled: false }, 3)?.overage?.enabled, false);
+  // 예전 CLI 처럼 없으면 만들지 않는다
+  assert.equal(parseClaudeRateLimit({ status: "allowed", rateLimitType: "five_hour", utilization: 0.1, resetsAt: 1 }, 4)?.overage, undefined);
+  // 새 값에 없으면 이전 값을 그대로 둔다
+  assert.deepEqual(mergeRateLimit(on, parseClaudeRateLimit({ status: "allowed", rateLimitType: "five_hour", utilization: 0.2, resetsAt: 1 }, 5))?.overage, on?.overage);
+});

@@ -81,6 +81,9 @@ export const nav = {
     used: "{{percent}}% 사용",
     windowTitle: "{{label}} 창 · {{status}}",
     windowTitleReset: "{{label}} 창 · {{status}} · {{date}} {{time}} 초기화",
+    overageOn: "추가 사용량 켜짐",
+    overageInUse: "추가 사용량으로 쓰는 중",
+    overageRejected: "추가 사용량도 다 씀",
   },
   empty: {
     newWorkspace: "새 워크스페이스",

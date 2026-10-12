@@ -449,6 +449,8 @@ export interface ProviderRateLimitDto {
   observedAt: number;
   /** rate_limit_event 가 status "rejected" 였으면 그 리셋 시각(epoch 초). 자동 재시도 예약에 쓴다. */
   rejectedResetsAt?: number;
+  /** Claude 추가 사용량(한도에 닿아도 결제로 이어 쓰기). CLI 가 알려 줄 때만. */
+  overage?: { enabled: boolean; inUse: boolean; status?: "allowed" | "allowed_warning" | "rejected"; resetsAt?: number };
 }
 
 /** 동시 실행 상한에 걸려 기다리는 턴의 상태(status=queued). */
