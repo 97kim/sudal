@@ -44,10 +44,16 @@ const serve = () => new Promise((r) => {
     await ev((x) => [...document.querySelectorAll("webview")].find((w) => w.getBoundingClientRect().width > 50)?.loadURL(x).catch(() => {}), u);
     await page.waitForTimeout(u.endsWith("/frame") ? 2500 : 1500);
   }
+  // 새로고침은 한 번 들어간 것으로 센다(iframe 이 혼자 다시 불리는 것은 세지 않는다)
+  await ev(() => [...document.querySelectorAll("webview")].find((w) => w.getBoundingClientRect().width > 50)?.reload());
+  await page.waitForTimeout(2500);
   // 방문 횟수: 들어간 만큼만 센다(로딩이 끝날 때·iframe 이 다시 불릴 때는 세지 않는다)
-  const visits = Object.fromEntries(JSON.parse(JSON.parse(require("fs").readFileSync(E2E + "/userdata/renderer-state.json", "utf8"))["browser.history"] ?? "[]").map((h) => [h.url, h.visits]));
+  const state = () => JSON.parse(require("fs").readFileSync(E2E + "/userdata/renderer-state.json", "utf8"));
+  const visits = Object.fromEntries(JSON.parse(state()["browser.history"] ?? "[]").map((h) => [h.url, h.visits]));
   console.log("방문 횟수:", JSON.stringify(visits));
-  result("방문 횟수는 들어간 만큼만 센다", visits[`${A}/alpha`] === 2 && visits[`${A}/beta`] === 1 && visits[`${C}/other`] === 1 && visits[`${C}/frame`] === 1);
+  result("방문 횟수는 들어간 만큼만 센다(새로고침은 한 번)", visits[`${A}/alpha`] === 2 && visits[`${A}/beta`] === 1 && visits[`${C}/other`] === 1 && visits[`${C}/frame`] === 2);
+  const favs = JSON.parse(state()["browser.favicons"] ?? "{}");
+  result("파비콘은 주소가 아니라 받아 온 그림으로 둔다", Object.keys(favs).length > 0 && Object.values(favs).every((v) => String(v).startsWith("data:image/")), JSON.stringify(Object.values(favs).map((v) => String(v).slice(0, 20))));
 
   // 1) 주소창 추천에서 × 로 한 주소만 지운다
   const typeAddr = (q) => ev((v) => {
@@ -61,7 +67,12 @@ const serve = () => new Promise((r) => {
   await typeAddr("beta");
   await page.waitForTimeout(500);
   const before = await sugUrls();
-  await ev(() => document.querySelector("[data-browser-suggest] [data-browser-suggest-forget]")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+  // 키보드·보조기술은 click 만 낸다 — mousedown 없이 click 으로 지워져야 한다
+  await ev(() => {
+    const b = document.querySelector("[data-browser-suggest] [data-browser-suggest-forget]");
+    b?.focus();
+    b?.click();
+  });
   await page.waitForTimeout(400);
   const after = await sugUrls();
   console.log("추천:", before, "→", after);

@@ -27,9 +27,23 @@ function readHistory(): HistoryEntry[] {
   if (!historyCache) historyCache = parseHistory(kvGet(HISTORY_KEY));
   return historyCache;
 }
+/** 기록이 바뀌면 열린 브라우저 패널이 모두 다시 그리게 알린다(기록은 모듈에 한 벌). */
+const HISTORY_EVENT = "sudal:browser-history";
 function saveHistory(next: HistoryEntry[]): void {
   historyCache = next;
   kvSet(HISTORY_KEY, JSON.stringify(next));
+  window.dispatchEvent(new Event(HISTORY_EVENT));
+}
+function originOf(u: string): string | null {
+  try {
+    const o = new URL(u).origin;
+    return /^https?:/.test(o) ? o : null;
+  } catch {
+    return null;
+  }
+}
+function hasOrigin(origin: string): boolean {
+  return readHistory().some((h) => originOf(h.url) === origin);
 }
 function addHistory(url: string): void {
   const next = recordVisit(readHistory(), url, Date.now());
@@ -41,30 +55,32 @@ const TRAY_MAX = 10;
 /** 입력창이 받는 이미지 수(Composer 의 MAX_IMAGES)와 같다. */
 const NOTES_MAX_IMAGES = 4;
 
-// 빈 탭 "자주 간 곳" 에 그릴 파비콘. 출처(호스트+포트)마다 마지막으로 본 파비콘 주소만 둔다 — 그림은 그릴 때 main 이 받아 준다.
+// 빈 탭 "자주 간 곳" 에 그릴 파비콘. 출처(호스트+포트)마다 탭에 띄우려고 이미 받은 그림(data URL)을 둔다.
+// 주소를 두고 그릴 때 다시 받으면 빈 탭을 열기만 해도 바깥 서버에 (쿠키와 함께) 요청이 간다 — 그래서 그림을 둔다.
 const FAVICONS_KEY = "browser.favicons";
-const FAVICONS_MAX = 200;
+const FAVICONS_MAX = 60;
+/** 이보다 큰 그림은 두지 않는다(글자로 보인다). 파비콘은 보통 몇 KB 다. */
+const FAVICON_DATA_MAX = 8 * 1024;
 function readFavicons(): Record<string, string> {
   try {
     const v = JSON.parse(kvGet(FAVICONS_KEY) ?? "{}");
-    return v && typeof v === "object" ? (v as Record<string, string>) : {};
+    if (!v || typeof v !== "object") return {};
+    // 예전 판은 주소를 저장했다 — 그림(data:image/)만 받는다
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].startsWith("data:image/")));
   } catch {
     return {};
   }
 }
-function rememberFavicon(pageUrl: string, iconUrl: string): void {
-  let origin: string;
-  try {
-    origin = new URL(pageUrl).origin;
-  } catch {
-    return;
-  }
-  if (!/^https?:/.test(origin)) return;
+function rememberFavicon(pageUrl: string, dataUrl: string): void {
+  const origin = originOf(pageUrl);
+  if (!origin || !dataUrl.startsWith("data:image/") || dataUrl.length > FAVICON_DATA_MAX) return;
+  // 기록에 그 사이트가 있을 때만 — 지운 뒤 열려 있던 탭이나 늦게 온 응답이 지운 흔적을 되살리지 않게
+  if (!hasOrigin(origin)) return;
   const all = readFavicons();
-  if (all[origin] === iconUrl) return;
+  if (all[origin] === dataUrl) return;
   // 최근 것이 뒤로 가게 지웠다 넣고, 넘치면 앞(오래된 것)부터 버린다
   delete all[origin];
-  all[origin] = iconUrl;
+  all[origin] = dataUrl;
   const keys = Object.keys(all);
   for (const k of keys.slice(0, Math.max(0, keys.length - FAVICONS_MAX))) delete all[k];
   kvSet(FAVICONS_KEY, JSON.stringify(all));
@@ -78,21 +94,16 @@ function forgetFavicons(origin: string | null): void {
   kvSet(FAVICONS_KEY, JSON.stringify(all));
 }
 
+/** 주소 하나를 기록에서 지운다. 그 사이트의 마지막 주소였으면 파비콘도 지운다. */
+function forgetOneUrl(url: string): void {
+  saveHistory(forgetUrl(readHistory(), url));
+  const origin = originOf(url);
+  if (origin && !hasOrigin(origin)) forgetFavicons(origin);
+}
+
 /** 자주 간 곳 한 줄의 아이콘. 파비콘을 받으면 그것, 못 받거나 받는 중이면 글자(개발 서버는 노트북). */
 function SiteIcon({ origin, local, letter }: { origin: string; local: boolean; letter: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    const icon = readFavicons()[origin];
-    if (!icon) return;
-    let alive = true;
-    void window.sudal.browser
-      .favicon(icon)
-      .then((d) => alive && setSrc(d))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [origin]);
+  const src = readFavicons()[origin];
   return (
     <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-[11px] font-semibold uppercase text-muted">
       {src ? <img src={src} alt="" className="size-4" /> : local ? <Icon name="laptop" size={12} /> : letter}
@@ -423,9 +434,6 @@ export function BrowserPane({
         // 페이지가 실제로 바뀐 첫 순간에만 제목·파비콘을 비운다.
         const moved = u !== pageRef.current;
         if (moved) {
-          // 방문도 이때만 센다. sync 는 주소가 바뀔 때와 로딩이 끝날 때(iframe 이 다시 불러도) 불려,
-          // 여기 밖에서 세면 한 번 들어간 곳이 2회 이상으로 쌓인다. http(s) 가 아니면 recordVisit 이 거른다.
-          addHistory(u);
           const hostChanged = hostOf(u) !== hostOf(pageRef.current);
           pageRef.current = u;
           titleRef.current = "";
@@ -457,6 +465,16 @@ export function BrowserPane({
       // 한 프레임 뒤에 목표 폭을 줘야 transition 이 걸린다.
       setTimeout(() => setBar((b) => (b === "start" ? "run" : b)), 16);
     };
+    // 방문은 메인 프레임이 이동할 때마다 한 번 센다(새로고침·같은 주소 다시 열기 포함, iframe 은 이 이벤트를 내지 않는다).
+    // sync 는 로딩이 끝날 때도 불려서 거기서 세면 한 번 들어간 곳이 여러 번 쌓인다. http(s) 가 아니면 recordVisit 이 거른다.
+    const onNavigated = () => {
+      try {
+        addHistory(el.getURL());
+      } catch {
+        /* 무시 */
+      }
+      sync();
+    };
     const onStop = () => {
       setLoading(false);
       setBar("done");
@@ -482,19 +500,23 @@ export function BrowserPane({
     // 웹뷰 안을 누르면 호스트 문서에 mousedown 이 오지 않는다 — 웹뷰가 포커스를 받는 것으로 메뉴를 닫는다.
     const onFocus = () => setMenuOpen(false);
     // 파비콘은 원격 주소라 화면이 바로 못 쓴다 — main 이 받아 data URL 로 바꿔 준다.
+    let favSeq = 0;
     const onFav = (e: Event) => {
       const list = (e as Event & { favicons?: string[] }).favicons ?? [];
       const first = list.find((u) => /^https?:\/\//i.test(u));
+      const seq = ++favSeq;
       if (!first) return onFaviconRef.current?.(null);
       const pageUrl = el.getURL();
       void window.sudal.browser
         .favicon(first)
         .then((d) => {
-          // 받은 것만 기억한다 — 지정이 없는 페이지의 기본 /favicon.ico 처럼 그림이 없는 주소가 앞서 기억한 것을 덮지 않게
-          if (d) rememberFavicon(pageUrl, first);
+          // 앞 페이지의 늦은 응답이 지금 페이지 것을 덮지 않게 가장 최근 요청만 쓴다
+          if (seq !== favSeq) return;
+          // 받은 그림만 기억한다 — 지정이 없는 페이지의 기본 /favicon.ico 처럼 그림이 없는 주소가 앞서 기억한 것을 덮지 않게
+          if (d) rememberFavicon(pageUrl, d);
           onFaviconRef.current?.(d);
         })
-        .catch(() => onFaviconRef.current?.(null));
+        .catch(() => seq === favSeq && onFaviconRef.current?.(null));
     };
     el.addEventListener("page-favicon-updated", onFav);
     el.addEventListener("update-target-url", onTarget);
@@ -502,8 +524,8 @@ export function BrowserPane({
     el.addEventListener("dom-ready", onAttach);
     // did-attach 는 첫 페이지를 불러오기 전에 온다 — dom-ready 만 기다리면 첫 페이지의 window.open·바로 받기 이벤트를 놓친다.
     el.addEventListener("did-attach", onAttach);
-    el.addEventListener("did-navigate", sync);
-    el.addEventListener("did-navigate-in-page", sync);
+    el.addEventListener("did-navigate", onNavigated);
+    el.addEventListener("did-navigate-in-page", onNavigated);
     el.addEventListener("page-title-updated", onTitle);
     el.addEventListener("did-start-loading", onStart);
     el.addEventListener("did-stop-loading", onStop);
@@ -514,8 +536,8 @@ export function BrowserPane({
       el.removeEventListener("focus", onFocus);
       el.removeEventListener("dom-ready", onAttach);
       el.removeEventListener("did-attach", onAttach);
-      el.removeEventListener("did-navigate", sync);
-      el.removeEventListener("did-navigate-in-page", sync);
+      el.removeEventListener("did-navigate", onNavigated);
+      el.removeEventListener("did-navigate-in-page", onNavigated);
       el.removeEventListener("page-title-updated", onTitle);
       el.removeEventListener("did-start-loading", onStart);
       el.removeEventListener("did-stop-loading", onStop);
@@ -877,10 +899,17 @@ export function BrowserPane({
 
   // 기록은 모듈에 한 벌만 둔다 — 지운 뒤 다시 그리게 하는 신호만 상태로 둔다
   const [, setHistoryRev] = useState(0);
+  useEffect(() => {
+    const on = () => setHistoryRev((n) => n + 1);
+    window.addEventListener(HISTORY_EVENT, on);
+    return () => window.removeEventListener(HISTORY_EVENT, on);
+  }, []);
   const [clearAsk, setClearAsk] = useState(false);
-  const forget = (next: HistoryEntry[]) => {
-    saveHistory(next);
-    setHistoryRev((n) => n + 1);
+  // 추천 하나를 지운 뒤, 같은 자리(아래 것이 올라온 자리)를 고른 채로 두되 목록 끝을 넘지 않게 한다
+  const forgetSuggestion = (u: string) => {
+    forgetOneUrl(u);
+    const left = suggest(readHistory(), input).length;
+    setSugAt((i) => (left === 0 ? -1 : Math.min(i, left - 1)));
   };
   // 자동완성 후보. 목록이 열려 있을 때만 계산한다.
   const sugs = sugOpen ? suggest(readHistory(), input) : [];
@@ -948,8 +977,10 @@ export function BrowserPane({
               setSugAt(-1);
             }}
             // 클릭이 먼저 처리되도록 닫기를 미룬다 — 바로 닫으면 목록을 누를 수 없다.
-            onBlur={() => {
+            onBlur={(e) => {
               setAddrFocus(false);
+              // 키보드로 추천 목록 안(× 단추)으로 옮겨 가면 닫지 않는다
+              if ((e.relatedTarget as HTMLElement | null)?.closest?.("[data-browser-suggest]")) return;
               setTimeout(() => setSugOpen(false), 150);
             }}
             onKeyDown={(e) => {
@@ -964,8 +995,7 @@ export function BrowserPane({
               // 크롬처럼 Shift+Delete 로 고른 추천을 기록에서 지운다
               if (e.key === "Delete" && e.shiftKey && sugAt >= 0 && sugs[sugAt]) {
                 e.preventDefault();
-                forget(forgetUrl(readHistory(), sugs[sugAt].url));
-                setSugAt((i) => Math.min(i, sugs.length - 2));
+                forgetSuggestion(sugs[sugAt].url);
                 return;
               }
               if (e.key === "ArrowDown") {
@@ -1007,6 +1037,11 @@ export function BrowserPane({
           {sugs.length > 0 && (
             <ul
               className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-line bg-panel shadow-lg"
+              // 목록 안에서 밖으로 포커스가 나가면(주소창으로 돌아가는 것 말고) 닫는다
+              onBlur={(e) => {
+                const to = e.relatedTarget as HTMLElement | null;
+                if (!to?.closest?.("[data-browser-suggest]") && !to?.hasAttribute?.("data-browser-url")) setSugOpen(false);
+              }}
               data-browser-suggest
             >
               {sugs.map((h, k) => (
@@ -1027,12 +1062,10 @@ export function BrowserPane({
                   </button>
                   <button
                     type="button"
-                    // 입력창 포커스를 잃지 않게 mousedown 에서 처리한다(잃으면 목록이 닫힌다)
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      forget(forgetUrl(readHistory(), h.url));
-                    }}
-                    className="mx-1 shrink-0 rounded p-0.5 text-muted-2 opacity-0 hover:bg-panel hover:text-fg group-hover:opacity-100"
+                    // 마우스로 누를 때 입력창 포커스를 지킨다(잃으면 목록이 닫힌다). 지우기는 click 이라 키보드·보조기술로도 된다.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => forgetSuggestion(h.url)}
+                    className="mx-1 shrink-0 rounded p-0.5 text-muted-2 opacity-0 hover:bg-panel hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
                     title={t("panel.browser.forget")}
                     aria-label={t("panel.browser.forget")}
                     data-browser-suggest-forget
@@ -1301,8 +1334,8 @@ export function BrowserPane({
                       </button>
                       <button
                         onClick={() => {
+                          saveHistory(forgetOrigin(readHistory(), f.origin));
                           forgetFavicons(f.origin);
-                          forget(forgetOrigin(readHistory(), f.origin));
                         }}
                         className="mr-1.5 shrink-0 rounded p-1 text-muted-2 opacity-0 hover:bg-panel hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
                         title={t("panel.browser.forgetSite", { host: p.host })}
@@ -1320,8 +1353,8 @@ export function BrowserPane({
                       <span className="text-muted">{t("panel.browser.clearHistoryAsk")}</span>
                       <button
                         onClick={() => {
+                          saveHistory([]);
                           forgetFavicons(null);
-                          forget([]);
                           setClearAsk(false);
                         }}
                         className="font-medium text-err hover:underline"
