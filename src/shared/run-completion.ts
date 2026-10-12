@@ -66,7 +66,7 @@ export interface RunState {
   unlistedIds: string[];
 }
 
-/** 짝을 못 찾은 채 남는 id 는 이만큼만 둔다(포그라운드로 옮겨 가 알림 없이 빠진 작업 등). */
+/** 목록에서 빠졌는데 알림이 끝내 오지 않는 id(포그라운드로 옮겨 간 작업 등)는 이만큼만 둔다. */
 const PAIR_MAX = 50;
 
 export type RunVerdict =
@@ -104,19 +104,29 @@ export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
       if (sig.ids) {
         // 빠진 작업마다: 알림이 먼저 왔던 것이면(새 순서) 짝만 맞추고, 아니면(예전 순서) 이제부터 후속 턴을 기다린다
         const now = new Set(sig.ids);
+        const before = new Set(s.liveIds ?? []);
         let followUpExpected = s.followUpExpected;
         const finishedIds = [...s.finishedIds];
-        const unlistedIds = [...s.unlistedIds];
-        for (const id of s.liveIds ?? []) {
+        // 목록에 다시 들어온 작업(포그라운드였다가 다시 백그라운드로)은 앞서 빠질 때 남긴 기록을 버린다 — 그 기록이 이번 알림과 짝지어지면 안 된다
+        let unlistedIds = s.unlistedIds.filter((id) => !(now.has(id) && !before.has(id)));
+        for (const id of before) {
           if (now.has(id)) continue;
           const k = finishedIds.indexOf(id);
           if (k >= 0) finishedIds.splice(k, 1);
           else {
-            unlistedIds.push(id);
+            unlistedIds = [...unlistedIds, id];
             followUpExpected = true;
           }
         }
-        return { ...s, liveTasks: sig.count, liveIds: sig.ids, followUpExpected, finishedIds, unlistedIds: unlistedIds.slice(-PAIR_MAX) };
+        // 알림이 먼저 온 기록은 목록에 있는 작업 것만 남는다(목록 크기만큼만 쌓인다) — 개수로 자르지 않는다
+        return {
+          ...s,
+          liveTasks: sig.count,
+          liveIds: sig.ids,
+          followUpExpected,
+          finishedIds: finishedIds.filter((id) => now.has(id)),
+          unlistedIds: unlistedIds.slice(-PAIR_MAX),
+        };
       }
       const had = s.liveTasks ?? 0;
       // 작업이 줄었다 = 끝난 작업이 있다 = 그 결과를 처리하는 턴이 뒤따른다.
@@ -138,7 +148,7 @@ export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
         const k = s.unlistedIds.indexOf(sig.id);
         if (k >= 0) return { ...s, unlistedIds: s.unlistedIds.filter((_, i) => i !== k) };
         const listed = (s.liveIds ?? []).includes(sig.id);
-        return { ...s, followUpExpected: true, finishedIds: listed ? [...s.finishedIds, sig.id].slice(-PAIR_MAX) : s.finishedIds };
+        return { ...s, followUpExpected: true, finishedIds: listed && !s.finishedIds.includes(sig.id) ? [...s.finishedIds, sig.id] : s.finishedIds };
       }
       // 목록에서 먼저 빠져 이미 기다리는 중이면(예전 순서) 짝만 맞춘다. 아니면 이제부터 후속 턴을 기다린다.
       if (s.unlistedUnfinished > 0) return { ...s, unlistedUnfinished: s.unlistedUnfinished - 1 };

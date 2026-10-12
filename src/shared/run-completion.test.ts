@@ -208,3 +208,32 @@ test("id 로 짝짓기 — 예전 순서·새 순서가 섞여도 작업마다 �
   const whole: RunSignal[] = [...seq, { kind: "tasks", count: 0, source: "sdk", ids: [] }, { kind: "task_finished", id: "b" }, { kind: "turn_started" }, { kind: "result", isError: false }];
   assert.deepEqual(judgeRun(whole), { state: "completed", isError: false });
 });
+
+test("id 로 짝짓기 — 포그라운드로 갔다 돌아온 같은 작업의 오래된 기록과 짝짓지 않는다", () => {
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: 1, source: "sdk", ids: ["a"] },
+    { kind: "tasks", count: 0, source: "sdk", ids: [] },
+    { kind: "tasks", count: 1, source: "sdk", ids: ["a"] },
+    { kind: "result", isError: false },
+    { kind: "task_finished", id: "a" },
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+    { kind: "tasks", count: 0, source: "sdk", ids: [] },
+  ];
+  assert.deepEqual(judgeRun(seq), { state: "completed", isError: false });
+});
+
+test("id 로 짝짓기 — 완료 알림이 많아도(60개) 목록에 있는 작업 기록을 버리지 않는다", () => {
+  const ids = Array.from({ length: 60 }, (_, i) => `t${i}`);
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: ids.length, source: "sdk", ids },
+    { kind: "result", isError: false },
+    ...ids.map((id): RunSignal => ({ kind: "task_finished", id })),
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+    { kind: "tasks", count: 0, source: "sdk", ids: [] },
+  ];
+  assert.deepEqual(judgeRun(seq), { state: "completed", isError: false });
+});
