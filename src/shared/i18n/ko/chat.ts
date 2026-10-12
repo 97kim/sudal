@@ -273,6 +273,7 @@ export const chat = {
     collapse: "접기",
     show: "무엇이 도는지 보기",
     label: "백그라운드",
+    jumpHint: "눌러서 이 작업 카드로 가기",
   },
   markdown: {
     notFound: "파일을 찾지 못했습니다: {{path}}",

@@ -71,6 +71,7 @@ export class BackgroundTaskRegistry {
       completedAt: null,
       root: s.cwd,
       ...(t.parentId ? { parentId: t.parentId } : {}),
+      ...(t.toolUseId ? { toolUseId: t.toolUseId } : {}),
     }));
   }
 

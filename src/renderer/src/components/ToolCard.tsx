@@ -148,7 +148,7 @@ export function ToolCard({ block }: { block: ToolBlock }) {
   const elapsed = active && block.ts ? Math.max(0, Math.floor((now - block.ts) / 1000)) : 0;
 
   return (
-    <div className="rounded-lg border border-line bg-panel" data-tool-card={block.name} data-tool-open={open ? "true" : "false"}>
+    <div className="rounded-lg border border-line bg-panel" data-tool-card={block.name} data-tool-id={block.id} data-tool-open={open ? "true" : "false"}>
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-3 px-3 py-2 text-left"

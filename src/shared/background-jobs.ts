@@ -20,6 +20,8 @@ export interface BackgroundJobDto {
   root: string;
   /** 이 작업을 띄운 작업(하위 에이전트)의 id. 목록에서 그 아래에 들여 쓴다. */
   parentId?: string;
+  /** 이 작업을 띄운 tool_use 블록의 id. 대화 타임라인의 카드로 건너뛸 때 쓴다. */
+  toolUseId?: string;
 }
 
 export const isActiveJob = (s: BackgroundJobStatus): boolean => s === "queued" || s === "running";

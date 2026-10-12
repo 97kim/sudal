@@ -18,6 +18,14 @@ import { useNow } from "../hooks/useNow";
 /** 펼쳤을 때의 최대 높이(줄이 많아도 대화를 가리지 않게). 넘치면 그 안에서 스크롤한다. */
 const LIST_MAX_H = "max-h-32";
 
+/** 백그라운드 작업 줄을 누르면 띄운 도구 카드로 간다. 접혀 있으면 펼쳐서 로그가 바로 보이게 한다. */
+function jumpToToolCard(toolUseId: string): void {
+  const el = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(toolUseId)}"]`);
+  if (!el) return;
+  if (el.getAttribute("data-tool-open") === "false") el.querySelector<HTMLElement>("[data-tool-toggle]")?.click();
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
   const { t } = useTranslation();
   const [jobs, setJobs] = useState<BackgroundJobDto[]>([]);
@@ -81,12 +89,15 @@ function Spinner() {
 /** 한 줄. 접힌 줄(알약)과 펼친 목록에서 같이 쓴다 — 목록 안에서는 배경이 이미 있으므로 알약을 입히지 않는다. */
 function JobLine({ job, now, plain = false, depth = 0 }: { job: BackgroundJobDto; now: number; plain?: boolean; depth?: number }) {
   const { t } = useTranslation();
+  const Wrap = job.toolUseId ? "button" : "div";
   return (
-    <div
-      className={`flex max-w-full items-center gap-2 text-[11px] text-muted-2 ${plain ? "" : "rounded-full bg-panel-2 px-3 py-1"}`}
+    <Wrap
+      className={`flex max-w-full items-center gap-2 text-[11px] text-muted-2 ${plain ? "" : "rounded-full bg-panel-2 px-3 py-1"} ${job.toolUseId ? "text-left hover:text-fg" : ""}`}
       style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}
       data-background-job={job.id}
       data-background-job-depth={depth}
+      title={job.toolUseId ? t("chat.background.jumpHint") : undefined}
+      {...(job.toolUseId ? { type: "button" as const, onClick: () => jumpToToolCard(job.toolUseId as string) } : {})}
     >
       {depth > 0 && <span className="shrink-0 opacity-50">└</span>}
       <Spinner />
@@ -97,6 +108,6 @@ function JobLine({ job, now, plain = false, depth = 0 }: { job: BackgroundJobDto
       )}
       <span className="mono shrink-0">{jobRunningLabel(job, now, t)}</span>
       {job.summary && <span className="min-w-0 truncate opacity-70">{job.summary}</span>}
-    </div>
+    </Wrap>
   );
 }

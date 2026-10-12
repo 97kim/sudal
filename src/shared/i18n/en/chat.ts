@@ -275,6 +275,7 @@ export const chat: DeepPartial<typeof ko> = {
     collapse: "Collapse",
     show: "See what is running",
     label: "Background",
+    jumpHint: "Click to jump to this task's card",
   },
   markdown: {
     notFound: "File not found: {{path}}",

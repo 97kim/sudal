@@ -25,6 +25,8 @@ export interface LiveBackgroundTask {
   parentId?: string;
   /** 작업의 몇 번째 실행인지. 다시 이어 간 작업은 id 가 같고 이것만 새로 받는다. */
   runId?: string;
+  /** 이 작업을 띄운 tool_use 블록의 id. 대화 타임라인의 카드와 잇는 열쇠(task_started 에만 온다). */
+  toolUseId?: string;
 }
 
 // SDK 가 두 갈래로 준다 — 원본 판별자(local_bash …)와 사람용 이름(shell …). 둘 다 받아 둔다.
@@ -100,6 +102,18 @@ export interface TaskFinishedNote {
   summary: string;
   timedOut?: boolean;
   runId?: string;
+}
+
+/**
+ * task_started·task_updated 에서 "이 작업을 띄운 tool_use 블록" 을 읽는다. tool_use_id 가 없으면 null.
+ * background_tasks_changed 에는 이 필드가 없어서, 여기서 한 번 본 값을 따로 기억해 둬야 한다.
+ */
+export function parseTaskToolUseId(raw: unknown): { id: string; toolUseId: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = typeof o.task_id === "string" ? o.task_id : "";
+  const toolUseId = typeof o.tool_use_id === "string" ? o.tool_use_id : "";
+  return id && toolUseId ? { id, toolUseId } : null;
 }
 
 /**

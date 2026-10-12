@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isLateRun, parseLiveTasks, parseTaskFinished, parseTaskForeground, taskLabel, taskName, taskSummary } from "@shared/bg-tasks";
+import { isLateRun, parseLiveTasks, parseTaskFinished, parseTaskForeground, parseTaskToolUseId, taskLabel, taskName, taskSummary } from "@shared/bg-tasks";
 import { createI18n } from "@shared/i18n";
 const { t } = createI18n("ko");
 
@@ -91,6 +91,14 @@ test("isLateRun: 지금 회차보다 앞선 회차만 늦은 것, 모르면 늦�
   assert.equal(isLateRun("r1", "r2"), false);
   assert.equal(isLateRun(undefined, "r1"), false);
   assert.equal(isLateRun("r1", undefined), false);
+});
+
+test("parseTaskToolUseId: task_started 에서 작업 id 와 tool_use_id 를 함께 읽는다", () => {
+  assert.deepEqual(parseTaskToolUseId({ subtype: "task_started", task_id: "a1", tool_use_id: "toolu_1" }), { id: "a1", toolUseId: "toolu_1" });
+  // 둘 중 하나라도 없으면(background_tasks_changed 등) null — 모르는 값을 섞지 않는다
+  assert.equal(parseTaskToolUseId({ subtype: "task_started", task_id: "a1" }), null);
+  assert.equal(parseTaskToolUseId({ tool_use_id: "toolu_1" }), null);
+  assert.equal(parseTaskToolUseId(null), null);
 });
 
 test("taskName: 하위 에이전트는 에이전트 이름, 메인 세션·나머지는 종류", () => {

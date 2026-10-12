@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { BackgroundTaskRegistry } from "./bg-tasks";
 
-const task = (id: string, type = "shell", description = "설명") => ({ id, type, description });
+const task = (id: string, type = "shell", description = "설명", toolUseId?: string) => ({ id, type, description, ...(toolUseId ? { toolUseId } : {}) });
 
 test("전체 집합을 갈아 끼운다 — 빠진 것은 사라지고 남은 것은 시작 시각을 지킨다", async () => {
   const r = new BackgroundTaskRegistry();
@@ -59,4 +59,12 @@ test("화면이 쓰는 모양으로 내준다", () => {
   assert.equal(j.status, "running");
   assert.equal(j.completedAt, null);
   assert.equal(j.root, "/repo");
+});
+
+test("tool_use_id 가 있으면 넘기고, 없으면 필드 자체를 안 둔다", () => {
+  const r = new BackgroundTaskRegistry();
+  r.replace("탭1", "sess-1", "/repo", [task("a", "shell", "설명", "toolu_1"), task("b")]);
+  const [a, b] = r.current();
+  assert.equal(a.toolUseId, "toolu_1");
+  assert.equal(b.toolUseId, undefined);
 });

@@ -10,7 +10,7 @@ import type {
 } from "@shared/chat-events";
 import type { SlashCommandDto } from "@shared/slash-commands";
 import type { ProviderRateLimitDto } from "@shared/ipc";
-import { isLateRun, parseLiveTasks, parseTaskFinished, parseTaskForeground, type LiveBackgroundTask, type TaskFinishedNote } from "@shared/bg-tasks";
+import { isLateRun, parseLiveTasks, parseTaskFinished, parseTaskForeground, parseTaskToolUseId, type LiveBackgroundTask, type TaskFinishedNote } from "@shared/bg-tasks";
 import { buildClaudeUserMessage, type StoredChatImage } from "./chat-attachments";
 import { ClaudeEventMapper, parseClaudeRateLimit } from "./claude-events";
 import { forkSession, query } from "@anthropic-ai/claude-agent-sdk";
@@ -187,6 +187,8 @@ interface LiveSession {
   foregroundTasks: Set<string>;
   /** 작업마다 지금 보고 있는 회차(run id). 이전 회차의 완료 알림이 늦게 오면 거른다. */
   taskRuns: Map<string, string>;
+  /** 작업마다 띄운 tool_use 블록의 id. background_tasks_changed 에는 없어서 task_started 때 본 값을 기억해 둔다. */
+  taskToolUseIds: Map<string, string>;
   /** 우리가 닫는 중이다(탭 닫기·유휴 종료 등). 스트림이 끝난 이유를 구분하려고 둔다. */
   closing: string | null;
   /** 후속 턴 때문에 유휴 종료를 한 번 미뤘다. 두 번은 미루지 않는다. */
@@ -327,6 +329,7 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
     liveTasks: [],
     foregroundTasks: new Set(),
     taskRuns: new Map(),
+    taskToolUseIds: new Map(),
     closing: null,
     idleDeferred: false,
     langDrift: false,
@@ -459,8 +462,16 @@ function rememberRun(s: LiveSession, id: string, runId: string): void {
   if (s.taskRuns.size > TASK_RUNS_MAX) s.taskRuns.delete(s.taskRuns.keys().next().value as string);
 }
 
+function rememberToolUseId(s: LiveSession, id: string, toolUseId: string): void {
+  s.taskToolUseIds.delete(id);
+  s.taskToolUseIds.set(id, toolUseId);
+  if (s.taskToolUseIds.size > TASK_RUNS_MAX) s.taskToolUseIds.delete(s.taskToolUseIds.keys().next().value as string);
+}
+
 function sendBackgroundTasks(s: LiveSession, sessionId: string | undefined) {
-  const tasks = s.liveTasks.filter((t) => !s.foregroundTasks.has(t.id));
+  const tasks = s.liveTasks
+    .filter((t) => !s.foregroundTasks.has(t.id))
+    .map((t) => (s.taskToolUseIds.has(t.id) ? { ...t, toolUseId: s.taskToolUseIds.get(t.id) } : t));
   s.onBackgroundTasks?.(sessionId ?? s.sessionId ?? "", tasks, "sdk");
 }
 
@@ -512,10 +523,14 @@ function handleMessage(s: LiveSession, message: SDKMessage) {
       const tid = (message as { task_id?: unknown }).task_id;
       const late = typeof run === "string" && typeof tid === "string" && isLateRun(s.taskRuns.get(tid), run);
       if (typeof run === "string" && typeof tid === "string" && !late) rememberRun(s, tid, run);
+      const toolUse = parseTaskToolUseId(message);
+      const toolUseChanged = !!toolUse && s.taskToolUseIds.get(toolUse.id) !== toolUse.toolUseId;
+      if (toolUse) rememberToolUseId(s, toolUse.id, toolUse.toolUseId);
       // 이전 회차의 늦은 신호로 지금 회차의 포그라운드/백그라운드 판정을 바꾸지 않는다
       const f = late ? null : parseTaskForeground(message);
       const changed = f ? (f.foreground ? !s.foregroundTasks.has(f.id) && !!s.foregroundTasks.add(f.id) : s.foregroundTasks.delete(f.id)) : false;
-      if (changed && s.liveTasks.some((t) => t.id === f?.id)) sendBackgroundTasks(s, message.session_id);
+      const watchedId = f?.id ?? toolUse?.id;
+      if ((changed || toolUseChanged) && s.liveTasks.some((t) => t.id === watchedId)) sendBackgroundTasks(s, message.session_id);
     } else if (message.subtype === "task_notification") {
       const note = parseTaskFinished(message);
       // 다시 이어 간 작업에 이전 회차의 완료 알림이 늦게 오면, 지금 도는 회차가 끝난 것처럼 알리지 않는다
