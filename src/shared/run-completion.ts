@@ -2,8 +2,11 @@
 //
 // 이 규칙은 추측이 아니라 실측에서 나왔다(SUDAL_DEBUG_SDK 로 잡은 순서):
 //
-//   정상(백그라운드 후속 턴 있음)
+//   정상(백그라운드 후속 턴 있음) — CLI 2.1.291 까지
 //     tasks=1 → result(첫 턴) → tasks=0(sdk) → task_notification → 새 턴 → result → 끝
+//   정상(백그라운드 후속 턴 있음) — CLI 2.1.292 부터(끝나는 작업은 알림 뒤에 목록에서 빠진다)
+//     tasks=1 → result(첫 턴) → task_notification → 새 턴 → … tasks=0 이 후속 턴 result 보다 늦을 수도 있다
+//   그래서 "작업 하나가 끝났다" 는 두 신호(목록에서 빠짐·끝났다는 알림)를 짝지어, 먼저 온 쪽에서만 후속 턴을 기다린다.
 //   정상(단순)
 //     result → 끝 (프로세스는 살아 있다. 스트림은 안 끝난다)
 //   크래시
@@ -24,6 +27,8 @@ export type RunSignal =
   | { kind: "result"; isError: boolean }
   /** 살아 있는 백그라운드 작업 전체 집합이 바뀌었다. source 가 판정을 가른다. */
   | { kind: "tasks"; count: number; source: "sdk" | "cleanup" }
+  /** 백그라운드 작업 하나가 끝났다는 알림(task_notification). 목록에서 빠지는 것과 순서가 CLI 판마다 다르다. */
+  | { kind: "task_finished" }
   /** 새 턴이 시작됐다(우리가 보낸 것이든, CLI 가 스스로 이어간 것이든). */
   | { kind: "turn_started" }
   /** 사용자 응답을 기다리는 요청 수(권한·질문). */
@@ -48,6 +53,10 @@ export interface RunState {
   liveTasks: number | null;
   awaiting: number;
   ended: { reason: string; expected: boolean; reasonMsg?: Msg } | null;
+  /** 끝났다는 알림은 왔는데 목록에서 아직 안 빠진 작업 수(새 순서). 나중에 빠질 때 후속 턴을 다시 기다리지 않는다. */
+  finishedUnlisted: number;
+  /** 목록에서는 빠졌는데 끝났다는 알림이 아직 안 온 작업 수(예전 순서). 알림이 와도 후속 턴을 두 번 세지 않는다. */
+  unlistedUnfinished: number;
 }
 
 export type RunVerdict =
@@ -59,7 +68,7 @@ export type RunVerdict =
   | { state: "interrupted"; reason: string; reasonMsg?: Msg };
 
 export function newRunState(): RunState {
-  return { sawResult: false, followUpExpected: false, resultIsError: false, liveTasks: null, awaiting: 0, ended: null };
+  return { sawResult: false, followUpExpected: false, resultIsError: false, liveTasks: null, awaiting: 0, ended: null, finishedUnlisted: 0, unlistedUnfinished: 0 };
 }
 
 export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
@@ -72,9 +81,22 @@ export function applyRunSignal(s: RunState, sig: RunSignal): RunState {
       if (sig.source === "cleanup") return s;
       const had = s.liveTasks ?? 0;
       // 작업이 줄었다 = 끝난 작업이 있다 = 그 결과를 처리하는 턴이 뒤따른다.
-      const followUpExpected = s.followUpExpected || sig.count < had;
-      return { ...s, liveTasks: sig.count, followUpExpected };
+      // 단, 끝났다는 알림이 먼저 와서 이미 기다리고 있던 작업이면(새 순서) 다시 기다리지 않는다 — 후속 턴이 이미 끝났을 수 있다.
+      let gone = Math.max(0, had - sig.count);
+      const matched = Math.min(gone, s.finishedUnlisted);
+      gone -= matched;
+      return {
+        ...s,
+        liveTasks: sig.count,
+        followUpExpected: s.followUpExpected || gone > 0,
+        finishedUnlisted: s.finishedUnlisted - matched,
+        unlistedUnfinished: s.unlistedUnfinished + gone,
+      };
     }
+    case "task_finished":
+      // 목록에서 먼저 빠져 이미 기다리는 중이면(예전 순서) 짝만 맞춘다. 아니면 이제부터 후속 턴을 기다린다.
+      if (s.unlistedUnfinished > 0) return { ...s, unlistedUnfinished: s.unlistedUnfinished - 1 };
+      return { ...s, followUpExpected: true, finishedUnlisted: s.finishedUnlisted + 1 };
     case "turn_started":
       // 후속 턴이 시작됐다. 앞 턴의 result 는 더 이상 "끝" 의 후보가 아니다.
       return { ...s, sawResult: false, resultIsError: false };

@@ -135,3 +135,46 @@ test("재시도 예정 오류는 회차를 끝내지 않는다(엔진 연결부 
   const seq: RunSignal[] = [{ kind: "turn_started" }, { kind: "tasks", count: 1, source: "sdk" }];
   assert.deepEqual(judgeRun(seq), { state: "running" });
 });
+
+test("새 순서(CLI 2.1.292+) — 끝났다는 알림이 먼저, 목록에서 빠지는 건 후속 턴 뒤여도 완료다", () => {
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: 1, source: "sdk" },
+    { kind: "result", isError: false },
+    { kind: "task_finished" },
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+    { kind: "tasks", count: 0, source: "sdk" }, // 후속 턴 result 보다 늦게 와도
+  ];
+  for (let i = 1; i < seq.length; i += 1) assert.notEqual(judgeRun(seq.slice(0, i)).state, "completed", `${i}단계에서 조기 완료`);
+  assert.deepEqual(judgeRun(seq), { state: "completed", isError: false }, "늦게 온 tasks=0 이 끝난 회차를 되돌리지 않는다");
+});
+
+test("예전 순서 — 목록에서 먼저 빠지고 알림이 뒤따라도 후속 턴을 한 번만 기다린다", () => {
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: 1, source: "sdk" },
+    { kind: "result", isError: false },
+    { kind: "tasks", count: 0, source: "sdk" },
+    { kind: "task_finished" },
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+  ];
+  for (let i = 1; i < seq.length; i += 1) assert.notEqual(judgeRun(seq.slice(0, i)).state, "completed", `${i}단계에서 조기 완료`);
+  assert.deepEqual(judgeRun(seq), { state: "completed", isError: false });
+});
+
+test("작업 둘 — 하나는 새 순서, 하나는 예전 순서로 와도 둘 다 짝이 맞는다", () => {
+  const seq: RunSignal[] = [
+    { kind: "turn_started" },
+    { kind: "tasks", count: 2, source: "sdk" },
+    { kind: "result", isError: false },
+    { kind: "task_finished" }, // 가: 알림 먼저
+    { kind: "turn_started" },
+    { kind: "result", isError: false },
+    { kind: "tasks", count: 0, source: "sdk" }, // 가는 짝, 나는 목록에서 먼저 빠짐 → 후속 턴 기다림
+  ];
+  assert.equal(judgeRun(seq).state, "running", "나의 후속 턴이 아직이다");
+  const whole: RunSignal[] = [...seq, { kind: "task_finished" }, { kind: "turn_started" }, { kind: "result", isError: false }];
+  assert.deepEqual(judgeRun(whole), { state: "completed", isError: false });
+});

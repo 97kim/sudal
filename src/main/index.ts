@@ -1775,6 +1775,8 @@ function bootstrap() {
       scheduleEngine?.onSignal(tabId, { kind: "stream_ended", reason, expected });
     },
     onTaskFinished(tabId, note) {
+      // 예약 회차 판정에는 어떻게 끝났든 넘긴다 — 그 결과를 들고 CLI 가 후속 턴을 돈다.
+      scheduleEngine?.onSignal(tabId, { kind: "task_finished" });
       // 사용자가 세운 것(stopped)은 알리지 않는다 — 자기가 한 일이다. 시간 제한에 걸려 멈춘 것은 실패처럼 알린다.
       if (note.status === "stopped" && !note.timedOut) return;
       const job = bgTasks.recall(note.id);
