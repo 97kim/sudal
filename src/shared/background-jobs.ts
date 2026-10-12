@@ -18,9 +18,37 @@ export interface BackgroundJobDto {
   completedAt: number | null;
   /** 이 작업을 기록한 곳(작업 디렉토리). 같은 id 가 다른 저장소에 있을 수 있다. */
   root: string;
+  /** 이 작업을 띄운 작업(하위 에이전트)의 id. 목록에서 그 아래에 들여 쓴다. */
+  parentId?: string;
 }
 
 export const isActiveJob = (s: BackgroundJobStatus): boolean => s === "queued" || s === "running";
+
+/**
+ * 펼친 목록 순서: 하위 에이전트가 띄운 작업은 그 에이전트 바로 아래에 들여 쓴다.
+ * 부모가 목록에 없으면(이미 끝났거나 포그라운드) 맨 위 단계로 둔다 — 모르는 부모는 없는 것으로 친다.
+ */
+export function nestJobs(jobs: BackgroundJobDto[]): { job: BackgroundJobDto; depth: number }[] {
+  const ids = new Set(jobs.map((j) => j.id));
+  const kids = new Map<string, BackgroundJobDto[]>();
+  const roots: BackgroundJobDto[] = [];
+  for (const j of jobs) {
+    if (j.parentId && j.parentId !== j.id && ids.has(j.parentId)) kids.set(j.parentId, [...(kids.get(j.parentId) ?? []), j]);
+    else roots.push(j);
+  }
+  const out: { job: BackgroundJobDto; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (j: BackgroundJobDto, depth: number) => {
+    if (seen.has(j.id)) return;
+    seen.add(j.id);
+    out.push({ job: j, depth });
+    for (const k of kids.get(j.id) ?? []) walk(k, depth + 1);
+  };
+  for (const r of roots) walk(r, 0);
+  // 부모끼리 서로를 가리키는 고리처럼 위에서 못 닿은 것도 빠뜨리지 않는다
+  for (const j of jobs) walk(j, 0);
+  return out;
+}
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const time = (v: unknown): number | null => {

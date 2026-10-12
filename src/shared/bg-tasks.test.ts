@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseLiveTasks, parseTaskFinished, parseTaskForeground, taskLabel, taskSummary } from "@shared/bg-tasks";
+import { isLateRun, parseLiveTasks, parseTaskFinished, parseTaskForeground, taskLabel, taskName, taskSummary } from "@shared/bg-tasks";
 import { createI18n } from "@shared/i18n";
 const { t } = createI18n("ko");
 
@@ -74,4 +74,28 @@ test("턴이 기다리는 작업인지 읽는다", () => {
   assert.equal(parseTaskForeground({ subtype: "task_updated", task_id: "a", patch: { status: "completed" } }), null);
   assert.equal(parseTaskForeground({ subtype: "task_started", task_id: "a" }), null);
   assert.equal(parseTaskForeground({ subtype: "task_started", is_backgrounded: false }), null);
+});
+
+test("parseLiveTasks: 하위 에이전트 종류·띄운 작업·회차를 읽는다", () => {
+  const [a, b] = parseLiveTasks([
+    { task_id: "a1", task_type: "local_agent", description: "조사", subagent_type: "general-purpose", run_id: "r2" },
+    { task_id: "b1", task_type: "local_bash", description: "yarn test", parent_task_id: "a1" },
+  ]);
+  assert.deepEqual(a, { id: "a1", type: "local_agent", description: "조사", agent: "general-purpose", runId: "r2" });
+  assert.deepEqual(b, { id: "b1", type: "local_bash", description: "yarn test", parentId: "a1" });
+});
+
+test("isLateRun: 지금 회차보다 앞선 회차만 늦은 것, 모르면 늦지 않다", () => {
+  assert.equal(isLateRun("r2", "r1"), true);
+  assert.equal(isLateRun("r2", "r2"), false);
+  assert.equal(isLateRun("r1", "r2"), false);
+  assert.equal(isLateRun(undefined, "r1"), false);
+  assert.equal(isLateRun("r1", undefined), false);
+});
+
+test("taskName: 하위 에이전트는 에이전트 이름, 메인 세션·나머지는 종류", () => {
+  const t = ((k: string) => k) as never;
+  assert.equal(taskName(t, { type: "local_agent", agent: "code-reviewer" }), "code-reviewer");
+  assert.equal(taskName(t, { type: "local_agent", agent: "main-session" }), "session.bgTask.subagent");
+  assert.equal(taskName(t, { type: "local_bash" }), "session.bgTask.shell");
 });

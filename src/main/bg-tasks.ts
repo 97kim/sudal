@@ -6,7 +6,7 @@
 // 우리가 따로 기억하는 것은 시작 시각 하나다(SDK 가 주지 않는다. "3분 경과" 를 보여 주려면 필요하다).
 
 import type { BackgroundJobDto } from "@shared/background-jobs";
-import { taskLabel, taskSummary, type LiveBackgroundTask } from "@shared/bg-tasks";
+import { taskName, taskSummary, type LiveBackgroundTask } from "@shared/bg-tasks";
 import { mt } from "./i18n";
 
 /** 끝난 작업의 이름을 알림에 쓰려고 잠깐 기억해 둔다 — 끝났다는 알림이 목록에서 빠진 뒤에 올 수 있다. */
@@ -63,13 +63,14 @@ export class BackgroundTaskRegistry {
     return [...s.tasks.values()].map((t) => ({
       id: t.id,
       sessionId: s.sessionId,
-      label: taskLabel(mt, t.type),
-      title: taskSummary(t.description) || taskLabel(mt, t.type),
+      label: taskName(mt, t),
+      title: taskSummary(t.description) || taskName(mt, t),
       status: "running" as const,
       summary: taskSummary(t.description),
       startedAt: t.startedAt,
       completedAt: null,
       root: s.cwd,
+      ...(t.parentId ? { parentId: t.parentId } : {}),
     }));
   }
 

@@ -19,6 +19,12 @@ export interface LiveBackgroundTask {
   /** shell · subagent · monitor … 모르는 값이 올 수 있다. */
   type: string;
   description: string;
+  /** 하위 에이전트 종류("general-purpose"·직접 만든 에이전트 이름, 백그라운드로 보낸 메인 세션은 "main-session"). 하위 에이전트에만 온다. */
+  agent?: string;
+  /** 이 작업을 띄운 하위 에이전트의 작업 id. 메인이 띄웠으면 없다. */
+  parentId?: string;
+  /** 작업의 몇 번째 실행인지. 다시 이어 간 작업은 id 가 같고 이것만 새로 받는다. */
+  runId?: string;
 }
 
 // SDK 가 두 갈래로 준다 — 원본 판별자(local_bash …)와 사람용 이름(shell …). 둘 다 받아 둔다.
@@ -61,6 +67,9 @@ export function parseLiveTasks(raw: unknown): LiveBackgroundTask[] {
       id,
       type: typeof o.task_type === "string" ? o.task_type : "",
       description: typeof o.description === "string" ? o.description : "",
+      ...(typeof o.subagent_type === "string" && o.subagent_type ? { agent: o.subagent_type } : {}),
+      ...(typeof o.parent_task_id === "string" && o.parent_task_id ? { parentId: o.parent_task_id } : {}),
+      ...(typeof o.run_id === "string" && o.run_id ? { runId: o.run_id } : {}),
     });
   }
   return out;
@@ -90,6 +99,20 @@ export interface TaskFinishedNote {
   status: "completed" | "failed" | "stopped";
   summary: string;
   timedOut?: boolean;
+  runId?: string;
+}
+
+/**
+ * 늦게 온 이전 회차의 신호인가. SDK 약속: 한 작업의 run id 는 문자열로 비교하면 열린 순서대로 서고,
+ * 지금 보는 회차보다 앞서면 늦게 온 것이다. 둘 중 하나라도 모르면 늦었다고 보지 않는다(예전 CLI 는 안 준다).
+ */
+export function isLateRun(latest: string | undefined, runId: string | undefined): boolean {
+  return !!latest && !!runId && runId < latest;
+}
+
+/** 목록에 보일 이름. 하위 에이전트는 종류("하위 에이전트") 대신 에이전트 이름을 쓴다. */
+export function taskName(t: TFunction, task: Pick<LiveBackgroundTask, "type" | "agent">): string {
+  return task.agent && task.agent !== "main-session" ? task.agent : taskLabel(t, task.type);
 }
 
 export function parseTaskFinished(raw: unknown): TaskFinishedNote | null {
@@ -102,5 +125,6 @@ export function parseTaskFinished(raw: unknown): TaskFinishedNote | null {
   if (status !== "completed" && status !== "failed" && status !== "stopped") return null;
   const summary = typeof o.summary === "string" ? o.summary : "";
   const timedOut = status === "stopped" && /background time limit/i.test(summary);
-  return { id, status, summary: taskSummary(summary), ...(timedOut ? { timedOut } : {}) };
+  const runId = typeof o.run_id === "string" && o.run_id ? o.run_id : undefined;
+  return { id, status, summary: taskSummary(summary), ...(timedOut ? { timedOut } : {}), ...(runId ? { runId } : {}) };
 }

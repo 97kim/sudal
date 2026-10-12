@@ -36,6 +36,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (let i = 0; i < 30; i++) { await sleep(1000); if ((await snap()).status === "running") wentBusy = true; }
   const bg = await page.evaluate(() => document.body.innerText.includes("백그라운드"));
   const subN = await subs();
+  // 백그라운드 줄에 "하위 에이전트" 대신 에이전트 이름(general-purpose 등)이 보인다
+  const barText = await page.evaluate(() => document.querySelector("[data-background-jobs]")?.textContent ?? "");
+  console.log("백그라운드 줄:", JSON.stringify(barText.slice(0, 120)));
+  result("백그라운드 줄에 에이전트 이름이 보인다", /general-purpose|[a-z]+-[a-z]+/.test(barText) && !barText.includes("하위 에이전트"), barText.slice(0, 80));
   console.log(`백그라운드 표시=${bg} · 지켜보는 동안 바빠짐=${wentBusy} · 그동안 온 하위 에이전트 소식 ${subN}개`);
   result("하위 에이전트 소식이 실제로 왔다(시험이 의미 있다)", subN > 0);
   result("하위 에이전트가 일해도 탭은 쉬는 상태다", !wentBusy);

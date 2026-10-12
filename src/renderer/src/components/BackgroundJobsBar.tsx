@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { jobRunningLabel, jobsSummaryLabel, type BackgroundJobDto } from "@shared/background-jobs";
+import { jobRunningLabel, jobsSummaryLabel, nestJobs, type BackgroundJobDto } from "@shared/background-jobs";
 import { Icon } from "./Icon";
 import { useNow } from "../hooks/useNow";
 
@@ -60,8 +60,9 @@ export function BackgroundJobsBar({ sessionId }: { sessionId: string | null }) {
           </button>
           {open && (
             <div className={`flex w-full max-w-[680px] flex-col gap-1 overflow-y-auto rounded-lg bg-panel-2 px-3 py-2 ${LIST_MAX_H}`}>
-              {mine.map((j) => (
-                <JobLine key={j.id} job={j} now={now} plain />
+              {/* 하위 에이전트가 띄운 명령은 그 에이전트 아래에 들여 쓴다 */}
+              {nestJobs(mine).map(({ job, depth }) => (
+                <JobLine key={job.id} job={job} now={now} plain depth={depth} />
               ))}
             </div>
           )}
@@ -78,13 +79,16 @@ function Spinner() {
 }
 
 /** 한 줄. 접힌 줄(알약)과 펼친 목록에서 같이 쓴다 — 목록 안에서는 배경이 이미 있으므로 알약을 입히지 않는다. */
-function JobLine({ job, now, plain = false }: { job: BackgroundJobDto; now: number; plain?: boolean }) {
+function JobLine({ job, now, plain = false, depth = 0 }: { job: BackgroundJobDto; now: number; plain?: boolean; depth?: number }) {
   const { t } = useTranslation();
   return (
     <div
       className={`flex max-w-full items-center gap-2 text-[11px] text-muted-2 ${plain ? "" : "rounded-full bg-panel-2 px-3 py-1"}`}
+      style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}
       data-background-job={job.id}
+      data-background-job-depth={depth}
     >
+      {depth > 0 && <span className="shrink-0 opacity-50">└</span>}
       <Spinner />
       {!plain && (
         <span className="shrink-0 shimmer" style={SHIMMER}>
