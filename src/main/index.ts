@@ -975,14 +975,32 @@ async function startCrossReview(tabId: string): Promise<{ ok: true; reviewTabId:
     sessions.note(tabId, { type: "review", ts: Date.now(), reviewer, reviewTabId, status: "failed", text: sent.error, scope, scopeMsg });
     return { ok: false, error: sent.error };
   }
+  // 심볼릭 링크까지 풀어 저장소 안인지 본다. 없는 경로는 풀 수 없으니 그대로 비교한다.
+  const realCwd = (() => {
+    try {
+      return realpathSync(cwd);
+    } catch {
+      return resolve(cwd);
+    }
+  })();
+  const insideRepo = (p: string): boolean => {
+    const abs = resolve(cwd, p.replace(/^~(?=$|[\\/])/, homedir()));
+    let real = abs;
+    try {
+      real = realpathSync(abs);
+    } catch {
+      /* 아직 없는 경로 */
+    }
+    return isWithin(realCwd, real);
+  };
   void (async () => {
     // 리뷰 탭의 턴이 끝날 때까지(최대 30분) 기다렸다가 답을 옮겨 적는다
     const started = Date.now();
     for (;;) {
       await new Promise((r) => setTimeout(r, 1000));
-      // 리뷰 탭은 사람이 안 본다: 읽기만 하는 요청은 허용하고 나머지는 거부해 리뷰가 멈추지 않게 한다
+      // 리뷰 탭은 사람이 안 본다: 저장소 안을 읽는 요청만 허용하고 나머지는 거부해 리뷰가 멈추지 않게 한다
       for (const req of sessions.pendingPermissions(reviewTabId)) {
-        const decision = reviewPermissionDecision(req.tool, req.input);
+        const decision = reviewPermissionDecision(req.tool, req.input, insideRepo);
         console.log(`[review] ${reviewTabId} 권한 자동 판정 ${decision}: ${req.tool} ${JSON.stringify(req.input).slice(0, 120)}`);
         sessions.answerPermission(reviewTabId, req.requestId, { behavior: decision });
       }

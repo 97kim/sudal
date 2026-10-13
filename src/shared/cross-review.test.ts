@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildReviewPrompt, CROSS_REVIEW_DIFF_MAX, isReadOnlyCommand, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "./cross-review";
+import { buildReviewPrompt, CROSS_REVIEW_DIFF_MAX, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "./cross-review";
 import { createI18n } from "./i18n";
 const { t } = createI18n("ko");
 
@@ -18,46 +18,21 @@ test("cross-review: 상대 provider·제목·범위·프롬프트(긴 diff 는 �
   assert.match(long, /10자 생략/);
 });
 
-test("reviewPermissionDecision: 읽기 도구·읽기 명령은 allow, 수정·쓰기·알 수 없는 것은 deny", () => {
-  assert.equal(reviewPermissionDecision("Read", { file_path: "/a" }), "allow");
-  assert.equal(reviewPermissionDecision("Grep", {}), "allow");
-  assert.equal(reviewPermissionDecision("Edit", {}), "deny");
-  assert.equal(reviewPermissionDecision("ApplyPatch", {}), "deny");
-  assert.equal(reviewPermissionDecision("권한", {}), "deny");
-  for (const ok of ["/bin/zsh -lc 'git diff -- a.kt && nl -ba a.kt'", "git diff HEAD -- src", "rg -n 'foo' src | head -20", "cat a.ts && grep -n x b.ts", "git log --oneline -5; git status --short", "sed -n '1,20p' a.ts", "FOO=1 ls -la", "/usr/bin/grep -r x ."])
-    assert.equal(reviewPermissionDecision("Bash", { command: ok }), "allow", ok);
-  for (const bad of ["rm -rf x", "git commit -m x", "git branch -D x", "sed -i '' 's/a/b/' a.ts", "cat a > b", "echo $(rm x)", "cd src && ls", "yarn test", "npm install", "git remote add x y", ""])
-    assert.equal(reviewPermissionDecision("Bash", { command: bad }), "deny", bad);
-  assert.equal(reviewPermissionDecision("exec", { command: ["git", "diff"] }), "allow");
-  // Codex 의 셸 래핑
-  assert.equal(reviewPermissionDecision("Bash", { command: "/bin/zsh -lc pwd" }), "allow");
-  assert.equal(reviewPermissionDecision("Bash", { command: "/bin/zsh -lc \"rg -n retry src | head\"" }), "allow");
-  assert.equal(reviewPermissionDecision("Bash", { command: "bash -c 'git commit -m x'" }), "deny");
-  assert.equal(reviewPermissionDecision("Bash", { command: "/bin/zsh -lc \"cat a > b\"" }), "deny");
-});
-
-test("isReadOnlyCommand: Codex 리뷰가 지적한 우회 — 줄바꿈·단독 &·래퍼·경로·쓰기 플래그", () => {
-  assert.equal(isReadOnlyCommand("pwd\nrm -rf ./victim"), false);
-  assert.equal(isReadOnlyCommand("pwd & rm -rf ./victim"), false);
-  assert.equal(isReadOnlyCommand("env rm -rf ./victim"), false);
-  assert.equal(isReadOnlyCommand("xargs rm"), false);
-  assert.equal(isReadOnlyCommand("find . -delete"), false);
-  assert.equal(isReadOnlyCommand("find . -name x -exec rm {} \;"), false);
-  assert.equal(isReadOnlyCommand("git diff --output=./victim"), false);
-  assert.equal(isReadOnlyCommand("git -c core.editor=touch diff"), false);
-  assert.equal(isReadOnlyCommand("./attacker/ls"), false);
-  assert.equal(isReadOnlyCommand("/usr/bin/env ls"), false);
-  assert.equal(isReadOnlyCommand("sort -o out.txt in.txt"), false);
-  assert.equal(isReadOnlyCommand("awk 'BEGIN{system(\"rm x\")}'"), false);
-  assert.equal(isReadOnlyCommand("sed -n '1,3w out' file"), false);
-  assert.equal(isReadOnlyCommand("(rm x)"), false);
-  // 여전히 허용되는 읽기 명령
-  assert.equal(isReadOnlyCommand("find . -name '*.ts' -type f"), true);
-  assert.equal(isReadOnlyCommand("git diff HEAD -- src"), true);
-  assert.equal(isReadOnlyCommand("sed -n '1,20p' src/a.ts"), true);
-  assert.equal(isReadOnlyCommand("rg -n foo src | head -20"), true);
-  assert.equal(isReadOnlyCommand("cat a.txt\nwc -l b.txt"), true);
-  assert.equal(isReadOnlyCommand("grep -E '(foo|bar)' src/a.ts"), true, "따옴표 안 괄호는 셸 구문이 아니다");
-  assert.equal(isReadOnlyCommand("echo \"$(rm x)\""), false, "큰따옴표 안 명령 치환은 확장된다");
-  assert.equal(isReadOnlyCommand("/usr/bin/grep -r x ."), true);
+test("reviewPermissionDecision: 저장소 안을 읽는 도구만 allow, 셸·웹·하위 에이전트·쓰기는 모두 deny", () => {
+  const inside = (p: string) => !p.startsWith("/") || p.startsWith("/repo/");
+  assert.equal(reviewPermissionDecision("Read", { file_path: "/repo/a.ts" }, inside), "allow");
+  assert.equal(reviewPermissionDecision("Grep", {}, inside), "allow", "경로가 없으면 저장소 기준");
+  assert.equal(reviewPermissionDecision("Glob", { pattern: "src/**/*.ts" }, inside), "allow");
+  // 저장소 밖 읽기는 거부 — ~/.ssh 같은 비밀 파일을 읽어 넘길 수 있다
+  assert.equal(reviewPermissionDecision("Read", { file_path: "/Users/me/.ssh/id_ed25519" }, inside), "deny");
+  assert.equal(reviewPermissionDecision("Grep", { path: "/etc" }, inside), "deny");
+  assert.equal(reviewPermissionDecision("Glob", { pattern: "/Users/me/.aws/*" }, inside), "deny");
+  assert.equal(reviewPermissionDecision("Glob", { pattern: "../../**/.env" }, inside), "deny");
+  assert.equal(reviewPermissionDecision("Read", { file_path: 42 }, inside), "deny");
+  // 셸은 읽기처럼 보여도 거부 — 리뷰가 찾은 우회들
+  for (const cmd of ["git diff HEAD -- src", "rg --pre=./evil.sh foo", "git grep -O'touch x' foo", "awk 'BEGIN{\"id\" | getline}'", "sort --compress-program=sh x", "GIT_EXTERNAL_DIFF=./evil.sh git diff"])
+    assert.equal(reviewPermissionDecision("Bash", { command: cmd }, inside), "deny", cmd);
+  assert.equal(reviewPermissionDecision("exec", { command: ["git", "diff"] }, inside), "deny");
+  for (const tool of ["WebFetch", "WebSearch", "Task", "Agent", "Edit", "Write", "ApplyPatch", "권한"])
+    assert.equal(reviewPermissionDecision(tool, {}, inside), "deny", tool);
 });
