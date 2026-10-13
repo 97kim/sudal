@@ -276,6 +276,7 @@ export const chat = {
     jumpHint: "눌러서 이 작업 카드로 가기",
   },
   markdown: {
+    loadRemoteImage: "외부 이미지 불러오기 · {{host}}",
     notFound: "파일을 찾지 못했습니다: {{path}}",
     openInEditor: "에디터로 열기",
     openInEditorLines: "에디터로 열기 ({{range}}줄)",

@@ -278,6 +278,7 @@ export const chat: DeepPartial<typeof ko> = {
     jumpHint: "Click to jump to this task's card",
   },
   markdown: {
+    loadRemoteImage: "Load external image · {{host}}",
     notFound: "File not found: {{path}}",
     openInEditor: "Open in editor",
     openInEditorLines: "Open in editor (line {{range}})",

