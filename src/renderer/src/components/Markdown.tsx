@@ -362,9 +362,10 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unkno
  */
 function MdChatImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
   const { t } = useTranslation();
-  const [allowed, setAllowed] = useState(false);
+  // 승인한 주소를 기억한다 — 참/거짓만 두면 스트리밍 중 같은 자리의 주소가 바뀌어도(참조 링크가 뒤에 붙는 등) 승인이 그대로 남는다
+  const [allowedSrc, setAllowedSrc] = useState<string | null>(null);
   const { src } = props;
-  if (!allowed && typeof src === "string" && /^https?:/i.test(src)) {
+  if (typeof src === "string" && /^https?:/i.test(src) && allowedSrc !== src) {
     let host = src;
     try {
       host = new URL(src).host;
@@ -374,7 +375,7 @@ function MdChatImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: u
     return (
       <button
         type="button"
-        onClick={() => setAllowed(true)}
+        onClick={() => setAllowedSrc(src)}
         title={src}
         data-remote-image
         className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[11px] text-muted hover:text-fg"
