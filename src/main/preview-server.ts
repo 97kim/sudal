@@ -1,9 +1,10 @@
 // 에디터의 HTML 을 인앱 브라우저(<webview>, http(s) 만 허용)에서 보기 위한 로컬 정적 서버.
-// 127.0.0.1 의 임의 포트에 한 번만 뜨고, URL 은 http://127.0.0.1:<port>/p/<token>/<rootId>/<루트 기준 상대 경로>.
-// token 은 앱마다 새로 뽑아 다른 프로세스가 주소를 추측할 수 없게 하고, rootId 로 등록된 루트(저장소 최상위) 안의 파일만 준다.
+// 127.0.0.1 의 임의 포트에 한 번만 뜨고, URL 은 http://127.0.0.1:<port>/p/<token>/<루트 기준 상대 경로>.
+// token 은 루트(저장소 최상위)마다 따로 무작위로 뽑는다 — 미리보기는 모두 같은 origin 이라, 토큰이 하나뿐이거나 경로에서
+// 계산되면 한 저장소의 HTML 이 다른 저장소의 파일을 읽어 갈 수 있다. 점으로 시작하는 경로(.env·.git 등)는 주지 않는다.
 // 상대 경로의 css·js·이미지가 그대로 붙게 파일이 있는 트리째 서비스한다. 캐시는 끈다(저장 → 새로고침이 바로 보이게).
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import { extname, join, relative, resolve, sep } from "node:path";
 import { isInsideRel, isWithin } from "./path-within";
@@ -42,13 +43,19 @@ const MIME: Record<string, string> = {
   ".wasm": "application/wasm",
 };
 
+/** 점으로 시작하는 조각(.env·.git·.ssh 등)이 있는 경로. 비밀이 들어 있기 쉬워 미리보기로 주지 않는다. */
+function hasHiddenSegment(rel: string): boolean {
+  return rel.split(/[\\/]/).some((seg) => seg.startsWith("."));
+}
+
 export class PreviewServer {
   private server: Server | null = null;
   private starting: Promise<number> | null = null;
   private port = 0;
-  private readonly token = randomBytes(16).toString("hex");
-  /** rootId → 루트의 실제 경로(realpath) */
+  /** token → 루트의 실제 경로(realpath) */
   private readonly roots = new Map<string, string>();
+  /** 루트의 실제 경로 → token. 같은 루트는 같은 토큰이라 상대 경로 자원이 이어진다. */
+  private readonly tokens = new Map<string, string>();
 
   /** 서버를 (아직이면) 띄우고 포트를 돌려준다. */
   start(): Promise<number> {
@@ -86,12 +93,16 @@ export class PreviewServer {
       return null;
     }
     const rel = relative(realRoot, realFile);
-    if (!rel || !isInsideRel(rel)) return null;
+    if (!rel || !isInsideRel(rel) || hasHiddenSegment(rel)) return null;
     const port = await this.start();
-    const rootId = createHash("sha1").update(realRoot).digest("hex").slice(0, 12);
-    this.roots.set(rootId, realRoot);
+    let token = this.tokens.get(realRoot);
+    if (!token) {
+      token = randomBytes(16).toString("hex");
+      this.tokens.set(realRoot, token);
+      this.roots.set(token, realRoot);
+    }
     const relUrl = rel.split(sep).map(encodeURIComponent).join("/");
-    return `http://127.0.0.1:${port}/p/${this.token}/${rootId}/${relUrl}`;
+    return `http://127.0.0.1:${port}/p/${token}/${relUrl}`;
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -102,7 +113,7 @@ export class PreviewServer {
     if (req.method !== "GET" && req.method !== "HEAD") return deny(405, "method not allowed");
     // 브라우저 밖(다른 origin 페이지의 fetch 등)에서 못 읽게: 우리 서버의 페이지가 낸 요청이거나 주소창 직접 이동만.
     const origin = req.headers.origin;
-    if (origin && !origin.startsWith(`http://127.0.0.1:${this.port}`)) return deny(403, "forbidden");
+    if (origin && origin !== `http://127.0.0.1:${this.port}`) return deny(403, "forbidden");
     let url: URL;
     try {
       url = new URL(req.url ?? "/", `http://127.0.0.1:${this.port}`);
@@ -110,12 +121,12 @@ export class PreviewServer {
       return deny(400, "bad request");
     }
     const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length < 3 || parts[0] !== "p" || parts[1] !== this.token) return deny(404, "not found");
-    const root = this.roots.get(parts[2]);
+    if (parts.length < 2 || parts[0] !== "p") return deny(404, "not found");
+    const root = this.roots.get(parts[1]);
     if (!root) return deny(404, "not found");
     let rel: string;
     try {
-      rel = parts.slice(3).map(decodeURIComponent).join("/");
+      rel = parts.slice(2).map(decodeURIComponent).join("/");
     } catch {
       return deny(400, "bad request");
     }
@@ -128,7 +139,7 @@ export class PreviewServer {
     } catch {
       return deny(404, "not found");
     }
-    if (!isWithin(root, real)) return deny(404, "not found");
+    if (!isWithin(root, real) || hasHiddenSegment(relative(root, real))) return deny(404, "not found");
     let st = await fs.stat(real);
     if (st.isDirectory()) {
       target = join(real, "index.html");
@@ -138,7 +149,7 @@ export class PreviewServer {
       } catch {
         return deny(404, "not found");
       }
-      if (!isWithin(root, real) || !st.isFile()) return deny(404, "not found");
+      if (!isWithin(root, real) || hasHiddenSegment(relative(root, real)) || !st.isFile()) return deny(404, "not found");
     }
     if (!st.isFile()) return deny(404, "not found");
     const type = MIME[extname(real).toLowerCase()] ?? "application/octet-stream";
