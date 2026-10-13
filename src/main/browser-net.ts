@@ -66,3 +66,16 @@ export function browserNetFailures(webContentsId: number): NetFailure[] {
 export function clearBrowserNetFailures(webContentsId: number): void {
   byContents.delete(webContentsId);
 }
+
+/**
+ * 인앱 브라우저에서 웹페이지가 요청하는 권한. Electron 은 핸들러가 없으면 전부 허용해서, 아무 페이지나 묻지 않고
+ * 클립보드를 읽거나(복사해 둔 토큰·비밀번호) 위치·알림·카메라·다른 앱 실행(openExternal)을 얻을 수 있었다.
+ * 그래서 기본은 거부하고, 페이지가 평범하게 쓰는 전체 화면과 클립보드에 쓰기만 허용한다.
+ */
+const ALLOWED_PERMISSIONS = new Set(["fullscreen", "clipboard-sanitized-write"]);
+
+export function lockBrowserPermissions(): void {
+  const s = session.fromPartition(BROWSER_PARTITION);
+  s.setPermissionRequestHandler((_wc, permission, callback) => callback(ALLOWED_PERMISSIONS.has(permission)));
+  s.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+}

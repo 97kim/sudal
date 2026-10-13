@@ -58,7 +58,7 @@ import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/ha
 import { lastReplyText } from "@shared/session-state";
 import { parseCron } from "@shared/cron";
 import { PreviewServer } from "./preview-server";
-import { browserNetFailures, clearBrowserNetFailures, watchBrowserNetwork } from "./browser-net";
+import { browserNetFailures, clearBrowserNetFailures, lockBrowserPermissions, watchBrowserNetwork } from "./browser-net";
 import { browserConsoleLines, watchBrowserConsole } from "./browser-console";
 import type { BrowserRect, KeyInput } from "@shared/browser-control";
 import { fetchDocImage, fetchFavicon } from "./browser-favicon";
@@ -3382,6 +3382,7 @@ app.whenReady().then(async () => {
   buildMenu();
   // 브라우저 탭의 실패한 요청 수집 — webRequest 는 세션에 한 번만 걸 수 있어 창보다 먼저 건다
   watchBrowserNetwork();
+  lockBrowserPermissions();
   watchBrowserDownloads();
   // 에이전트가 읽을 브라우저 콘솔 — 웹뷰가 붙기 전에 걸어야 첫 페이지 로그부터 잡힌다
   watchBrowserConsole();
