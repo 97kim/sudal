@@ -149,6 +149,7 @@ export const session: DeepPartial<typeof ko> = {
       fresh: "Switched from {{from}} to {{to}}. Started a new session.",
     },
     cliNotFound: "Couldn't find the CLI executable: {{detail}}",
+    untrustedFolder: "Claude didn't start because this folder isn't trusted. Send again to be asked again.",
     closed: "The session was closed.",
     sessionEnded: "The session has ended.",
     stoppedShort: "Stopped.",

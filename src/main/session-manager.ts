@@ -188,6 +188,10 @@ export interface SessionManagerDeps {
   /** tabId: 그 탭의 에이전트 프로세스에 자기 탭 id(SUDAL_TAB_ID)를 알려 준다. */
   claudeRuntime(tabId?: string): Promise<ClaudeRuntime>;
   codexRuntime(tabId?: string): Promise<CodexRuntime>;
+  /** 이 폴더를 신뢰했나(묻지 않는다). 예열은 신뢰한 폴더에서만 한다. 없으면 신뢰한 것으로 본다. */
+  folderTrusted?(cwd: string): Promise<boolean>;
+  /** Claude 턴을 열기 전에 신뢰를 확인하고, 아직이면 사용자에게 묻는다. false 면 띄우지 않는다. */
+  ensureFolderTrust?(tabId: string, cwd: string): Promise<boolean>;
   store?: SessionStore;
   /** 모르는 tabId 를 만났을 때 영속 모델에서 설정을 가져온다. */
   resolveConfig?(tabId: string): SessionConfig | null;
@@ -530,6 +534,7 @@ export class SessionManager {
     };
     try {
       if (s.provider === "claude") {
+        if (this.deps.folderTrusted && !(await this.deps.folderTrusted(s.cwd))) return;
         const r = await warmClaudeSession(await this.deps.claudeRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[claude] 예열 시작");
       } else {
@@ -1375,6 +1380,7 @@ export class SessionManager {
             log: (line) => this.deps.log?.(s.tabId, line),
           });
         } else {
+          if (this.deps.ensureFolderTrust && !(await this.deps.ensureFolderTrust(s.tabId, s.cwd!))) throw new MsgError("session.msg.untrustedFolder");
           const runtime = await this.deps.claudeRuntime(s.tabId);
           await runClaudeTurn(runtime, {
             sessionKey: s.tabId,

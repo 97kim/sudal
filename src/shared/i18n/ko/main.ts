@@ -146,6 +146,12 @@ export const main = {
   export: {
     failed: "내보내기 실패: {{detail}}",
   },
+  trust: {
+    message: "이 폴더를 신뢰하나요?",
+    detail: "{{path}}\n\n직접 만든 프로젝트나 믿을 수 있는 저장소인가요? 신뢰하면 이 폴더의 .claude/settings.json(hooks·권한)과 .mcp.json을 읽어요. hooks는 확인 없이 명령을 실행할 수 있어요. 모르는 저장소라면 먼저 내용을 살펴보세요.",
+    trust: "신뢰해요",
+    cancel: "취소",
+  },
   legacy: {
     runningTitle: "Atelier가 실행 중이에요",
     runningBody: "Sudal은 Atelier의 새 이름이에요. 쓰던 데이터를 옮기려면 Atelier를 종료한 뒤 Sudal을 다시 열어 주세요.",

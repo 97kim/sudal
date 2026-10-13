@@ -144,6 +144,12 @@ export const main: DeepPartial<typeof ko> = {
   export: {
     failed: "Export failed: {{detail}}",
   },
+  trust: {
+    message: "Do you trust this folder?",
+    detail: "{{path}}\n\nIs this a project you created or a repository you trust? If you trust it, Claude reads this folder's .claude/settings.json (hooks, permissions) and .mcp.json. Hooks can run commands without asking. If you don't know this repository, review it first.",
+    trust: "Trust",
+    cancel: "Cancel",
+  },
   legacy: {
     runningTitle: "Atelier is still running",
     runningBody: "Sudal is the new name for Atelier. To move your data over, quit Atelier and open Sudal again.",

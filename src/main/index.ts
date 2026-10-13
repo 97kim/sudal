@@ -120,6 +120,7 @@ import { MobileServer } from "./mobile-server";
 import { mobileRoutes, mobileStatics, MobileStream } from "./mobile-api";
 import { TerminalManager } from "./terminals";
 import { fetchUsageText } from "./claude-control";
+import { initFolderTrust, isFolderTrusted, trustFolder, trustScope } from "./folder-trust";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
 import { WorkspaceService } from "./workspaces";
 import { OtterWindow } from "./otter-window";
@@ -288,6 +289,33 @@ let mainWindowReady = false;
 /** 살아 있는 메인 창. 닫은 뒤의 객체나 수달 창은 아니다. */
 function liveMainWindow(): BrowserWindow | null {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+/** 같은 폴더를 여러 탭이 동시에 열어도 한 번만 묻는다. */
+const trustAsks = new Map<string, Promise<boolean>>();
+/** 대화형 Claude Code 의 신뢰 창과 같다 — 기본 선택은 취소. */
+async function ensureFolderTrust(cwd: string): Promise<boolean> {
+  if (await isFolderTrusted(cwd)) return true;
+  const { root } = await trustScope(cwd);
+  let ask = trustAsks.get(root);
+  if (!ask) {
+    ask = (async () => {
+      const opts = {
+        type: "warning" as const,
+        message: mt("main.trust.message"),
+        detail: mt("main.trust.detail", { path: root }),
+        buttons: [mt("main.trust.trust"), mt("main.trust.cancel")],
+        defaultId: 1,
+        cancelId: 1,
+      };
+      const win = liveMainWindow();
+      const { response } = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+      if (response !== 0) return false;
+      await trustFolder(root);
+      return true;
+    })().finally(() => trustAsks.delete(root));
+    trustAsks.set(root, ask);
+  }
+  return ask;
 }
 /** 메인 창을 앞으로. 닫아 두었으면 새로 만든다(macOS 는 창을 다 닫아도 앱이 살아 있다). */
 function showMainWindow(): { win: BrowserWindow; created: boolean } {
@@ -1657,6 +1685,7 @@ function checkBudget() {
 function bootstrap() {
   store = new Store(app.getPath("userData"));
   mobilePairing = new MobilePairing(join(app.getPath("userData"), "mobile-devices.json"));
+  initFolderTrust(join(app.getPath("userData"), "trusted-folders.json"));
   adoptLegacyInstall();
   workspaces = new WorkspaceService(store, (state: WorkspaceStateDto) =>
     sendAll(IPC.wsChanged, state),
@@ -1764,6 +1793,8 @@ function bootstrap() {
     },
     claudeRuntime,
     codexRuntime,
+    folderTrusted: isFolderTrusted,
+    ensureFolderTrust: (_tabId, cwd) => ensureFolderTrust(cwd),
     store,
     warmEnabled: () => appSettings().warmTarget !== "off",
     resolveConfig: (tabId) => workspaces.resolveConfig(tabId),

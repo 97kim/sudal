@@ -147,6 +147,7 @@ export const session = {
       fresh: "{{from}} → {{to}} 로 전환. 새 세션으로 시작합니다.",
     },
     cliNotFound: "CLI 실행 파일을 찾지 못했습니다: {{detail}}",
+    untrustedFolder: "이 폴더를 신뢰하지 않아 Claude를 띄우지 않았어요. 다시 보내면 한 번 더 물어요.",
     closed: "세션을 닫았습니다.",
     sessionEnded: "세션이 종료되었습니다.",
     stoppedShort: "중단했습니다.",

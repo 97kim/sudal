@@ -5,6 +5,7 @@
 import type { ClaudeRuntime } from "./claude-adapter";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { mt } from "./i18n";
+import { claudeSettingSources } from "./folder-trust";
 
 type Query = import("@anthropic-ai/claude-agent-sdk").Query;
 type SDKUserMessage = import("@anthropic-ai/claude-agent-sdk").SDKUserMessage;
@@ -42,6 +43,7 @@ export async function withControlQuery<T>(
     prompt: idle(),
     options: {
       cwd,
+      settingSources: await claudeSettingSources(cwd),
       env: runtime.env,
       pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
       abortController: abort,
@@ -90,6 +92,7 @@ export async function fetchUsageText(
     prompt: "/usage",
     options: {
       cwd,
+      settingSources: await claudeSettingSources(cwd),
       env: runtime.env,
       pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
       abortController: abort,

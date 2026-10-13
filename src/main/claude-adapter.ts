@@ -17,6 +17,7 @@ import { forkSession, query } from "@anthropic-ai/claude-agent-sdk";
 import { claudeProgressNotes } from "./cli-defaults";
 import { homedir } from "node:os";
 import { MsgError, mainI18n, mt } from "./i18n";
+import { claudeSettingSources } from "./folder-trust";
 import { isOffLanguage } from "@shared/language-drift";
 import type { Locale } from "@shared/i18n";
 
@@ -340,6 +341,8 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
   };
   const options: SdkOptions = {
     cwd: req.cwd,
+    // 세션 매니저가 턴 전에 신뢰를 묻는다. 그 밖의 길로 열려도 신뢰하지 않은 저장소의 hooks 는 읽지 않게 여기서도 막는다.
+    settingSources: await claudeSettingSources(req.cwd),
     env: runtime.env,
     pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
     model: req.model,
