@@ -130,6 +130,8 @@ export interface AppSettingsDto {
   notifyOnDone: NotifyOnDone;
   /** 새 탭의 권한. inherit = 새 탭을 열 때 보고 있던 탭과 같게. */
   newTabPolicy: NewTabPolicy;
+  /** 새 탭의 모델(provider 별). 빈 문자열이면 CLI 기본값. 보던 탭이 같은 provider 로 모델을 골라 두었으면 그쪽이 먼저다. */
+  newTabModel: Record<Provider, string>;
   /** 화면에 수달을 띄워 에이전트 상태를 보여 준다. 처음엔 꺼져 있다. */
   otter: boolean;
   /** 쉬는 동안 수달이 가끔 옆으로 걷거나 뛴다. 처음엔 꺼져 있다. */

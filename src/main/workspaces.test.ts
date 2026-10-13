@@ -66,3 +66,18 @@ test("a rescan changes defaults for subsequent tabs and retains models for the s
   assert.equal(next.provider, "claude");
   assert.equal(next.model, undefined);
 });
+
+test("새 탭은 보던 탭(같은 CLI)의 모델이 없을 때 설정의 기본 모델로 시작한다", () => {
+  const ws = service(["claude", "codex"]);
+  ws.newTabModel = (p) => (p === "claude" ? "opus" : undefined);
+  const { workspaceId, tabId } = ws.createWorkspace("defaults");
+  assert.equal(ws.tab(tabId)?.model, "opus", "새 워크스페이스의 첫 탭도");
+  assert.equal(ws.tab(ws.addWorkspace("/repo").tabId)?.model, "opus");
+  ws.activateTab(tabId);
+  assert.equal(ws.tab(ws.createTab(workspaceId)!)?.model, "opus");
+  ws.onMeta(ws.state().model.activeTabId!, { model: "claude-fable-5-1" });
+  assert.equal(ws.tab(ws.createTab(workspaceId)!)?.model, "claude-fable-5-1", "보던 탭의 모델이 먼저");
+  ws.activateTab(tabId);
+  ws.onMeta(tabId, { provider: "codex", model: undefined });
+  assert.equal(ws.tab(ws.createTab(workspaceId)!)?.model, undefined, "Codex 기본을 정하지 않았으면 CLI 기본");
+});

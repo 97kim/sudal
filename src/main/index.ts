@@ -1610,6 +1610,7 @@ function appSettings(): AppSettingsDto {
     maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.SUDAL_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
     newTabPolicy: isNewTabPolicy(raw.newTabPolicy) ? raw.newTabPolicy : "inherit",
+    newTabModel: { claude: modelSetting(raw.newTabModel?.claude), codex: modelSetting(raw.newTabModel?.codex) },
     otter: raw.otter === true,
     otterRoam: raw.otterRoam === true,
     otterRoamPauseSec: roamValue(raw.otterRoamPauseSec, "pauseSec"),
@@ -1621,6 +1622,11 @@ function appSettings(): AppSettingsDto {
     worktreeDirCustom: typeof raw.worktreeDir === "string" && isAbsolute(raw.worktreeDir),
     dataDir: app.getPath("userData"),
   };
+}
+
+/** 모델 id 는 CLI 가 판단한다 — 여기선 모양만 본다. 이상하면 CLI 기본(""). */
+function modelSetting(v: unknown): string {
+  return typeof v === "string" && /^[\w.:\[\]-]{1,100}$/.test(v.trim()) ? v.trim() : "";
 }
 
 /** 돌아다니기 슬라이더 값: 숫자가 아니면 기본값, 범위 밖이면 끝값, 눈금에 맞춰 반올림. */
@@ -1745,6 +1751,7 @@ function bootstrap() {
   for (const [id, kind] of Object.entries(attention.snapshot())) if (kind === "done") otterDoneAt.set(id, 0);
   workspaces.attentionSource = () => attention.snapshot();
   workspaces.newTabPolicy = () => appSettings().newTabPolicy;
+  workspaces.newTabModel = (provider) => appSettings().newTabModel[provider] || undefined;
   workspaces.attentionHooks = {
     viewed: (tabId) => attention.viewed(tabId),
     forget: (tabId) => attention.forget(tabId),
@@ -1793,6 +1800,7 @@ function bootstrap() {
     },
     claudeRuntime,
     codexRuntime,
+    newTabModel: (provider) => appSettings().newTabModel[provider] || undefined,
     folderTrusted: isFolderTrusted,
     ensureFolderTrust: (_tabId, cwd) => ensureFolderTrust(cwd),
     store,
@@ -2306,6 +2314,13 @@ function registerIpc() {
     if (patch.newTabPolicy !== undefined) {
       if (!isNewTabPolicy(patch.newTabPolicy)) throw new Error(mt("main.error.badPolicy"));
       next.newTabPolicy = patch.newTabPolicy;
+    }
+    if (patch.newTabModel && typeof patch.newTabModel === "object") {
+      const cur = appSettings().newTabModel;
+      next.newTabModel = {
+        claude: patch.newTabModel.claude !== undefined ? modelSetting(patch.newTabModel.claude) : cur.claude,
+        codex: patch.newTabModel.codex !== undefined ? modelSetting(patch.newTabModel.codex) : cur.codex,
+      };
     }
     // 경로를 고르는 건 main 의 선택 창(app:pick-worktree-dir)만 한다 — 여기서는 기본값으로 되돌리기만 받는다
     if (patch.worktreeDirCustom === false) delete next.worktreeDir;

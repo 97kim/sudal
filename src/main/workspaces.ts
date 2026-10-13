@@ -57,12 +57,20 @@ export class WorkspaceService {
   attentionSource: (() => WorkspaceStateDto["attention"]) | null = null;
   /** 설정의 "새 탭 권한". inherit 면 새 탭을 열 때 보고 있던 탭을 따른다. */
   newTabPolicy: () => NewTabPolicy = () => "inherit";
+  /** 설정의 "새 탭 기본 모델". undefined 면 CLI 기본값. */
+  newTabModel: (provider: Provider) => string | undefined = () => undefined;
 
   /** 검증된 CLI가 하나뿐이면 새 세션은 그 CLI를 사용한다. */
   availableProviders: readonly Provider[] = [];
 
   private newTabProvider(preferred?: Provider): Provider {
     return this.availableProviders.length === 1 ? this.availableProviders[0] : preferred ?? "claude";
+  }
+
+  /** 새 워크스페이스의 첫 탭: 이어받을 탭이 없으니 설정의 기본값만. */
+  private firstTabDefaults() {
+    const provider = this.newTabProvider();
+    return { provider, model: this.newTabModel(provider), policy: this.fixedNewTabPolicy() };
   }
 
   private fixedNewTabPolicy(): PermissionPolicy | undefined {
@@ -140,7 +148,7 @@ export class WorkspaceService {
       this.commit(activateTab(model, open.id));
       return { workspaceId: workspace.id, tabId: open.id };
     }
-    const created = createTab(model, workspace.id, now, randomUUID(), { provider: this.newTabProvider(), policy: this.fixedNewTabPolicy() });
+    const created = createTab(model, workspace.id, now, randomUUID(), this.firstTabDefaults());
     this.commit(created.model);
     return { workspaceId: workspace.id, tabId: created.tab.id };
   }
@@ -149,7 +157,7 @@ export class WorkspaceService {
   createWorkspace(name: string, builtin?: Workspace["builtin"]): { workspaceId: string; tabId: string } {
     const now = Date.now();
     const { model, workspace } = createWorkspace(this.model, name, now, randomUUID(), builtin);
-    const created = createTab(model, workspace.id, now, randomUUID(), { provider: this.newTabProvider(), policy: this.fixedNewTabPolicy() });
+    const created = createTab(model, workspace.id, now, randomUUID(), this.firstTabDefaults());
     this.commit(created.model);
     return { workspaceId: workspace.id, tabId: created.tab.id };
   }
@@ -179,7 +187,7 @@ export class WorkspaceService {
       ? this.model.workspaces.find((w) => w.id === workspaceId)
       : activeWorkspace(this.model);
     if (!ws) return null;
-    // 설치된 CLI가 하나면 우선 사용하고, 그 외에는 활성 탭의 provider/모델을 이어받는다.
+    // 설치된 CLI가 하나면 우선 사용하고, 그 외에는 활성 탭의 provider/모델을 이어받는다. 이어받을 모델이 없으면 설정의 기본 모델.
     // 정책은 설정이 정해 두었으면 그것, 아니면 활성 탭을 따른다.
     // 작업 경로는 inheritedCwd 가 정한다(다른 워크스페이스면 그쪽 최근 경로).
     const active = this.model.tabs.find((t) => t.id === this.model.activeTabId);
@@ -187,7 +195,7 @@ export class WorkspaceService {
     const now = Date.now();
     const { model, tab } = createTab(this.model, ws.id, now, randomUUID(), {
       provider,
-      model: provider === active?.provider ? active.model : undefined,
+      model: (provider === active?.provider ? active.model : undefined) || this.newTabModel(provider),
       policy: this.fixedNewTabPolicy() ?? active?.policy,
       cwd: extra?.cwd ?? inheritedCwd(this.model, ws.id, this.model.activeTabId),
     });

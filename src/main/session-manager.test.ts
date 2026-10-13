@@ -624,6 +624,18 @@ test("configure: provider 가 바뀌면 이전 provider 의 모델은 버리고,
   rmSync(root, { recursive: true, force: true });
 });
 
+test("configure: provider 만 바꾸면 새 provider 의 기본 모델을 쓰고, model 을 함께 주면 그쪽을 쓴다", () => {
+  const root = mkdtempSync(join(tmpdir(), "wb-model-default-"));
+  const { manager } = makeManager(root);
+  (manager as unknown as { deps: { newTabModel?: (p: string) => string | undefined } }).deps.newTabModel = (p) => (p === "codex" ? "gpt-6.1-sol" : "opus");
+  manager.configure("m2", { model: "claude-fable-5-1" });
+  manager.configure("m2", { provider: "codex" });
+  assert.equal(manager.snapshot("m2").model, "gpt-6.1-sol");
+  manager.configure("m2", { provider: "claude", model: undefined });
+  assert.equal(manager.snapshot("m2").model, undefined, "리뷰 탭처럼 model 을 비워 보내면 CLI 기본");
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("분기: 지금 세션의 정상 턴에서만, 그 턴까지의 기록(작업 카드 제외)을 새 탭으로 옮기고 새 세션 id 를 쓴다", () => {
   const root = mkdtempSync(join(tmpdir(), "wb-fork-"));
   const { manager } = makeManager(root);

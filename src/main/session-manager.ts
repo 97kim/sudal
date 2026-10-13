@@ -192,6 +192,8 @@ export interface SessionManagerDeps {
   folderTrusted?(cwd: string): Promise<boolean>;
   /** Claude 턴을 열기 전에 신뢰를 확인하고, 아직이면 사용자에게 묻는다. false 면 띄우지 않는다. */
   ensureFolderTrust?(tabId: string, cwd: string): Promise<boolean>;
+  /** 설정의 "새 탭 기본 모델". provider 만 바꾸고 모델을 정하지 않았을 때 쓴다. */
+  newTabModel?(provider: Provider): string | undefined;
   store?: SessionStore;
   /** 모르는 tabId 를 만났을 때 영속 모델에서 설정을 가져온다. */
   resolveConfig?(tabId: string): SessionConfig | null;
@@ -1119,9 +1121,11 @@ export class SessionManager {
       meta.sessionId = null;
       // 모델 id 는 provider 에 딸린 것이다. 새 탭이 활성 탭의 모델을 물려받은 채 provider 만 바뀌면(CLI `tab new --provider codex`)
       // Codex 가 Claude 모델을 받아 400 으로 거절한다. 같은 patch 에 model 이 있으면 아래에서 그것으로 덮인다.
-      if (s.model !== undefined) {
-        s.model = undefined;
-        meta.model = undefined;
+      // 같은 patch 에 model 이 없으면 새 provider 의 기본 모델로 둔다(CLI `tab new --provider codex`).
+      const fallback = "model" in patch ? undefined : this.deps.newTabModel?.(patch.provider);
+      if (s.model !== fallback) {
+        s.model = fallback;
+        meta.model = fallback;
       }
     }
     // 같은 폴더를 다르게 적은 것(Windows 의 C:\Repo 와 c:/repo)은 바뀐 게 아니다 — 세션을 버리지 않는다

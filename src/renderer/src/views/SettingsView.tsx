@@ -38,6 +38,7 @@ import { useSnippets } from "../hooks/useSnippets";
 import { updatePhaseLabel, useUpdateStatus } from "../hooks/useUpdate";
 import { snippetSummary, type SnippetDto } from "@shared/snippets";
 import { Logo } from "../components/Logo";
+import { modelOptions, useModels } from "../models";
 
 export type SettingsSection = "general" | "cli" | "mcp" | "snippets" | "schedules";
 
@@ -45,6 +46,31 @@ const LABEL: Record<Provider, [string, string]> = {
   claude: ["Claude Code", "Anthropic"],
   codex: ["Codex CLI", "OpenAI"],
 };
+
+function NewTabModelRow({ provider, value, disabled, onChange }: { provider: Provider; value: string; disabled: boolean; onChange: (model: string) => void }) {
+  const { t } = useTranslation();
+  const { models } = useModels(provider);
+  const [cliDefault, setCliDefault] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void window.sudal.cli.status(provider).then((s) => alive && setCliDefault(s.defaultModel ?? null));
+    return () => {
+      alive = false;
+    };
+  }, [provider]);
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2" data-new-tab-model={provider}>
+      <span className="text-[12.5px] font-medium">{LABEL[provider][0]}</span>
+      <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="mono max-w-[60%] rounded-md border border-line bg-panel px-2.5 py-1.5 text-[12px] disabled:opacity-50">
+        {modelOptions(t, models, value, cliDefault).map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 interface ProviderState {
   status: CliStatusDto | null;
@@ -680,6 +706,25 @@ function GeneralSection() {
                 <span className="block text-[12px] leading-5 text-muted">{t(`settings.newTabPolicy.options.${v}.hint`)}</span>
               </span>
             </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="new-tab-model">
+        <div className="mb-1 flex items-center gap-2 font-medium">
+          <Icon name="check" size={14} className="text-accent" />
+          {t("settings.newTabModel.title")}
+        </div>
+        <p className="mb-3 text-[12px] leading-5 text-muted">{t("settings.newTabModel.description")}</p>
+        <div className="divide-y divide-line rounded-md border border-line">
+          {PROVIDERS.map((p) => (
+            <NewTabModelRow
+              key={p}
+              provider={p}
+              value={settings?.newTabModel[p] ?? ""}
+              disabled={!settings}
+              onChange={(m) => settings && void save({ newTabModel: { ...settings.newTabModel, [p]: m } })}
+            />
           ))}
         </div>
       </div>

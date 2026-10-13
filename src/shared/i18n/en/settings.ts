@@ -78,6 +78,10 @@ export const settings: DeepPartial<typeof ko> = {
     roamEveryMinSec: "About {{m}} min {{s}} s",
     hint: "Drag to move it. Right-click to hide it for a while or turn it off.",
   },
+  newTabModel: {
+    title: "Default model for new tabs",
+    description: "Choose the model a new tab starts with. If the tab you were viewing uses the same agent and has a model picked, that model comes first. Scheduled tasks, fan-outs, and review tabs use their own model. Aliases like Opus or Sonnet follow new versions as they come out.",
+  },
   newTabPolicy: {
     title: "Default permission for new tabs",
     description: "Choose which permission new tabs, and the first tab of a new workspace, start with. You can change it per tab in the right panel.",
