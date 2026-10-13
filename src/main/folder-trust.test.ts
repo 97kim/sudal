@@ -7,7 +7,8 @@ import path from "node:path";
 import { initFolderTrust, isFolderTrusted, trustFolder, trustScope } from "./folder-trust";
 
 function setup() {
-  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sudal-trust-")));
+  // native: Windows CI 의 임시 폴더는 8.3 짧은 이름(RUNNER~1)이라, 코드처럼 긴 이름으로 풀어야 같은 경로가 된다
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "sudal-trust-")));
   const repo = path.join(base, "outer", "repo");
   fs.mkdirSync(path.join(repo, "sub"), { recursive: true });
   const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
@@ -60,7 +61,8 @@ test("folder-trust: Sudal 에서 신뢰하면 저장소 뿌리를 기록하고 �
   t.cliTrust();
   initFolderTrust(t.sudal, t.cli);
   await trustFolder(path.join(t.repo, "sub"));
-  assert.deepEqual(JSON.parse(fs.readFileSync(t.sudal, "utf8")), [t.repo]);
+  // Windows 에서는 CLI 처럼 "/" 로 적는다
+  assert.deepEqual(JSON.parse(fs.readFileSync(t.sudal, "utf8")), [process.platform === "win32" ? t.repo.replace(/\\/g, "/") : t.repo]);
   initFolderTrust(t.sudal, t.cli);
   assert.equal(await isFolderTrusted(t.wt), true);
   assert.equal(await isFolderTrusted(t.plain), false);
