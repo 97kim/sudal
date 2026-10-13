@@ -61,9 +61,10 @@ let proc = null;
   await sleep(8000);
   const s = await snap(tabU);
   // Claude 를 띄우지 않았으면 세션 id 가 생기지 않는다
-  res("C (보내면 신뢰 창에서 멈추고 hook 이 안 돈다)", s.status === "running" && s.sessionId === null && !marked().some((m) => m.startsWith("untrusted")), JSON.stringify({ status: s.status, sessionId: s.sessionId, marks: marked() }));
+  res("C (보내면 신뢰 창에서 멈추고 hook 이 안 돈다)", s.status === "running" && s.sessionId === null && !marked().some((m) => m.startsWith("untrusted")), JSON.stringify({ status: s.status, sessionId: s.sessionId, marks: marked(), ...(s.status === "error" ? { last: JSON.stringify(cli("tab", "read", "--tab", tabU, "--last", "2")).slice(0, 600) } : {}) }));
 
   log(results.filter(([, ok]) => !ok).length === 0 ? "ALL PASS" : "FAILED: " + results.filter(([, ok]) => !ok).map(([n]) => n).join(", "));
+  if (results.some(([, ok]) => !ok)) process.exitCode = 1;
   await b.close();
   proc.kill();
   await sleep(500);

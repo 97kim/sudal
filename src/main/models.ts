@@ -7,6 +7,7 @@ import type { ClaudeRuntime } from "./claude-adapter";
 import type { CodexRuntime } from "./codex-adapter";
 import { CodexAppServer } from "./codex-app-server";
 import { mt } from "./i18n";
+import { claudeSettingSources } from "./folder-trust";
 
 const CACHE_MS = 10 * 60_000;
 const cache = new Map<Provider, { at: number; models: ModelOptionDto[] }>();
@@ -55,7 +56,8 @@ async function claudeModels(src: ModelSources): Promise<ModelOptionDto[]> {
   async function* never(): AsyncGenerator<never> {
     await new Promise<void>(() => {});
   }
-  const q = query({ prompt: never() as never, options: { cwd: process.cwd(), env: rt.env, pathToClaudeCodeExecutable: rt.pathToClaudeCodeExecutable, permissionMode: "default" } });
+  // 앱을 터미널의 저장소 폴더에서 띄우면 process.cwd() 가 그 저장소다 — 신뢰 전엔 그 저장소의 hooks 를 읽지 않는다
+  const q = query({ prompt: never() as never, options: { cwd: process.cwd(), settingSources: await claudeSettingSources(process.cwd()), env: rt.env, pathToClaudeCodeExecutable: rt.pathToClaudeCodeExecutable, permissionMode: "default" } });
   try {
     const list = await withTimeout(q.supportedModels(), 20_000, "claude supportedModels");
     // "default" 행은 SDK 의 기본(사용자 CLI 설정과 다를 수 있다) — 우리 "" 항목이 그 역할을 하므로 뺀다
