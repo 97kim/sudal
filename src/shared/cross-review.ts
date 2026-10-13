@@ -38,10 +38,10 @@ export function buildReviewPrompt(t: TFunction, o: { originTitle: string; change
 }
 
 /** 경로를 받는 읽기 도구와 그 경로 칸. 이 밖의 도구(셸·웹·하위 에이전트·쓰기)는 모두 거부한다. */
+// Glob 은 넣지 않는다 — 패턴({../..,src}/*)이나 저장소 안의 바깥 링크는 펼치기 전에 판정할 수 없다.
 const READ_TOOL_PATHS: Record<string, string[]> = {
   Read: ["file_path"],
   Grep: ["path"],
-  Glob: ["path", "pattern"],
   LS: ["path"],
   NotebookRead: ["notebook_path"],
 };
@@ -60,11 +60,6 @@ export function reviewPermissionDecision(tool: string, input: Record<string, unk
     const v = input[field];
     if (v === undefined) continue;
     if (typeof v !== "string") return "deny";
-    // Glob 패턴은 저장소 기준 상대 패턴만: 위로 올라가는 조각이 있으면 밖을 가리킬 수 있다
-    if (field === "pattern" && !/^(?:[A-Za-z]:)?[\\/]|^~/.test(v)) {
-      if (v.split(/[\\/]/).includes("..")) return "deny";
-      continue;
-    }
     if (!inside(v)) return "deny";
   }
   return "allow";

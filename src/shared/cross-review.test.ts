@@ -22,12 +22,13 @@ test("reviewPermissionDecision: 저장소 안을 읽는 도구만 allow, 셸·�
   const inside = (p: string) => !p.startsWith("/") || p.startsWith("/repo/");
   assert.equal(reviewPermissionDecision("Read", { file_path: "/repo/a.ts" }, inside), "allow");
   assert.equal(reviewPermissionDecision("Grep", {}, inside), "allow", "경로가 없으면 저장소 기준");
-  assert.equal(reviewPermissionDecision("Glob", { pattern: "src/**/*.ts" }, inside), "allow");
   // 저장소 밖 읽기는 거부 — ~/.ssh 같은 비밀 파일을 읽어 넘길 수 있다
   assert.equal(reviewPermissionDecision("Read", { file_path: "/Users/me/.ssh/id_ed25519" }, inside), "deny");
   assert.equal(reviewPermissionDecision("Grep", { path: "/etc" }, inside), "deny");
-  assert.equal(reviewPermissionDecision("Glob", { pattern: "/Users/me/.aws/*" }, inside), "deny");
-  assert.equal(reviewPermissionDecision("Glob", { pattern: "../../**/.env" }, inside), "deny");
+  // Glob 은 패턴을 펼치기 전에 저장소 밖인지 알 수 없어 늘 거부
+  for (const pattern of ["src/**/*.ts", "{../..,src}/*", "outside-link/*", "/Users/me/.aws/*"])
+    assert.equal(reviewPermissionDecision("Glob", { pattern }, inside), "deny", pattern);
+  assert.equal(reviewPermissionDecision("Read", { file_path: "/repo/app/[id]/page.tsx" }, inside), "allow", "괄호가 든 실제 파일명");
   assert.equal(reviewPermissionDecision("Read", { file_path: 42 }, inside), "deny");
   // 셸은 읽기처럼 보여도 거부 — 리뷰가 찾은 우회들
   for (const cmd of ["git diff HEAD -- src", "rg --pre=./evil.sh foo", "git grep -O'touch x' foo", "awk 'BEGIN{\"id\" | getline}'", "sort --compress-program=sh x", "GIT_EXTERNAL_DIFF=./evil.sh git diff"])
