@@ -598,12 +598,14 @@ function BlockView({ block }: { block: Block }) {
           style={{ userSelect: "text" }}
         >
           {block.images && block.images.length > 0 && (
-            <div className="mb-2 flex gap-2">
+            // 가로로 긴 캡처를 여러 장 붙이면 한 줄에 다 안 들어간다 — 줄을 넘기고, 한 장이 말풍선보다 넓으면 비율을 지키며 줄인다.
+            // items-start: 기본값(stretch)이면 작은 이미지가 같은 줄의 큰 이미지 높이로 늘어난다
+            <div className="mb-2 flex flex-wrap items-start gap-2">
               {block.images.map((img, i) => (
                 <img
                   key={i}
                   src={img.dataUrl}
-                  className="h-20 rounded-md border border-line"
+                  className="max-h-20 max-w-full rounded-md border border-line"
                   alt=""
                 />
               ))}
