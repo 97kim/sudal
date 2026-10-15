@@ -444,6 +444,7 @@ function claudeOverage(i: Record<string, unknown>): ProviderRateLimitDto["overag
     inUse,
     ...(status ? { status } : {}),
     ...(typeof i.overageResetsAt === "number" ? { resetsAt: i.overageResetsAt } : {}),
+    ...(typeof i.overageDisabledReason === "string" && /^[a-z_]{1,40}$/.test(i.overageDisabledReason) ? { disabledReason: i.overageDisabledReason } : {}),
   };
 }
 

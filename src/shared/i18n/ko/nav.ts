@@ -83,7 +83,9 @@ export const nav = {
     windowTitleReset: "{{label}} 창 · {{status}} · {{date}} {{time}} 초기화",
     overageOn: "추가 사용량 켜짐",
     overageInUse: "추가 사용량으로 쓰는 중",
-    overageRejected: "추가 사용량도 다 씀",
+    overageNoCredits: "추가 사용량 크레딧 없음",
+    overageOff: "추가 사용량 꺼짐",
+    overageUnavailable: "추가 사용량 쓸 수 없음",
   },
   empty: {
     newWorkspace: "새 워크스페이스",

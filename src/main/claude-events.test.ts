@@ -578,6 +578,8 @@ test("parseClaudeRateLimit: 추가 사용량 켜짐·쓰는 중·다 씀을 읽�
   assert.deepEqual(on?.overage, { enabled: true, inUse: false, status: "allowed" });
   const using = parseClaudeRateLimit({ status: "rejected", resetsAt: 100, isUsingOverage: true, overageStatus: "allowed_warning", overageResetsAt: 200 }, 2);
   assert.deepEqual(using?.overage, { enabled: true, inUse: true, status: "allowed_warning", resetsAt: 200 });
+  // 쓸 수 없는 이유를 함께 남긴다(크레딧 없음과 꺼짐을 나눠 보여 준다)
+  assert.deepEqual(parseClaudeRateLimit({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.76, overageEnabled: true, overageStatus: "rejected", overageDisabledReason: "out_of_credits" }, 6)?.overage, { enabled: true, inUse: false, status: "rejected", disabledReason: "out_of_credits" });
   // 추가 사용량 정보만 와도 버리지 않는다
   assert.equal(parseClaudeRateLimit({ status: "allowed", overageEnabled: false }, 3)?.overage?.enabled, false);
   // 예전 CLI 처럼 없으면 만들지 않는다

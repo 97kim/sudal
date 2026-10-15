@@ -8,6 +8,36 @@ import type {
 } from "@shared/ipc";
 import { Icon } from "./Icon";
 
+/**
+ * 한도에 닿아도 결제로 이어 쓸 수 있는지. 추가 사용량을 못 쓰는 상태는 구독 한도가 남아 있으면 지금 막힌 게 아니다 —
+ * 빨간색은 한도에 닿았을 때만 쓴다(그전에 빨갛게 보이면 "다 썼다"로 읽혔다).
+ */
+function OverageLine({ limit }: { limit: ProviderRateLimitDto }) {
+  const { t } = useTranslation();
+  const o = limit.overage!;
+  const atLimit =
+    [limit.session, limit.weekly, limit.modelWeekly].some((w) => w && w.usedPercent >= 100) ||
+    (limit.rejectedResetsAt !== undefined && limit.rejectedResetsAt * 1000 > Date.now());
+  const kind = o.status === "rejected" ? "rejected" : o.inUse ? "in-use" : "enabled";
+  const key =
+    kind === "rejected"
+      ? o.disabledReason === "out_of_credits"
+        ? "nav.limits.overageNoCredits"
+        : // 조회 실패·알 수 없음은 꺼 둔 게 아니다 — "꺼짐"이라 하면 설정을 끈 것으로 읽힌다
+          o.disabledReason && o.disabledReason !== "fetch_error" && o.disabledReason !== "unknown"
+          ? "nav.limits.overageOff"
+          : "nav.limits.overageUnavailable"
+      : kind === "in-use"
+        ? "nav.limits.overageInUse"
+        : "nav.limits.overageOn";
+  const color = kind === "in-use" ? "text-warn" : kind === "rejected" && atLimit ? "text-err" : "text-muted-2";
+  return (
+    <span className={`text-[10px] ${color}`} data-limits-overage={kind}>
+      {t(key)}
+    </span>
+  );
+}
+
 /** 사이드바 하단 고정: provider 별 구독 한도(5시간/주간 창) 요약. 클릭하면 사용량 화면으로. */
 export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
   const { t, i18n } = useTranslation();
@@ -95,15 +125,7 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
               label={r.limit.modelWeekly.label}
             />
           )}
-          {r.limit.overage?.enabled && (
-            // 한도에 닿아도 결제로 이어 쓸 수 있는지 — 다 쓴 때·쓰는 중일 때 눈에 띄게
-            <span
-              className={`text-[10px] ${r.limit.overage.status === "rejected" ? "text-err" : r.limit.overage.inUse ? "text-warn" : "text-muted-2"}`}
-              data-limits-overage={r.limit.overage.status === "rejected" ? "rejected" : r.limit.overage.inUse ? "in-use" : "enabled"}
-            >
-              {t(r.limit.overage.status === "rejected" ? "nav.limits.overageRejected" : r.limit.overage.inUse ? "nav.limits.overageInUse" : "nav.limits.overageOn")}
-            </span>
-          )}
+          {r.limit.overage?.enabled && <OverageLine limit={r.limit} />}
         </div>
       ))}
     </button>
