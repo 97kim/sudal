@@ -314,6 +314,7 @@ export const IPC = {
   fileRemoteImage: "file:remote-image",
   previewUrl: "preview:url",
   controlOpen: "control:open",
+  controlOpenReady: "control:open-ready",
   controlInstallCli: "control:install-cli",
   controlInstallSkill: "control:install-skill",
   controlInstallStatus: "control:install-status",
@@ -1114,8 +1115,9 @@ export type BrowserEventDto = { webContentsId: number } & (
   | { kind: "download"; id: string; name: string; state: "progressing" | "completed" | "cancelled" | "failed"; received: number; total: number }
 );
 
-/** 제어 소켓(sudal CLI)이 렌더러에 요청하는 화면 동작. */
+/** 알림·제어 소켓(sudal CLI)이 렌더러에 요청하는 화면 동작. */
 export type ControlOpenDto =
+  | { kind: "tab"; tabId: string }
   | { kind: "file"; tabId: string; path: string; line?: number }
   | { kind: "browser"; tabId: string; url: string };
 

@@ -117,6 +117,7 @@ import { PROVIDER_LABEL, SessionManager, summarizeToolInput } from "./session-ma
 import { codexRateLimitFromAppServer, UsageScanner } from "./transcripts";
 import { MobilePairing, parseTailscaleSelf, tailscaleAddresses } from "./mobile-access";
 import { MobileServer } from "./mobile-server";
+import { notificationOptions, notificationTarget } from "./notification-target";
 import { mobileRoutes, mobileStatics, MobileStream } from "./mobile-api";
 import { TerminalManager } from "./terminals";
 import { fetchUsageText } from "./claude-control";
@@ -641,7 +642,6 @@ function notifyIfUnfocused(title: string, body: string, tabId?: string) {
   notify(title, body, tabId);
 }
 
-/** macOS 알림. 클릭하면 창을 앞으로 가져오고(탭이 있으면 그 탭으로) 간다. */
 /** 수달 말풍선. 사람이 해야 할 일과 결과만 말한다 — 일하는 중·쉬는 중에는 말하지 않는다. */
 function otterBubble(s: OtterState): string | null {
   const many = s.count > 1;
@@ -662,10 +662,32 @@ function otterBubble(s: OtterState): string | null {
 }
 
 /**
- * Windows 는 알림 객체가 치워지면 클릭 처리기도 사라져, 눌러도 앱이 오지 않는다. 그래서 붙잡아 둔다.
- * 닫힘(close)에서 놓지 않는다 — 시간이 지나 닫혀도 알림 센터에 남아 나중에 누를 수 있다. 최근 것만 둔다.
+ * 객체 이벤트를 받기 위해 최근 알림은 붙잡아 둔다. 타임아웃 close 뒤에도 알림 센터에 남을 수 있다.
+ * Windows의 이동 대상은 알림 XML에 있어 이 보관 한도나 앱 재시작에 의존하지 않는다.
  */
 const liveNotifications: Notification[] = [];
+
+function openNotificationTab(tabId?: string | null) {
+  const tab = tabId ? workspaces.tab(tabId) : undefined;
+  if (tabId && tab) {
+    if (!tab.open) workspaces.reopenTab(tabId);
+    workspaces.activateTab(tabId);
+    deliverControlOpen({ kind: "tab", tabId });
+  }
+  showMainWindow();
+}
+
+function registerNotificationActivation() {
+  if (process.platform !== "win32") return;
+  // Electron은 등록 전에 들어온 클릭도 전달한다. 워크스페이스·첫 창 준비 후 등록한다.
+  Notification.handleActivation((details) => {
+    const tabId = notificationTarget(details);
+    if (tabId !== undefined) {
+      console.log(`[notify] activate tab=${tabId ?? "none"}`);
+      openNotificationTab(tabId);
+    }
+  });
+}
 
 function notify(title: string, body: string, tabId?: string) {
   if (!Notification.isSupported()) {
@@ -673,13 +695,14 @@ function notify(title: string, body: string, tabId?: string) {
     return;
   }
   console.log(`[notify] ${title} — ${body.slice(0, 60)}`);
-  const n = new Notification({ title, body: body.slice(0, 200), silent: false });
+  const n = new Notification(notificationOptions(title, body, tabId, process.platform));
   n.on("click", () => {
     const i = liveNotifications.indexOf(n);
     if (i >= 0) liveNotifications.splice(i, 1);
-    showMainWindow();
-    if (tabId && workspaces.tab(tabId)) workspaces.activateTab(tabId);
+    // Windows는 객체 이벤트와 전역 activation이 함께 오므로 전역 처리에서만 이동한다.
+    if (process.platform !== "win32") openNotificationTab(tabId);
   });
+  n.on("failed", (_event, error) => console.warn(`[notify] failed: ${error}`));
   liveNotifications.push(n);
   if (liveNotifications.length > 20) liveNotifications.shift();
   n.show();
@@ -1259,20 +1282,14 @@ function verifySuggestions(tabId: string): string[] {
   return cwd && existsSync(cwd) ? suggestForCwd(cwd) : [];
 }
 
-/** 렌더러에 화면 동작을 전달한다. macOS 에서 창을 다 닫아 둔 상태면 창을 만든 뒤 렌더러가 준비되면 보낸다. */
+let controlOpenReady = false;
+const pendingControlOpen: ControlOpenDto[] = [];
+
+/** 새 창·재시작 중의 알림 클릭도 리스너 등록 확인 후 순서대로 전달한다. */
 function deliverControlOpen(req: ControlOpenDto) {
-  if (liveMainWindow()) {
-    sendAll(IPC.controlOpen, req);
-    return;
-  }
-  mainWindow = createWindow();
-  const win = mainWindow;
-  win.webContents.once("did-finish-load", () => {
-    // 렌더러는 상태를 hydrate 한 뒤 App 을 그리고 그때 리스너를 단다 — 잠깐 뒤에 보낸다
-    setTimeout(() => {
-      if (!win.isDestroyed()) win.webContents.send(IPC.controlOpen, req);
-    }, 1500);
-  });
+  const win = liveMainWindow() ?? (mainWindow = createWindow());
+  if (controlOpenReady) win.webContents.send(IPC.controlOpen, req);
+  else pendingControlOpen.push(req);
 }
 
 
@@ -2139,6 +2156,12 @@ async function pickDirectoryRaw(
 }
 
 function registerIpc() {
+  ipcMain.on(IPC.controlOpenReady, (event) => {
+    const win = liveMainWindow();
+    if (!win || event.sender !== win.webContents) return;
+    controlOpenReady = true;
+    for (const req of pendingControlOpen.splice(0)) win.webContents.send(IPC.controlOpen, req);
+  });
   ipcMain.handle(
     IPC.appInfo,
     (): AppInfoDto => ({
@@ -3333,6 +3356,7 @@ function buildMenu() {
 // ===== Window =====
 
 function createWindow(): BrowserWindow {
+  controlOpenReady = false;
   const win = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -3351,6 +3375,11 @@ function createWindow(): BrowserWindow {
       // 인앱 브라우저 탭(<webview>). 붙을 때의 제한은 아래 web-contents-created 의 will-attach-webview 에서 건다.
       webviewTag: true,
     },
+  });
+  // 메인 프레임이 실제로 새 문서로 바뀌었을 때만 준비를 푼다. did-start-navigation 은 will-navigate 로 막힌 이동에도 와서,
+  // 화면과 리스너는 그대로인데 준비 신호가 다시 오지 않아 이후 요청이 대기열에 갇혔다.
+  win.webContents.on("did-navigate", () => {
+    controlOpenReady = false;
   });
   // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+R·L 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
   // 터미널에 포커스가 있을 때 그 키만 이번 입력에 한해 메뉴를 끈다. 키 입력마다 다시 정하므로 다른 키에는 남지 않는다.
@@ -3452,6 +3481,7 @@ app.whenReady().then(async () => {
   void syncMobile();
   mainWindow = liveMainWindow() ?? createWindow();
   mainWindowReady = true;
+  registerNotificationActivation();
   // macOS 는 자동 업데이트를 붙이지 않는다 — 새 버전은 brew 로 갈아 끼우거나 GitHub Releases 의 DMG 를 다시 받는다.
   // 서명·공증이 없으면 electron-updater 의 자동 설치는 Gatekeeper 에 막힌다. Windows 만 electron-updater 를 쓴다(app-update-win.ts).
 
