@@ -229,14 +229,17 @@ export function App() {
     [model.openTabIds, model.activeTabId, ws.attention, openTab],
   );
 
-  // `sudal` CLI 가 밀어 넣는 화면 동작: 그 탭으로 가서 파일·브라우저를 연다
+  // 알림·CLI가 요청한 탭으로 이동한다. 설정·사용량 화면에서도 채팅이 보이게 한다.
   useEffect(
     () =>
       window.sudal.app.onControlOpen((req) => {
         setView("chat"); // 설정·사용량 화면에 있어도 요청한 탭이 보이게
         void api.activateTab(req.tabId);
         if (req.kind === "file") openEditorFile(req.tabId, req.path, req.line ? { line: req.line } : null);
-        else openBrowserTab(req.tabId, req.url);
+        else if (req.kind === "browser") openBrowserTab(req.tabId, req.url);
+        else {
+          setEditorMaximized(req.tabId, false);
+        }
       }),
     [],
   );

@@ -69,6 +69,7 @@ const api: SudalApi = {
     onControlOpen: (listener) => {
       const handler = (_e: IpcRendererEvent, req: ControlOpenDto) => listener(req);
       ipcRenderer.on(IPC.controlOpen, handler);
+      ipcRenderer.send(IPC.controlOpenReady);
       return () => ipcRenderer.removeListener(IPC.controlOpen, handler);
     },
     installCli: () => ipcRenderer.invoke(IPC.controlInstallCli),
