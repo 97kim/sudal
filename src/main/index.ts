@@ -3376,8 +3376,10 @@ function createWindow(): BrowserWindow {
       webviewTag: true,
     },
   });
-  win.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) controlOpenReady = false;
+  // 메인 프레임이 실제로 새 문서로 바뀌었을 때만 준비를 푼다. did-start-navigation 은 will-navigate 로 막힌 이동에도 와서,
+  // 화면과 리스너는 그대로인데 준비 신호가 다시 오지 않아 이후 요청이 대기열에 갇혔다.
+  win.webContents.on("did-navigate", () => {
+    controlOpenReady = false;
   });
   // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+R·L 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
   // 터미널에 포커스가 있을 때 그 키만 이번 입력에 한해 메뉴를 끈다. 키 입력마다 다시 정하므로 다른 키에는 남지 않는다.
