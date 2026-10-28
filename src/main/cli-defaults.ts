@@ -3,11 +3,15 @@ import fs from "node:fs";
 import { join } from "node:path";
 import type { Provider } from "@shared/ipc";
 
-/** ~/.claude/settings.json 의 "model", ~/.codex/config.toml 의 최상위 `model = "…"`. 없거나 못 읽으면 null. */
+/** ~/.claude/settings.json 의 "model", ~/.codex/config.toml 의 최상위 `model = "…"`, ~/.gemini/antigravity-cli/settings.json 의 "model". 없거나 못 읽으면 null. */
 export function readCliDefaultModel(provider: Provider, home: string): string | null {
   try {
     if (provider === "claude") {
       const raw = JSON.parse(fs.readFileSync(join(home, ".claude", "settings.json"), "utf8")) as { model?: unknown };
+      return typeof raw.model === "string" && raw.model.trim() ? raw.model.trim() : null;
+    }
+    if (provider === "agy") {
+      const raw = JSON.parse(fs.readFileSync(join(home, ".gemini", "antigravity-cli", "settings.json"), "utf8")) as { model?: unknown };
       return typeof raw.model === "string" && raw.model.trim() ? raw.model.trim() : null;
     }
     return codexTopLevelModel(fs.readFileSync(join(home, ".codex", "config.toml"), "utf8"));

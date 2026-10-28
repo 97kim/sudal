@@ -104,6 +104,17 @@ export const session: DeepPartial<typeof ko> = {
     initPrompt: "Create an AGENTS.md file that serves as a contributor guide for this repository. Look at the project structure, build and test commands, code style, and conventions, and keep it concise.",
     skills: "Open the skill list (you can also type $)",
   },
+  agyCommand: {
+    plan: "Create a step-by-step plan before execution",
+    boost: "Deep thinking, multiple perspectives, and rigorous verification",
+    goal: "Keep working thoroughly until the goal is achieved",
+    "grill-me": "Align on design decisions through an interactive interview",
+    teamwork: "Coordinate a team of autonomous subagents",
+    browser: "Use web search or browser automation",
+    schedule: "Schedule a recurring instruction or timer",
+    learn: "Persist learned setup or corrections for future tasks",
+    promptHint: "[task]",
+  },
   msg: {
     aiReview: {
       denied: "AI review denied this action: {{action}}",

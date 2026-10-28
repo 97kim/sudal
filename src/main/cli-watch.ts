@@ -17,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function parseResumeId(args: string): string | null {
   const tok = args.trim().split(/\s+/);
   for (let i = 0; i < tok.length; i++) {
-    if (tok[i] !== "resume" && tok[i] !== "--resume" && tok[i] !== "-r") continue;
+    if (tok[i] !== "resume" && tok[i] !== "--resume" && tok[i] !== "-r" && tok[i] !== "--conversation") continue;
     for (let j = i + 1; j < tok.length; j++) {
       if (tok[j].startsWith("-")) continue; // --last 같은 플래그는 건너뛴다
       return UUID.test(tok[j]) ? tok[j] : null;
@@ -48,6 +48,7 @@ function providerOf(comm: string): Provider | null {
   const base = (comm.split(/[\\/]/).pop() ?? comm).replace(/\.exe$/i, "");
   if (base === "claude") return "claude";
   if (base === "codex") return "codex";
+  if (base === "agy") return "agy";
   return null;
 }
 

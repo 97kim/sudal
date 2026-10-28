@@ -1,11 +1,14 @@
-// provider 별 모델 목록 — CLI 에 직접 묻는다(Claude: SDK supportedModels, Codex: app-server model/list). 정적 목록은 못 물었을 때의 폴백.
+// provider 별 모델 목록 — CLI 에 직접 묻는다(Claude: SDK supportedModels, Codex: app-server model/list, Agy: agy models). 정적 목록은 못 물었을 때의 폴백.
 // 결과는 잠깐 캐시한다(모델 피커·팬아웃 창을 열 때마다 프로세스를 띄우지 않게).
+import { execFile } from "node:child_process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { ModelOptionDto, Provider } from "@shared/ipc";
 import { STATIC_MODELS } from "@shared/models";
+import type { AgyRuntime } from "./agy-adapter";
 import type { ClaudeRuntime } from "./claude-adapter";
 import type { CodexRuntime } from "./codex-adapter";
 import { CodexAppServer } from "./codex-app-server";
+import { launchSpec } from "./cli-launch";
 import { mt } from "./i18n";
 import { claudeSettingSources } from "./folder-trust";
 
@@ -16,6 +19,7 @@ const inflight = new Map<Provider, Promise<ModelOptionDto[]>>();
 export interface ModelSources {
   claude(): Promise<ClaudeRuntime>;
   codex(): Promise<CodexRuntime>;
+  agy?(): Promise<AgyRuntime>;
   log?(line: string): void;
 }
 
@@ -25,7 +29,8 @@ export async function listModels(provider: Provider, src: ModelSources, opts: { 
   if (hit && !opts.force && Date.now() - hit.at < CACHE_MS) return { models: hit.models, source: "cli" };
   let p = inflight.get(provider);
   if (!p) {
-    p = (provider === "claude" ? claudeModels(src) : codexModels(src)).finally(() => inflight.delete(provider));
+    const fetch = provider === "claude" ? claudeModels(src) : provider === "codex" ? codexModels(src) : agyModels(src);
+    p = fetch.finally(() => inflight.delete(provider));
     inflight.set(provider, p);
   }
   try {
@@ -87,4 +92,28 @@ async function codexModels(src: ModelSources): Promise<ModelOptionDto[]> {
   } finally {
     server.close();
   }
+}
+
+/** Antigravity: `agy models` 의 TSV 출력(`<id>\t<label>`)을 파싱한다. */
+async function agyModels(src: ModelSources): Promise<ModelOptionDto[]> {
+  if (!src.agy) return STATIC_MODELS.agy;
+  const rt = await src.agy();
+  const spec = launchSpec(rt.agyPath, ["models"]);
+  const stdout = await new Promise<string>((resolve, reject) => {
+    execFile(spec.command, spec.args, { timeout: 20_000, env: rt.env, shell: spec.shell, windowsHide: true }, (err, out) => {
+      if (err) return reject(err);
+      resolve(String(out ?? ""));
+    });
+  });
+  const models: ModelOptionDto[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const tab = line.indexOf("\t");
+    if (tab <= 0) continue;
+    const id = line.slice(0, tab).trim();
+    const label = line.slice(tab + 1).trim();
+    if (!id || !label) continue;
+    models.push({ id, label, ...(models.length === 0 ? { isDefault: true } : {}) });
+  }
+  if (models.length === 0) throw new Error("agy models output empty");
+  return models;
 }

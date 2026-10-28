@@ -21,6 +21,7 @@ import type { StoredChatImage } from "./chat-attachments";
 import type { BackgroundTasksSource } from "./claude-adapter";
 import { applyClaudePolicy, closeAllClaudeSessions, closeClaudeSession, interruptClaudeSession, runClaudeTurn, warmClaudeSession, type ClaudeRuntime } from "./claude-adapter";
 import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, runCodexTurn, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
+import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
 import {
   isUsageLimitText,
@@ -167,6 +168,7 @@ interface Session {
 function closeProviderSessions(tabId: string) {
   closeClaudeSession(tabId);
   closeCodexSession(tabId);
+  closeAgySession(tabId);
 }
 
 export interface SessionStore {
@@ -188,6 +190,7 @@ export interface SessionManagerDeps {
   /** tabId: 그 탭의 에이전트 프로세스에 자기 탭 id(SUDAL_TAB_ID)를 알려 준다. */
   claudeRuntime(tabId?: string): Promise<ClaudeRuntime>;
   codexRuntime(tabId?: string): Promise<CodexRuntime>;
+  agyRuntime?(tabId?: string): Promise<AgyRuntime>;
   /** 이 폴더를 신뢰했나(묻지 않는다). 예열은 신뢰한 폴더에서만 한다. 없으면 신뢰한 것으로 본다. */
   folderTrusted?(cwd: string): Promise<boolean>;
   /** Claude 턴을 열기 전에 신뢰를 확인하고, 아직이면 사용자에게 묻는다. false 면 띄우지 않는다. */
@@ -285,6 +288,7 @@ const AGENT_TOOLS = new Set(["Skill", "Agent", "Task"]);
 export const PROVIDER_LABEL: Record<Provider, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  agy: "Antigravity",
 };
 
 export class SessionManager {
@@ -539,6 +543,10 @@ export class SessionManager {
         if (this.deps.folderTrusted && !(await this.deps.folderTrusted(s.cwd))) return;
         const r = await warmClaudeSession(await this.deps.claudeRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[claude] 예열 시작");
+      } else if (s.provider === "agy") {
+        if (!this.deps.agyRuntime) return;
+        const r = await warmAgySession(await this.deps.agyRuntime(tabId), req);
+        if (r === "opened") this.deps.log?.(tabId, "[agy] 예열 시작");
       } else {
         const r = await warmCodexSession(await this.deps.codexRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[codex] 예열 시작");
@@ -1367,7 +1375,22 @@ export class SessionManager {
 
     void (async () => {
       try {
-        if (s.provider === "codex") {
+        if (s.provider === "agy") {
+          if (!this.deps.agyRuntime) throw new Error("agyRuntime is not configured");
+          const runtime = await this.deps.agyRuntime(s.tabId);
+          await runAgyTurn(runtime, {
+            sessionKey: s.tabId,
+            cwd: s.cwd!,
+            prompt: turn.prompt,
+            images: turn.images,
+            sessionId: s.sessionId,
+            policy: s.policy,
+            model: s.model,
+            abort,
+            onEvent: emit,
+            log: (line) => this.deps.log?.(s.tabId, line),
+          });
+        } else if (s.provider === "codex") {
           const runtime = await this.deps.codexRuntime(s.tabId);
           await runCodexTurn(runtime, {
             sessionKey: s.tabId,
@@ -1578,7 +1601,7 @@ export class SessionManager {
         })
         .catch(() => {});
     } else {
-      const r = applyCodexPolicy(tabId, policy);
+      const r = s.provider === "agy" ? applyAgyPolicy(tabId, policy) : applyCodexPolicy(tabId, policy);
       if (r !== "none") this.deps.log?.(tabId, `[codex] 권한 ${policy} — ${r === "applied" ? "이번 턴부터(샌드박스는 다음 턴부터)" : "다음 턴부터"}`);
     }
     if (policy !== "full") return;
@@ -1752,6 +1775,7 @@ export class SessionManager {
     this.abortAll({ keepQueue: true });
     closeAllClaudeSessions();
     closeAllCodexSessions();
+    closeAllAgySessions();
     for (const s of this.sessions.values()) {
       s.mirror?.stop();
       s.mirror = null;

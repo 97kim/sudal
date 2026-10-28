@@ -226,7 +226,7 @@ export function handoffBriefPrompt(t: TFunction, provider: string): string {
 }
 
 /** 인계 직전에 오래 남길 것을 적어 두는 파일. 앱이 새 규약을 만들지 않고 각 CLI 의 것을 쓴다. */
-export const NOTE_FILE: Record<string, string> = { claude: "CLAUDE.md", codex: "AGENTS.md" };
+export const NOTE_FILE: Record<string, string> = { claude: "CLAUDE.md", codex: "AGENTS.md", agy: "GEMINI.md" };
 
 /** 경로가 cwd 바로 아래의 그 파일인가. 하위 디렉토리·다른 이름은 아니다. */
 export function isNoteFile(filePath: string, cwd: string, name: string): boolean {

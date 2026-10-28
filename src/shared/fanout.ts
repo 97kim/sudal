@@ -9,7 +9,7 @@ export const FANOUT_MIN_VARIANTS = 2;
 export const FANOUT_PROMPT_EXCERPT = 300;
 export const FANOUT_SUMMARY_EXCERPT = 400;
 
-export const PROVIDER_NAME: Record<Provider, string> = { claude: "Claude Code", codex: "Codex" };
+export const PROVIDER_NAME: Record<Provider, string> = { claude: "Claude Code", codex: "Codex", agy: "Antigravity" };
 
 export function variantLabel(index: number): string {
   return String.fromCharCode(65 + index);
@@ -63,7 +63,7 @@ export function validateFanoutRequest(t: TFunction, o: { prompt: unknown; varian
   const variants: { provider: Provider; model?: string }[] = [];
   for (const v of o.variants) {
     const provider = typeof v === "string" ? v : v && typeof v === "object" ? (v as { provider?: unknown }).provider : undefined;
-    if (provider !== "claude" && provider !== "codex") return { ok: false, error: t("main.fanout.validate.badProvider", { value: String(provider) }) };
+    if (provider !== "claude" && provider !== "codex" && provider !== "agy") return { ok: false, error: t("main.fanout.validate.badProvider", { value: String(provider) }) };
     const model = v && typeof v === "object" && typeof (v as { model?: unknown }).model === "string" ? ((v as { model: string }).model.trim() || undefined) : undefined;
     variants.push(model ? { provider, model } : { provider });
   }

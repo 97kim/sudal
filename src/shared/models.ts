@@ -15,6 +15,13 @@ export const STATIC_MODELS: Record<Provider, ModelOptionDto[]> = {
     { id: "gpt-6-astra", label: "GPT-6-Astra" },
     { id: "gpt-5.4", label: "gpt-5.4" },
   ],
+  agy: [
+    { id: "gemini-4-argon-medium", label: "Gemini 4 Argon (Medium)", isDefault: true },
+    { id: "gemini-4-argon-high", label: "Gemini 4 Argon (High)" },
+    { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)" },
+    { id: "claude-opus-5-5-high", label: "Claude Opus 5.5 (High)" },
+    { id: "claude-sonnet-5-5-high", label: "Claude Sonnet 5.5 (High)" },
+  ],
 };
 
 /** 피커 옵션: 맨 앞에 "기본(CLI 설정)" 을 붙이고, 현재 값이 목록에 없으면 그대로 한 줄 더 둔다(사용자가 직접 넣은 모델명). */

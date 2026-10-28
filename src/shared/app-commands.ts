@@ -56,3 +56,40 @@ export function parseCodexCommand(text: string): { name: CodexCommandName; arg: 
   if (!m || !(CODEX_COMMANDS as string[]).includes(m[1])) return null;
   return { name: m[1] as CodexCommandName, arg: (m[2] ?? "").trim() };
 }
+
+/**
+ * Antigravity(agy) 탭의 "/" 명령.
+ * - 앱이 직접 처리하는 명령(model, new, clear, compact, rename, cd, init, config, mcp)
+ * - agy 에이전트가 프롬프트에서 직접 이해·수행하는 워크플로 명령(/plan, /boost, /goal, /grill-me, /teamwork, /browser, /schedule, /learn)
+ */
+export type AgyAppCommandName = "model" | "config" | "mcp" | "new" | "clear" | "compact" | "rename" | "cd" | "init";
+export type AgyPromptCommandName = "plan" | "boost" | "goal" | "grill-me" | "teamwork" | "browser" | "schedule" | "learn";
+
+const AGY_APP_COMMANDS: AgyAppCommandName[] = ["model", "new", "clear", "compact", "rename", "cd", "init", "config", "mcp"];
+const AGY_PROMPT_COMMANDS: AgyPromptCommandName[] = ["plan", "boost", "goal", "grill-me", "teamwork", "browser", "schedule", "learn"];
+
+export function agyCommands(t: TFunction): SlashCommandDto[] {
+  const appRows: SlashCommandDto[] = AGY_APP_COMMANDS.map((name) => ({
+    name,
+    description: name === "mcp" ? t("session.appCommand.mcp") : t(`session.codexCommand.${name}`),
+    argumentHint:
+      name === "model"
+        ? t("session.codexCommand.modelHint")
+        : name === "rename"
+          ? t("session.codexCommand.renameHint")
+          : "",
+  }));
+  const promptRows: SlashCommandDto[] = AGY_PROMPT_COMMANDS.map((name) => ({
+    name,
+    description: t(`session.agyCommand.${name}`),
+    argumentHint: t("session.agyCommand.promptHint"),
+  }));
+  return [...appRows, ...promptRows];
+}
+
+/** Antigravity 탭 입력이 앱이 가로채 처리할 "/" 명령이면 이름과 인자. (/plan 등은 에이전트에게 그대로 보내므로 null) */
+export function parseAgyAppCommand(text: string): { name: AgyAppCommandName; arg: string } | null {
+  const m = /^\/([a-z-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!m || !(AGY_APP_COMMANDS as string[]).includes(m[1])) return null;
+  return { name: m[1] as AgyAppCommandName, arg: (m[2] ?? "").trim() };
+}

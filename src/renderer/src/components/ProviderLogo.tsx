@@ -1,10 +1,11 @@
-// 제공자 로고(Claude / Codex). 정사각 webp 라 모서리만 둥글리고 크기만 받는다.
+// 제공자 로고(Claude / Codex / Antigravity). 정사각 이미지라 모서리만 둥글리고 크기만 받는다.
 import type { Provider } from "@shared/ipc";
 import claude from "../assets/claude.webp";
 import codex from "../assets/codex.webp";
+import agy from "../assets/antigravity.png";
 
-const SRC: Record<Provider, string> = { claude, codex };
-const ALT: Record<Provider, string> = { claude: "Claude", codex: "Codex" };
+const SRC: Record<Provider, string> = { claude, codex, agy };
+const ALT: Record<Provider, string> = { claude: "Claude", codex: "Codex", agy: "Antigravity" };
 
 export function ProviderLogo({ provider, size = 16, className = "" }: { provider: Provider; size?: number; className?: string }) {
   return (

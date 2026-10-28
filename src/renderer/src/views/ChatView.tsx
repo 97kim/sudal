@@ -47,7 +47,7 @@ import { VerifyPopover } from "../components/VerifyPopover";
 import { FanoutModal } from "../components/FanoutModal";
 import { FanoutCompare } from "../components/FanoutCompare";
 import { OrchestrationPanel } from "../components/OrchestrationPanel";
-import { codexCommands, modelFromArg, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
+import { agyCommands, codexCommands, modelFromArg, parseAgyAppCommand, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
 import type { CodexMention } from "@shared/codex-mentions";
 import { RightPanel } from "../components/RightPanel";
 import { TabBar } from "../components/TabBar";
@@ -64,6 +64,7 @@ import { startDrag } from "../drag";
 const PROVIDER_LABEL: Record<Provider, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  agy: "Antigravity",
 };
 
 const EDITOR_W_KEY = "sudal.editorPane.width";
@@ -417,7 +418,7 @@ export function ChatView({
   const onSend = useCallback(
     async (text: string, images: ChatImageDto[]) => {
       // Codex 의 "/" 명령은 app-server 가 모르니 앱이 Sudal 기능으로 처리한다(나머지 글은 그대로 모델에게).
-      const codexCmd = provider === "codex" && images.length === 0 ? parseCodexCommand(text) : null;
+      const codexCmd = images.length === 0 ? (provider === "codex" ? parseCodexCommand(text) : provider === "agy" ? parseAgyAppCommand(text) : null) : null;
       if (codexCmd) {
         if (codexCmd.name === "new" || codexCmd.name === "clear") return onClear();
         if (codexCmd.name === "compact") return compactContext();
@@ -476,6 +477,10 @@ export function ChatView({
     };
   }, [tabId, provider, cwd, config !== null]);
   useEffect(() => {
+    if (provider === "agy" && config) {
+      setCommands(agyCommands(t));
+      return;
+    }
     if (provider === "codex" && config) {
       setCommands(codexCommands(t));
       return;
@@ -1049,7 +1054,7 @@ export function ChatView({
               commandsLoading={provider === "claude" && commands !== null && commands.length === 0}
               mentions={mentions}
               mentionsLoading={mentionsLoading}
-              isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null)}
+              isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null) || (provider === "agy" && parseAgyAppCommand(text) !== null)}
               snippets={snippets}
               workspaceId={tab.workspaceId}
               draftKey={tabId}

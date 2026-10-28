@@ -390,6 +390,7 @@ export function resolveGroup(s: OrchRunState, to: string): OrchDispatch[] | null
       return live;
     case "@claude":
     case "@codex":
+    case "@agy":
       return live.filter((d) => d.provider === to.slice(1));
     case "@idle":
       return live.filter((d) => d.execution.state === "idle" || d.execution.state === "error");
