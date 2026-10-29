@@ -1,6 +1,6 @@
 // GitHub Actions 전용. 빌드·공개·Homebrew 갱신을 분리해 실패한 단계부터 재실행할 수 있게 한다.
 import { createHash } from 'node:crypto';
-import { appendFileSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -72,7 +72,7 @@ function gh(...args) {
 
 async function api(path, token, method = 'GET', body) {
   const response = await fetch(`https://api.github.com/${path}`, {
-    method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28' },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) throw new Error(`GitHub API ${method} ${path}: HTTP ${response.status}`);
@@ -135,6 +135,7 @@ async function main(command) {
   } else if (command === 'tap') {
     validateTag(tag, version);
     // 공개된 DMG의 실제 바이트로 체크섬을 만든다. publish 단계 재시도 시 새 빌드와 혼동하지 않는다.
+    mkdirSync(dir, { recursive: true });
     gh('release', 'download', tag, '--repo', repo, '--pattern', releaseFiles(version)[0], '--dir', dir, '--clobber');
     const sha = createHash('sha256').update(readFileSync(join(dir, releaseFiles(version)[0]))).digest('hex');
     const content = caskText(version, sha, repo);
