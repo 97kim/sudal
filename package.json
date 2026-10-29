@@ -20,7 +20,8 @@
     "test": "node scripts/test.mjs",
     "package": "yarn build && electron-builder --config electron-builder.config.cjs --publish never",
     "package:win": "yarn build && electron-builder --config electron-builder.config.cjs --win --x64 -c.npmRebuild=false --publish never",
-    "release": "scripts/release.sh",
+    "release": "node scripts/release.mjs",
+    "test:release": "node --test scripts/release.test.mjs",
     "i18n:check": "node scripts/check-i18n.mjs",
     "i18n:strict": "node scripts/check-i18n.mjs --strict src/renderer src/preload src/main src/shared cli",
     "postinstall": "node scripts/postinstall.mjs"

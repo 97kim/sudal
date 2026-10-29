@@ -47,7 +47,7 @@ module.exports = {
     target: [{ target: "nsis", arch: ["x64"] }],
     icon: "build/icon.ico",
     // Windows 앱은 GitHub Releases 의 latest.yml 을 읽어 스스로 업데이트한다(electron-updater). 빌드는 --publish never 로 하고
-    // 올리기는 scripts/release.sh 가 한다. macOS 는 brew 로 올리므로(src/main/app-update.ts) win 에만 둔다.
+    // 올리기는 GitHub Actions release 워크플로가 한다. macOS 는 brew 로 올리므로(src/main/app-update.ts) win 에만 둔다.
     publish: { provider: "github", owner: "97kim", repo: "sudal" },
     // Mac 에서 크로스 빌드할 때는 node-pty 를 win32 용으로 다시 컴파일할 수 없어 동봉된 prebuilds/win32-x64 를 쓴다.
     // npmRebuild 는 플랫폼별로 줄 수 없어 package:win 스크립트가 -c.npmRebuild=false 로 끈다.
