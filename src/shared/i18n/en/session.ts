@@ -119,6 +119,7 @@ export const session: DeepPartial<typeof ko> = {
   },
   msg: {
     agyHeadlessPermissions: "Antigravity chat follows your CLI permission settings. Tool requests cannot be approved here; actions requiring additional approval are automatically denied.",
+    agyTurnFailed: "Antigravity did not complete the turn ({{status}})",
     aiReview: {
       denied: "AI review denied this action: {{action}}",
       deniedReason: "AI review denied this action: {{action}} — {{reason}}",

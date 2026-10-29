@@ -282,3 +282,38 @@ test("DONE 도구의 tool_info.error도 실패로 표시하고 오류 내용을 
 test("이미지 첨부는 지원하지 않는 stream 입력을 생성하기 전에 거절한다", () => {
   assert.throws(() => buildAgyUserInputLine("image", [{ name: "test.png", mime: "image/png", base64: "AAAA" }]), /Antigravity/);
 });
+
+test("재개 후 첫 오류의 0 사용량을 과거 대화의 기준값으로 삼지 않는다", () => {
+  const mapper = new AgyEventMapper({ startedAt: 1000, resumed: true });
+  mapper.mapEvent({ event: "result", result: { status: "ERROR", error: "invalid input", num_turns: 0,
+    usage: { input_tokens: 0, output_tokens: 0 } } });
+  mapper.resetTurn(2000);
+  mapper.mapEvent({ event: "step_update", step_update: { step_index: 20, state: "DONE", step_type: "agent_response",
+    usage: { input_tokens: 100, output_tokens: 20 } } });
+  const result = mapper.mapEvent({ event: "result", result: { status: "SUCCESS", num_turns: 11,
+    usage: { input_tokens: 5100, output_tokens: 1020 } } }).events.find(e => e.type === "turn_result")!;
+  assert.deepEqual(result.usage, { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 });
+  assert.equal(result.numTurns, 1);
+});
+
+test("누적 사용량이 빠진 턴 이후에도 이미 집계한 step을 다시 더하지 않는다", () => {
+  const mapper = new AgyEventMapper({ startedAt: 1000 });
+  for (let turn = 1; turn <= 3; turn++) {
+    mapper.resetTurn(turn * 1000);
+    mapper.mapEvent({ event: "step_update", step_update: { step_index: turn, state: "DONE", step_type: "agent_response",
+      usage: { input_tokens: 100, output_tokens: 20 } } });
+    const result = mapper.mapEvent({ event: "result", result: { status: "SUCCESS", num_turns: turn,
+      ...(turn === 2 ? {} : { usage: { input_tokens: turn * 100, output_tokens: turn * 20 } }) } }).events.find(e => e.type === "turn_result")!;
+    assert.deepEqual(result.usage, { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 });
+  }
+});
+
+test("성공하지 못한 종료 상태는 오류 메시지가 없어도 실패로 표시한다", () => {
+  for (const status of ["ERROR", "FAILED", "CANCELED", "INTERRUPTED", "INVALID", "WAITING", "RUNNING"]) {
+    const mapper = new AgyEventMapper({ startedAt: 1000 });
+    const result = mapper.mapEvent({ event: "result", result: { status } });
+    assert.equal(result.turnDone, true);
+    assert.equal(result.events.find(e => e.type === "turn_result")?.isError, true, status);
+    assert.ok(result.events.some(e => e.type === "error" && e.msg?.key === "session.msg.agyTurnFailed"), status);
+  }
+});

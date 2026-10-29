@@ -117,6 +117,7 @@ export const session = {
   },
   msg: {
     agyHeadlessPermissions: "Antigravity 채팅은 CLI 권한 설정을 따릅니다. 이 화면에서는 도구 실행을 승인할 수 없으며, 추가 승인이 필요한 작업은 자동 거절됩니다.",
+    agyTurnFailed: "Antigravity 작업이 완료되지 않았습니다 ({{status}})",
     aiReview: {
       denied: "AI가 이 작업을 거절했어요: {{action}}",
       deniedReason: "AI가 이 작업을 거절했어요: {{action}} — {{reason}}",
