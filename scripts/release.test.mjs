@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -8,6 +8,21 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { parseVersion, newerVersion } from './release.mjs';
 import { releaseFiles, validateTag, verifyAssets, caskText } from './release-ci.mjs';
+import { releaseNotes } from './release-notes.mjs';
+
+test('릴리즈 노트는 기존 한국어 제목·설치 안내와 버전에 맞는 파일 이름을 사용한다', () => {
+  for (const version of ['0.15.0', '0.15.1']) {
+    const notes = releaseNotes(version);
+    assert.deepEqual(notes.match(/^## .+$/gm), ['## 이번에 달라진 것', '## 설치', '## Windows에 설치하기', '## 필요한 것']);
+    assert.ok(notes.includes(`sudal-${version}-x64.exe`));
+    assert.ok(notes.includes('brew upgrade --cask sudal'));
+    assert.ok(notes.includes('xattr -d com.apple.quarantine'));
+    assert.ok(notes.includes('`agy`'));
+    assert.ok(!notes.includes("What's Changed") && !notes.includes('{{version}}'));
+  }
+  assert.throws(() => releaseNotes('../0.15.0'), /버전/);
+  assert.throws(() => releaseNotes('99.0.0'), /변경 사항/);
+});
 
 test('정식 버전만 허용하고 숫자 단위로 대소를 비교한다', () => {
   for (const bad of ['v1.2.3', '01.2.3', '1.2.3-beta', '1.2', '1.2.3\n', '1.2.3;echo x', '99999999999999999.0.0']) assert.throws(() => parseVersion(bad));
@@ -70,7 +85,10 @@ test('dry-run은 변경 없이 끝나고 실제 실행은 버전 커밋과 태�
     run('git', ['config', 'user.name', 'Release test'], repo);
     run('git', ['config', 'user.email', 'release-test@example.invalid'], repo);
     writeFileSync(join(repo, 'package.json'), JSON.stringify({version: '0.14.12'}) + '\n');
-    run('git', ['add', 'package.json'], repo);
+    mkdirSync(join(repo, 'release-notes'));
+    writeFileSync(join(repo, 'release-notes', 'INSTALL.md'), '## 설치\n\nsudal-{{version}}-x64.exe\n');
+    writeFileSync(join(repo, 'release-notes', '0.15.0.md'), '- 사용자 변경 사항\n');
+    run('git', ['add', 'package.json', 'release-notes'], repo);
     run('git', ['commit', '-m', 'initial'], repo);
     run('git', ['push', '-u', 'origin', 'main'], repo);
     const entry = pathToFileURL(join(import.meta.dirname, 'release.mjs')).href;
@@ -80,6 +98,11 @@ test('dry-run은 변경 없이 끝나고 실제 실행은 버전 커밋과 태�
     assert.equal(run('git', ['rev-parse', 'HEAD'], repo), before);
     assert.equal(run('git', ['tag'], repo), '');
     assert.equal(JSON.parse(readFileSync(join(repo, 'package.json'))).version, '0.14.12');
+    const missingNotes = spawnSync(process.execPath, ['--input-type=module', '-e', `import {startRelease} from ${JSON.stringify(entry)}; startRelease(['0.15.1']);`], { cwd: repo, encoding: 'utf8' });
+    assert.notEqual(missingNotes.status, 0);
+    assert.match(missingNotes.stderr, /release-notes\/0.15.1.md/);
+    assert.equal(run('git', ['rev-parse', 'HEAD'], repo), before);
+    assert.equal(run('git', ['tag'], repo), '');
     call(['0.15.0']);
     assert.equal(JSON.parse(readFileSync(join(repo, 'package.json'))).version, '0.15.0');
     assert.equal(run('git', ['rev-parse', 'HEAD'], repo), run('git', ['--git-dir', remote, 'rev-parse', 'refs/heads/main']));

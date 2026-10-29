@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { releaseNotes } from './release-notes.mjs';
 
 export function parseVersion(value) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value ?? '')) throw new Error(`버전 형식은 x.y.z입니다: ${value}`);
@@ -32,6 +33,7 @@ export function startRelease(args = process.argv.slice(2)) {
   const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
   const version = versions[0] ?? manifest.version;
   parseVersion(version);
+  releaseNotes(version);
   if (versions[0] && !newerVersion(version, manifest.version)) throw new Error('새 버전은 현재 버전보다 커야 합니다.');
   if (git('branch', '--show-current') !== 'main') throw new Error('최신 main 브랜치에서 실행하세요.');
   if (git('status', '--porcelain')) throw new Error('작업 트리가 깨끗하지 않습니다. 먼저 커밋하세요.');
