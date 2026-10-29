@@ -1,6 +1,8 @@
 // 세션·에이전트 연결(main)의 문구. msg 아래는 대화 기록에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
 export const session = {
   error: {
+    agyImagesUnsupported: "Antigravity 채팅은 아직 이미지 첨부를 지원하지 않습니다. 이미지를 제거하거나 다른 에이전트를 선택해 주세요.",
+    agyTerminalUnsupported: "Antigravity는 아직 같은 대화의 터미널 전환을 지원하지 않습니다. 별도 터미널에서 agy를 사용할 수 있습니다.",
     queueMissing: "대기열에 없는 지시입니다.",
     steerCodexOnly: "Codex 가 작업 중일 때만 바로 반영할 수 있습니다.",
     steerBusy: "다른 지시를 반영하는 중입니다.",
@@ -114,6 +116,7 @@ export const session = {
     promptHint: "[작업 설명]",
   },
   msg: {
+    agyHeadlessPermissions: "Antigravity 채팅은 CLI 권한 설정을 따릅니다. 이 화면에서는 도구 실행을 승인할 수 없으며, 추가 승인이 필요한 작업은 자동 거절됩니다.",
     aiReview: {
       denied: "AI가 이 작업을 거절했어요: {{action}}",
       deniedReason: "AI가 이 작업을 거절했어요: {{action}} — {{reason}}",

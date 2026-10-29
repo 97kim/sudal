@@ -17,6 +17,7 @@ export interface AgyToolInfoRaw {
   name?: string;
   parameters?: Record<string, unknown>;
   output?: string;
+  error?: { type?: string; message?: string };
 }
 
 export interface AgyStepUpdateRaw {
@@ -172,14 +173,18 @@ export function normalizeAgyTool(
 export function agyUsage(u: AgyUsageRaw | null | undefined): TokenUsage {
   if (!u) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   return {
-    input: Math.max(0, u.input_tokens ?? 0),
-    output: Math.max(0, (u.output_tokens ?? 0) + (u.thinking_tokens ?? 0)),
+    // agy input/output 은 각각 캐시·thinking 을 이미 포함한다.
+    input: Math.max(0, (u.input_tokens ?? 0) - (u.cache_read_tokens ?? 0) - (u.cache_write_tokens ?? 0)),
+    output: Math.max(0, u.output_tokens ?? 0),
     cacheRead: Math.max(0, u.cache_read_tokens ?? 0),
     cacheWrite: Math.max(0, u.cache_write_tokens ?? 0),
   };
 }
 
 export class AgyEventMapper {
+  private previousUsage: TokenUsage | null = null;
+  private previousTurns = 0;
+  private readonly stepUsage = new Map<number, TokenUsage>();
   private readonly stepTexts = new Map<number, string>();
   private readonly toolStarted = new Set<number>();
   private emittedAnyText = false;
@@ -192,6 +197,7 @@ export class AgyEventMapper {
       model?: string;
       startedAt: number;
       turnId?: string;
+      resumed?: boolean;
     },
   ) {
     this.turnId = opts.turnId ?? `${opts.startedAt}-1`;
@@ -205,6 +211,7 @@ export class AgyEventMapper {
   resetTurn(startedAt = Date.now(), turnId?: string): void {
     this.stepTexts.clear();
     this.toolStarted.clear();
+    this.stepUsage.clear();
     this.emittedAnyText = false;
     this.opts.startedAt = startedAt;
     this.turnSeq += 1;
@@ -254,6 +261,8 @@ export class AgyEventMapper {
         });
       }
       const idx = step.step_index ?? 0;
+      // 같은 step 의 ACTIVE/DONE 사용량은 최신 값으로 교체한다.
+      if (step.usage) this.stepUsage.set(idx, agyUsage(step.usage));
       if (step.step_type === "agent_response") {
         if (typeof step.thinking_delta === "string" && step.thinking_delta.length > 0) {
           out.push({ type: "thinking_delta", ts, text: step.thinking_delta });
@@ -281,8 +290,9 @@ export class AgyEventMapper {
           out.push({ type: "tool_use", ts, toolUseId, name, input });
         }
         if (step.state === "DONE" || step.state === "ERROR" || step.state === "FAILED") {
-          const isError = step.state === "ERROR" || step.state === "FAILED" || Boolean(step.error);
-          const output = step.error || step.tool_info?.output || "";
+          const toolError = step.tool_info?.error;
+          const isError = step.state === "ERROR" || step.state === "FAILED" || Boolean(step.error || toolError);
+          const output = step.error || toolError?.message || toolError?.type || step.tool_info?.output || "";
           out.push({ type: "tool_result", ts, toolUseId, output, isError });
         }
       }
@@ -312,11 +322,29 @@ export class AgyEventMapper {
           ...(r.error ? { message: r.error } : appMsg("session.msg.codexTurnFailed")),
         });
       }
-      const usage = agyUsage(r.usage);
-      const durationMs =
-        typeof r.duration_seconds === "number" && r.duration_seconds > 0
-          ? Math.round(r.duration_seconds * 1000)
-          : Math.max(0, ts - this.opts.startedAt);
+      // result 는 세션 누적값이다. 이전 result 를 빼서 턴마다 중복 집계하지 않는다.
+      const cumulative = r.usage ? agyUsage(r.usage) : null;
+      const usage = agyUsage(null);
+      if (cumulative && (this.previousUsage || !this.opts.resumed)) {
+        for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+          usage[key] = Math.max(0, cumulative[key] - (this.previousUsage?.[key] ?? 0));
+        }
+      } else {
+        // 재개 직후에는 이전 누적값을 모르므로 이번 턴에서 받은 step 만 집계한다.
+        for (const step of this.stepUsage.values()) {
+          for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) usage[key] += step[key];
+        }
+      }
+      if (cumulative) {
+        const previous = this.previousUsage;
+        this.previousUsage = { ...cumulative };
+        // 입력 검증 오류의 0 카운터가 기존 기준값을 지우지 않게 한다.
+        if (previous) for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) this.previousUsage[key] = Math.max(previous[key], cumulative[key]);
+      }
+      const numTurns = r.num_turns === undefined ? 1 : this.opts.resumed && this.previousTurns === 0
+        ? Math.min(1, r.num_turns) : Math.max(0, r.num_turns - this.previousTurns);
+      this.previousTurns = Math.max(this.previousTurns, r.num_turns ?? this.previousTurns + numTurns);
+      const durationMs = Math.max(0, ts - this.opts.startedAt);
       const modelKey = this.opts.model || "gemini-4-argon-medium";
       const modelUsage: Record<string, ModelUsageEntry> = {
         [modelKey]: { ...usage, costUsd: 0 },
@@ -327,7 +355,7 @@ export class AgyEventMapper {
         usage,
         costUsd: 0,
         durationMs,
-        numTurns: r.num_turns ?? 1,
+        numTurns,
         modelUsage,
         isError,
         ...(isError && r.error ? { errorText: r.error } : {}),

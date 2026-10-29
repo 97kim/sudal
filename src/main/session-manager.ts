@@ -636,6 +636,7 @@ export class SessionManager {
     { ok: true; snapshot: SessionSnapshot } | { ok: false; error: string }
   > {
     const s = this.ensure(tabId);
+    if (s.provider === "agy") return { ok: false, error: mt("session.error.agyTerminalUnsupported") };
     if (s.controller === "terminal")
       return { ok: true, snapshot: this.snapshot(tabId) };
     if (this.isBusy(tabId))
@@ -785,6 +786,8 @@ export class SessionManager {
    * (/resume 으로 옛 세션을 이어도 첫 프롬프트부터 그 파일이 바뀐다). 파일이 바뀌면 그 세션의 이전 대화를 불러온다.
    */
   externalCliStarted(tabId: string, provider: Provider, cwd: string, pid: number, resumeId: string | null = null): void {
+    // agy 기록 동기화는 아직 없다. Claude/Codex 기록을 잘못 붙이지 않는다.
+    if (provider === "agy") return;
     const s = this.ensure(tabId);
     if (s.controller !== "app" || this.isBusy(tabId) || s.external) return;
     if (s.provider !== provider) {
@@ -968,7 +971,7 @@ export class SessionManager {
     s.codexApproval = null;
     s.controller = "app";
     // CLI 가 첫 메시지 전에 끝나면 기록 파일이 없다 → 그 id 로 SDK resume 하면 실패하므로 새 세션으로 돌린다.
-    if (s.sessionId && !file) {
+    if (s.provider !== "agy" && s.sessionId && !file) {
       const roots = this.deps.transcriptRoots;
       const exists =
         roots &&
@@ -1001,6 +1004,7 @@ export class SessionManager {
 
   /** fileHint: 훅이 알려 준 기록 파일 경로. 있으면 그걸 우선 쓴다(projects/ 아래 어느 키 디렉토리에 있든). startOffset: 그 파일에서 이미 읽어 들인 길이. */
   private startMirror(s: Session, isNew: boolean, fileHint: string | null = null, startOffset: number | null = null) {
+    if (s.provider === "agy") return;
     const roots = this.deps.transcriptRoots;
     if (!roots) return;
     // 이미 돌던 워처가 있으면 놓고 간다. 남겨 두면 같은 파일을 둘이 tail 하며 같은 줄을 두 번 옮긴다.
@@ -1289,6 +1293,7 @@ export class SessionManager {
     userEvent: ChatEvent,
   ): Promise<{ ok: true; queued: boolean; pending?: boolean } | { ok: false; error: string }> {
     const s = this.ensure(tabId);
+    if (s.provider === "agy" && images.length > 0) return { ok: false, error: mt("session.error.agyImagesUnsupported") };
     if (s.controller === "terminal")
       return {
         ok: false,

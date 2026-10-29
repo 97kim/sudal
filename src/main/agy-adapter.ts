@@ -5,17 +5,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ChatEvent, PermissionPolicy } from "@shared/chat-events";
 import type { ChatImageDto } from "@shared/ipc";
-function launchSpec(
-  binPath: string,
-  args: string[],
-): { command: string; args: string[]; shell: boolean } {
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(binPath)) {
-    return { command: binPath, args, shell: true };
-  }
-  return { command: binPath, args, shell: false };
-}
+import { launchSpec } from "./cli-launch";
 import { AgyEventMapper } from "./agy-events";
-import { MsgError, mt } from "./i18n";
+import { appMsg, MsgError, mt } from "./i18n";
 
 export interface AgyRuntime {
   agyPath: string;
@@ -45,7 +37,7 @@ export function setAgySessionIdleMs(ms: number): void {
 export function agyPolicyArgs(policy: PermissionPolicy): string[] {
   switch (policy) {
     case "ask":
-      return ["--sandbox"];
+      return ["--sandbox", "--mode="];
     case "auto_edit":
       return ["--mode", "accept-edits"];
     case "auto_review":
@@ -56,31 +48,10 @@ export function agyPolicyArgs(policy: PermissionPolicy): string[] {
 }
 
 export function buildAgyUserInputLine(prompt: string, images?: ChatImageDto[]): string {
-  if (!images || images.length === 0) {
-    return JSON.stringify({
-      event: "user",
-      message: {
-        role: "user",
-        content: prompt,
-      },
-    });
-  }
+  if (images?.length) throw new Error(mt("session.error.agyImagesUnsupported"));
   return JSON.stringify({
     event: "user",
-    message: {
-      role: "user",
-      content: [
-        ...images.map((img) => ({
-          type: "image" as const,
-          source: {
-            type: "base64" as const,
-            media_type: img.mime,
-            data: img.base64,
-          },
-        })),
-        { type: "text" as const, text: prompt },
-      ],
-    },
+    message: { role: "user", content: prompt },
   });
 }
 
@@ -98,6 +69,7 @@ interface LiveAgy {
   sessionId: string | null;
   /** warmAgySession 중 도착한 init 의 sessionId 가 아직 턴 onEvent 로 전달되지 않았는지 추적. */
   sessionReported: boolean;
+  permissionNoticeReported: boolean;
   proc: ChildProcessWithoutNullStreams;
   mapper: AgyEventMapper;
   buffer: string;
@@ -188,7 +160,7 @@ function openAgyProcess(
     windowsHide: true,
   });
 
-  const mapper = new AgyEventMapper({ model: opts.model, startedAt: Date.now() });
+  const mapper = new AgyEventMapper({ model: opts.model, startedAt: Date.now(), resumed: Boolean(opts.sessionId) });
   const s: LiveAgy = {
     key: opts.sessionKey,
     cwd: opts.cwd,
@@ -196,6 +168,7 @@ function openAgyProcess(
     model: opts.model,
     sessionId: opts.sessionId,
     sessionReported: false,
+    permissionNoticeReported: false,
     proc,
     mapper,
     buffer: "",
@@ -293,6 +266,8 @@ export async function warmAgySession(
 
 export async function runAgyTurn(runtime: AgyRuntime, req: AgyTurnRequest): Promise<void> {
   if (req.abort.signal.aborted) return;
+  // 검증 실패가 기존 프로세스·대화를 끊거나 새 프로세스를 띄우지 않게 먼저 검사한다.
+  const payload = buildAgyUserInputLine(req.prompt, req.images) + "\n";
 
   let s = live.get(req.sessionKey);
   if (
@@ -323,6 +298,10 @@ export async function runAgyTurn(runtime: AgyRuntime, req: AgyTurnRequest): Prom
   }
   const startedAt = Date.now();
   s.mapper.resetTurn(startedAt);
+  if (!s.permissionNoticeReported) {
+    s.permissionNoticeReported = true;
+    req.onEvent({ type: "notice", ts: startedAt, level: "notice", ...appMsg("session.msg.agyHeadlessPermissions") });
+  }
   // warmAgySession 동안 init 이 먼저 도착해 s.sessionId 만 채워진 경우, 첫 턴 시작 시 세션 이벤트를 전달해 저장되게 한다.
   if (s.sessionId && !s.sessionReported) {
     s.sessionReported = true;
@@ -359,7 +338,6 @@ export async function runAgyTurn(runtime: AgyRuntime, req: AgyTurnRequest): Prom
       },
     };
 
-    const payload = buildAgyUserInputLine(req.prompt, req.images) + "\n";
     s!.proc.stdin.write(payload, "utf8", (err) => {
       if (err && s!.turn) {
         const t = s!.turn;

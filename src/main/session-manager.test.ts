@@ -14,6 +14,34 @@ import { ZERO_USAGE, type ChatEvent } from "@shared/chat-events";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+test("Antigravity 미지원 입력·터미널 전환은 대화 ID와 제어권을 바꾸지 않는다", async () => {
+  let spawned = false;
+  const sessionId = "11111111-2222-3333-4444-555555555555";
+  const manager = new SessionManager({
+    emit() {},
+    claudeRuntime: async () => { throw new Error("unused"); },
+    codexRuntime: async () => { throw new Error("unused"); },
+    resolveConfig: () => ({ provider: "agy", cwd: tmpdir(), policy: "ask", sessionId }),
+    terminalCli: { async spawn() { spawned = true; }, kill() {} },
+    transcriptRoots: { claude: join(tmpdir(), "unused-claude"), codex: join(tmpdir(), "unused-codex") },
+  });
+  try {
+    const attached = await manager.attachTerminal("agy");
+    assert.equal(attached.ok, false);
+    assert.equal(spawned, false);
+    manager.externalCliStarted("agy", "agy", tmpdir(), 123, sessionId);
+    manager.terminalExited("agy");
+    const sent = await manager.send("agy", "image", [{ name: "test.png", mime: "image/png", base64: "AAAA", filePath: join(tmpdir(), "test.png") }], { type: "user_message", id: "image", ts: 1, text: "image" });
+    assert.equal(sent.ok, false);
+    assert.equal(manager.snapshot("agy").sessionId, sessionId);
+    assert.equal(manager.snapshot("agy").controller, "app");
+    assert.equal(manager.snapshot("agy").status, "idle");
+    assert.equal(manager.events("agy").length, 0);
+  } finally {
+    manager.release("agy");
+  }
+});
+
 function makeManager(root: string) {
   const snapshots: SessionSnapshot[] = [];
   let spawned: { hookLog: string | null; args: unknown[] } | null = null;

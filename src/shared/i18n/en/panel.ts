@@ -57,24 +57,32 @@ export const panel: DeepPartial<typeof ko> = {
     permissions: "Permissions · Tools",
     policy: {
       ask: {
+        agyLabel: "CLI permissions · sandbox",
+        agyHelp: "Uses Antigravity CLI permission settings and its sandbox. File edits may be allowed. Actions needing additional approval are denied rather than prompting here.",
         label: "Ask before changes",
         codexLabel: "Read-only · approve when needed",
         help: "If a file change or command needs approval, you'll be asked here.",
         codexHelp: "Files are read-only by default. If Codex asks for more permissions, you can approve them here.",
       },
       auto_edit: {
+        agyLabel: "Auto-edit · no approval prompts",
+        agyHelp: "Automatically allows workspace file edits. Commands requiring additional approval under CLI rules are denied.",
         label: "Auto-approve edits",
         codexLabel: "Allow file edits in the working directory",
         help: "File edits are allowed automatically. Commands that need more approval are confirmed before they run.",
         codexHelp: "Allows file changes and network access within the working directory. If Codex asks for more permissions, you'll be asked to approve.",
       },
       auto_review: {
+        agyLabel: "Edits allowed · CLI AI review",
+        agyHelp: "Uses Antigravity auto mode for edits and commands. Requests needing human approval are denied. Availability depends on the CLI version and account.",
         label: "AI decides approvals",
         codexLabel: "Edits allowed · AI reviews approvals",
         help: "For actions that need approval, an AI judges the risk and allows or denies them. It may not be available on every account.",
         codexHelp: "Allows file changes and network access in the working directory. Codex's review agent decides on requests for more permissions.",
       },
       full: {
+        agyLabel: "Fully automatic",
+        agyHelp: "Runs file changes and commands without approval. Antigravity chat does not support interactive tool approvals or question responses.",
         label: "Fully automatic (caution)",
         codexLabel: "Full access (caution)",
         help: "File changes and commands run without approval. If the AI asks a question it needs answered, it waits for you.",

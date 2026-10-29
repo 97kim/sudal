@@ -3,6 +3,8 @@ import type { DeepPartial } from "../types";
 
 export const session: DeepPartial<typeof ko> = {
   error: {
+    agyImagesUnsupported: "Antigravity chat does not support image attachments yet. Remove the images or select another agent.",
+    agyTerminalUnsupported: "Antigravity does not support handing this conversation to the terminal yet. You can run agy in a separate terminal.",
     queueMissing: "That prompt is no longer in the queue.",
     steerCodexOnly: "You can only apply a prompt right away while Codex is working.",
     steerBusy: "Another prompt is being applied.",
@@ -116,6 +118,7 @@ export const session: DeepPartial<typeof ko> = {
     promptHint: "[task]",
   },
   msg: {
+    agyHeadlessPermissions: "Antigravity chat follows your CLI permission settings. Tool requests cannot be approved here; actions requiring additional approval are automatically denied.",
     aiReview: {
       denied: "AI review denied this action: {{action}}",
       deniedReason: "AI review denied this action: {{action}} — {{reason}}",

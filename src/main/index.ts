@@ -1887,12 +1887,7 @@ function bootstrap() {
       async spawn(tabId, provider, cwd, sessionId, isNew, hookLog) {
         const env = await sdkEnv(tabId);
         if (provider === "agy") {
-          const cli = await cliDiscovery().find("agy");
-          if (!cli.installed || !cli.path)
-            throw new Error(cli.error || mt("session.error.cli.notFound", { command: "agy" }));
-          const args = sessionId && !isNew ? ["--conversation", sessionId] : [];
-          const r = terminals.openCommand(`${tabId}:cli`, cwd, env, cli.path, args);
-          if (!r.ok) throw new Error(r.error ?? mt("main.error.cliLaunchFailed"));
+          throw new Error(mt("session.error.agyTerminalUnsupported"));
         } else if (provider === "claude") {
           const cli = await cliDiscovery().find("claude");
           if (!cli.installed || !cli.path)
@@ -2130,6 +2125,8 @@ async function handleChatSend(
   payload: ChatSendDto,
 ): Promise<ChatSendResult> {
   const text = (payload?.text ?? "").trim();
+  if (sessions.snapshot(tabId).provider === "agy" && payload?.images?.length)
+    return { ok: false, error: mt("session.error.agyImagesUnsupported") };
   const prepared = prepareChatImages(payload?.images);
   if (!prepared.ok) return { ok: false, error: prepared.error };
   if (!text && prepared.prepared.length === 0)

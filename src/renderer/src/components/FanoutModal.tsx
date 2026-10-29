@@ -172,6 +172,7 @@ export function FanoutModal({
             ))}
           </div>
           <div className="text-[11px] text-muted">{t("fanout.modal.policyNote", { description: t(`fanout.modal.policy.${policy}.description`) })}</div>
+          {variants.some((v) => v.provider === "agy") && <div className="text-[11px] text-muted">{t("session.msg.agyHeadlessPermissions")}</div>}
         </div>
         {error && (
           <div className="rounded-md border border-err/40 bg-err-bg px-3 py-2 text-[12px] text-err" data-fanout-error>

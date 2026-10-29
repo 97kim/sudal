@@ -811,8 +811,8 @@ export function ChatView({
                     label: t("chat.header.attachTerminal.label"),
                     icon: "play",
                     hint: t("chat.header.attachTerminal.hint"),
-                    disabled: !cwd || running || terminalControlled,
-                    disabledReason: terminalControlled ? t("chat.header.attachTerminal.already") : running ? t("chat.header.attachTerminal.waitIdle") : t("chat.header.needCwd"),
+                    disabled: provider === "agy" || !cwd || running || terminalControlled,
+                    disabledReason: provider === "agy" ? t("session.error.agyTerminalUnsupported") : terminalControlled ? t("chat.header.attachTerminal.already") : running ? t("chat.header.attachTerminal.waitIdle") : t("chat.header.needCwd"),
                     onSelect: () => void attachTerminal(),
                   },
                 ]}
@@ -1049,6 +1049,8 @@ export function ChatView({
               running={running}
               runningHint={agentBusy ? t(agentViaCodex ? "chat.composerHint.codex" : "chat.composerHint.subagent", { name: agentBusy }) : undefined}
               providerLabel={PROVIDER_LABEL[provider]}
+              imagesDisabledReason={provider === "agy" ? t("session.error.agyImagesUnsupported") : undefined}
+              policyTag={provider === "agy" && config?.policy === "ask" ? "CLI + SANDBOX" : undefined}
               policy={config?.policy ?? "ask"}
               commands={provider === "claude" && commands ? withAppCommands(t, commands) : commands}
               commandsLoading={provider === "claude" && commands !== null && commands.length === 0}

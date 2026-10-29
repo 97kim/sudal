@@ -293,7 +293,7 @@ export function ContextPanel({
                     className={active ? "text-accent" : ""}
                   />
                   <span className="flex-1">
-                    {t(`panel.context.policy.${id}.${isCodex ? "codexLabel" : "label"}`)}
+                    {t(`panel.context.policy.${id}.${config?.provider === "agy" ? "agyLabel" : isCodex ? "codexLabel" : "label"}`)}
                   </span>
                   {active && (
                     <Icon name="check" size={12} className="text-accent" />
@@ -303,7 +303,7 @@ export function ContextPanel({
             })}
           </div>
           <p className="mt-2 text-[10px] text-muted">
-            {t(`panel.context.policy.${config?.policy ?? "ask"}.${isCodex ? "codexHelp" : "help"}`)}
+            {t(`panel.context.policy.${config?.policy ?? "ask"}.${config?.provider === "agy" ? "agyHelp" : isCodex ? "codexHelp" : "help"}`)}
           </p>
         </Section>
       </div>

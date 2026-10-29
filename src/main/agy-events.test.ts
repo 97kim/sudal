@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AgyEventMapper, normalizeAgyTool } from "./agy-events";
+import { AgyEventMapper, agyUsage, normalizeAgyTool } from "./agy-events";
 import { agyPolicyArgs, buildAgyUserInputLine } from "./agy-adapter";
 
 test("init 이벤트 → session 이벤트 변환", () => {
@@ -191,14 +191,14 @@ test("result 이벤트 → turn_result 와 turnDone=true", () => {
   assert.deepEqual(res.events[2], {
     type: "turn_result",
     ts: 3500,
-    usage: { input: 100, output: 25, cacheRead: 50, cacheWrite: 0 },
+    usage: { input: 50, output: 20, cacheRead: 50, cacheWrite: 0 },
     costUsd: 0,
     durationMs: 2500,
     numTurns: 1,
     modelUsage: {
       "gemini-4-argon-medium": {
-        input: 100,
-        output: 25,
+        input: 50,
+        output: 20,
         cacheRead: 50,
         cacheWrite: 0,
         costUsd: 0,
@@ -214,7 +214,7 @@ test("normalizeAgyTool 및 agyPolicyArgs, buildAgyUserInputLine", () => {
     input: { CommandLine: "npm test", toolSummary: "Run tests", command: "npm test", description: "Run tests" },
   });
   assert.deepEqual([agyPolicyArgs("ask"), agyPolicyArgs("auto_edit"), agyPolicyArgs("auto_review"), agyPolicyArgs("full")], [
-    ["--sandbox"],
+    ["--sandbox", "--mode="],
     ["--mode", "accept-edits"],
     ["--mode", "auto"],
     ["--dangerously-skip-permissions"],
@@ -223,4 +223,62 @@ test("normalizeAgyTool 및 agyPolicyArgs, buildAgyUserInputLine", () => {
     buildAgyUserInputLine("안녕", []),
     JSON.stringify({ event: "user", message: { role: "user", content: "안녕" } }),
   );
+});
+
+test("agy usage는 캐시·사고 토큰을 중복 계산하지 않는다", () => {
+  const usage = agyUsage({ input_tokens: 10418, output_tokens: 589, thinking_tokens: 551, cache_read_tokens: 8113, total_tokens: 11007 });
+  assert.deepEqual(usage, { input: 2305, output: 589, cacheRead: 8113, cacheWrite: 0 });
+  assert.equal(usage.input + usage.cacheRead + usage.output, 11007);
+});
+
+test("누적 result를 턴별 증분으로 바꾸고 입력 오류의 0 값은 기준을 지우지 않는다", () => {
+  const mapper = new AgyEventMapper({ startedAt: 1000 });
+  const result = (input: number, output: number, turns: number, ts: number) => {
+    const r = mapper.mapEvent({ event: "result", result: { status: "SUCCESS", usage: { input_tokens: input, output_tokens: output }, num_turns: turns, duration_seconds: 999 } }, ts);
+    return r.events.find((e) => e.type === "turn_result")!;
+  };
+  assert.deepEqual(result(100, 20, 1, 2000).usage, { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 });
+  mapper.resetTurn(3000);
+  const second = result(150, 30, 2, 4000);
+  assert.deepEqual(second.usage, { input: 50, output: 10, cacheRead: 0, cacheWrite: 0 });
+  assert.equal(second.durationMs, 1000);
+  assert.equal(second.numTurns, 1);
+  mapper.resetTurn(5000);
+  assert.equal(result(0, 0, 0, 5100).usage.input, 0);
+  mapper.resetTurn(6000);
+  const third = result(180, 40, 3, 6500);
+  assert.equal(third.usage.input, 30);
+  assert.equal(third.numTurns, 1);
+});
+
+test("재개 직후에는 현재 step 사용량만 집계하고 다음 result부터 누적 차이를 쓴다", () => {
+  const mapper = new AgyEventMapper({ startedAt: 1000, resumed: true });
+  for (const state of ["ACTIVE", "DONE"]) mapper.mapEvent({ event: "step_update", step_update: {
+    step_index: 10, state, step_type: "agent_response", usage: { input_tokens: 100, cache_read_tokens: 40, output_tokens: 20, thinking_tokens: 15 },
+  } });
+  const result = (input: number, cache: number, output: number, turns: number) => mapper.mapEvent({ event: "result", result: {
+    usage: { input_tokens: input, cache_read_tokens: cache, output_tokens: output }, num_turns: turns,
+  } }, 2000).events.find((e) => e.type === "turn_result")!;
+  const first = result(5100, 2040, 1020, 11);
+  assert.deepEqual(first.usage, { input: 60, output: 20, cacheRead: 40, cacheWrite: 0 });
+  assert.equal(first.numTurns, 1);
+  mapper.resetTurn(2000);
+  const second = result(5200, 2080, 1040, 12);
+  assert.deepEqual(second.usage, first.usage);
+  assert.equal(second.numTurns, 1);
+});
+
+test("DONE 도구의 tool_info.error도 실패로 표시하고 오류 내용을 보존한다", () => {
+  const mapper = new AgyEventMapper({ startedAt: 1000 });
+  const r = mapper.mapEvent({ event: "step_update", step_update: {
+    step_index: 4, state: "DONE", step_type: "tool",
+    tool_info: { name: "run_command", parameters: { CommandLine: "npm test" }, error: { type: "permission_denied", message: "Approval unavailable" } },
+  } });
+  const tool = r.events.find((e) => e.type === "tool_result")!;
+  assert.equal(tool.isError, true);
+  assert.equal(tool.output, "Approval unavailable");
+});
+
+test("이미지 첨부는 지원하지 않는 stream 입력을 생성하기 전에 거절한다", () => {
+  assert.throws(() => buildAgyUserInputLine("image", [{ name: "test.png", mime: "image/png", base64: "AAAA" }]), /Antigravity/);
 });
