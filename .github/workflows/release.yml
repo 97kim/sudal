@@ -59,6 +59,7 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ (github.event_name == 'push' || inputs.publish == true) && secrets.HOMEBREW_TAP_TOKEN || '' }}
 
   build:
+    name: build (${{ matrix.platform }})
     needs: prepare
     strategy:
       fail-fast: false
@@ -100,6 +101,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
   verify:
     needs: [prepare, build]
@@ -121,6 +123,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: release-checksums
+          retention-days: 14
+          overwrite: true
           path: |
             release/SHA256SUMS
             release/sudal.rb
