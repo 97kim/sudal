@@ -130,7 +130,8 @@ jobs:
             release/sudal.rb
 
   publish:
-    if: needs.prepare.outputs.publish == 'true'
+    # PR 코드가 prepare 출력값을 바꿔도 쓰기 권한·시크릿을 가진 단계는 실행하지 않는다.
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.publish == 'true'
     needs: [prepare, verify]
     runs-on: ubuntu-24.04
     permissions:
@@ -154,7 +155,7 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
 
   homebrew:
-    if: needs.prepare.outputs.publish == 'true'
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.publish == 'true'
     needs: [prepare, publish]
     runs-on: ubuntu-24.04
     steps:
