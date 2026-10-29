@@ -47,7 +47,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     const results = events.filter(e => e.type === "turn_result");
     assert.equal(results.length, 3);
     for (const result of results) {
-      assert.deepEqual(result.usage, { input: 600, output: 30, cacheRead: 400, cacheWrite: 0 });
+      assert.deepEqual(result.usage, { input: 1000, output: 30, cacheRead: 400, cacheWrite: 0 });
       assert.equal(result.numTurns, 1);
     }
     assert.ok(events.some(e => e.type === "session" && e.sessionId === "fixture-session"));

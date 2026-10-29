@@ -191,13 +191,13 @@ test("result 이벤트 → turn_result 와 turnDone=true", () => {
   assert.deepEqual(res.events[2], {
     type: "turn_result",
     ts: 3500,
-    usage: { input: 50, output: 20, cacheRead: 50, cacheWrite: 0 },
+    usage: { input: 100, output: 20, cacheRead: 50, cacheWrite: 0 },
     costUsd: 0,
     durationMs: 2500,
     numTurns: 1,
     modelUsage: {
       "gemini-4-argon-medium": {
-        input: 50,
+        input: 100,
         output: 20,
         cacheRead: 50,
         cacheWrite: 0,
@@ -225,10 +225,10 @@ test("normalizeAgyTool 및 agyPolicyArgs, buildAgyUserInputLine", () => {
   );
 });
 
-test("agy usage는 캐시·사고 토큰을 중복 계산하지 않는다", () => {
+test("agy usage는 입력·캐시를 각각 보존하고 출력에 사고 토큰을 다시 더하지 않는다", () => {
   const usage = agyUsage({ input_tokens: 10418, output_tokens: 589, thinking_tokens: 551, cache_read_tokens: 8113, total_tokens: 11007 });
-  assert.deepEqual(usage, { input: 2305, output: 589, cacheRead: 8113, cacheWrite: 0 });
-  assert.equal(usage.input + usage.cacheRead + usage.output, 11007);
+  assert.deepEqual(usage, { input: 10418, output: 589, cacheRead: 8113, cacheWrite: 0 });
+  assert.equal(usage.input + usage.output, 11007);
 });
 
 test("누적 result를 턴별 증분으로 바꾸고 입력 오류의 0 값은 기준을 지우지 않는다", () => {
@@ -260,7 +260,7 @@ test("재개 직후에는 현재 step 사용량만 집계하고 다음 result부
     usage: { input_tokens: input, cache_read_tokens: cache, output_tokens: output }, num_turns: turns,
   } }, 2000).events.find((e) => e.type === "turn_result")!;
   const first = result(5100, 2040, 1020, 11);
-  assert.deepEqual(first.usage, { input: 60, output: 20, cacheRead: 40, cacheWrite: 0 });
+  assert.deepEqual(first.usage, { input: 100, output: 20, cacheRead: 40, cacheWrite: 0 });
   assert.equal(first.numTurns, 1);
   mapper.resetTurn(2000);
   const second = result(5200, 2080, 1040, 12);
@@ -316,4 +316,23 @@ test("성공하지 못한 종료 상태는 오류 메시지가 없어도 실패�
     assert.equal(result.events.find(e => e.type === "turn_result")?.isError, true, status);
     assert.ok(result.events.some(e => e.type === "error" && e.msg?.key === "session.msg.agyTurnFailed"), status);
   }
+});
+
+test("agy 1.4.10 Argon 실측: 캐시가 입력보다 큰 후속 턴과 재개 턴도 입력량을 보존한다", () => {
+  // 실제 stream-json의 토큰 수만 보존한 fixture. total_tokens는 input+output이며 캐시는 별도다.
+  const first = { input_tokens: 7898, output_tokens: 27, thinking_tokens: 15, cache_read_tokens: 0, total_tokens: 7925 };
+  const second = { input_tokens: 10067, output_tokens: 54, thinking_tokens: 30, cache_read_tokens: 5844, total_tokens: 10121 };
+  const thirdStep = { input_tokens: 2298, output_tokens: 27, thinking_tokens: 15, cache_read_tokens: 5964, total_tokens: 2325 };
+  const third = { input_tokens: 12365, output_tokens: 81, thinking_tokens: 45, cache_read_tokens: 11808, total_tokens: 12446 };
+  const mapper = new AgyEventMapper({ startedAt: 1000 });
+  mapper.mapEvent({ event: "result", result: { status: "SUCCESS", num_turns: 1, usage: first } });
+  mapper.resetTurn(2000);
+  const next = mapper.mapEvent({ event: "result", result: { status: "SUCCESS", num_turns: 2, usage: second } }).events.find(e => e.type === "turn_result")!;
+  assert.deepEqual(next.usage, { input: 2169, output: 27, cacheRead: 5844, cacheWrite: 0 });
+  assert.equal(next.numTurns, 1);
+  const resumed = new AgyEventMapper({ startedAt: 3000, resumed: true });
+  resumed.mapEvent({ event: "step_update", step_update: { step_index: 6, state: "DONE", step_type: "agent_response", usage: thirdStep } });
+  const resumedResult = resumed.mapEvent({ event: "result", result: { status: "SUCCESS", num_turns: 3, usage: third } }).events.find(e => e.type === "turn_result")!;
+  assert.deepEqual(resumedResult.usage, { input: 2298, output: 27, cacheRead: 5964, cacheWrite: 0 });
+  assert.equal(resumedResult.numTurns, 1);
 });

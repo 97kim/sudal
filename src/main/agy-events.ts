@@ -173,8 +173,8 @@ export function normalizeAgyTool(
 export function agyUsage(u: AgyUsageRaw | null | undefined): TokenUsage {
   if (!u) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   return {
-    // agy input/output 은 각각 캐시·thinking 을 이미 포함한다.
-    input: Math.max(0, (u.input_tokens ?? 0) - (u.cache_read_tokens ?? 0) - (u.cache_write_tokens ?? 0)),
+    // agy 입력은 캐시와 별도이며, 출력은 thinking을 포함한다(1.4.10 Argon 실측).
+    input: Math.max(0, u.input_tokens ?? 0),
     output: Math.max(0, u.output_tokens ?? 0),
     cacheRead: Math.max(0, u.cache_read_tokens ?? 0),
     cacheWrite: Math.max(0, u.cache_write_tokens ?? 0),
