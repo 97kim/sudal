@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { git, newerVersion, parseVersion } from './release.mjs';
+import { releaseNotes } from './release-notes.mjs';
 
 export function releaseFiles(version) {
   parseVersion(version);
@@ -125,8 +126,7 @@ async function main(command) {
       return;
     }
     if (!existing) {
-      const generated = JSON.parse(gh('api', '--method', 'POST', `repos/${repo}/releases/generate-notes`, '-f', `tag_name=${tag}`));
-      const notes = `${generated.body}\n\n## 설치\n\n- macOS (Apple Silicon): DMG를 열어 Sudal.app을 Applications로 옮기세요. 서명·공증이 없어 차단되면 \`xattr -d com.apple.quarantine /Applications/Sudal.app\`으로 허용할 수 있습니다.\n- Homebrew: \`brew tap 97kim/sudal\`, \`brew trust --cask 97kim/sudal/sudal\`, \`brew install --cask sudal\`\n- Windows x64: EXE를 실행하세요. 서명하지 않은 설치 파일이라 SmartScreen에서 추가 정보 → 실행이 필요할 수 있습니다.\n- CLI는 별도로 설치하고 로그인해야 합니다. 자세한 안내는 [설치 가이드](https://github.com/${repo}#install)를 참고하세요.\n`;
+      const notes = releaseNotes(version);
       writeFileSync(join(dir, 'release-notes.md'), notes);
       gh('release', 'create', tag, '--repo', repo, '--verify-tag', '--draft', '--title', tag, '--notes-file', join(dir, 'release-notes.md'));
     }

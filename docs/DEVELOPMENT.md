@@ -37,6 +37,11 @@ PR 빌드·수동 빌드 검증에는 이 토큰이 필요하지 않다.
 
 ### Windows 또는 macOS에서 시작
 
+먼저 `release-notes/<새 버전>.md`에 사용자 관점의 한국어 변경 사항을 글머리표로 작성하고 PR로 머지한다.
+제목과 설치 안내는 넣지 않는다. 공통 `release-notes/INSTALL.md`를 합쳐 기존 형식인
+`이번에 달라진 것 → 설치 → Windows에 설치하기 → 필요한 것`으로 만든다.
+Windows 설치 파일 이름은 배포 버전으로 자동 치환한다. 변경 사항 파일이 없으면 커밋·태그를 만들기 전에 중단한다.
+
 ```bash
 git switch main
 git pull --ff-only
