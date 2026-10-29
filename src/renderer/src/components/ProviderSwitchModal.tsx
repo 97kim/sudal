@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePaneFocusRef } from "../pane-focus";
 import type { Handoff } from "@shared/handoff";
@@ -32,25 +32,55 @@ export function ProviderSwitchModal({
   // 떠나는 쪽이 직접 쓴 인계서가 우리가 기록을 잘라 만든 요약보다 낫다 — 기본값으로 둔다.
   const [askSummary, setAskSummary] = useState(true);
   const [status, setStatus] = useState<Record<Provider, CliStatusDto | null>>({ claude: null, codex: null, agy: null });
+  const [checkErrors, setCheckErrors] = useState<Partial<Record<Provider, string>>>({});
   const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(false);
+  const checkRequestIds = useRef<Record<Provider, number>>({ claude: 0, codex: 0, agy: 0 });
+  const switchInFlight = useRef(false);
   const { models: targetModels } = useModels(selected ?? current);
 
-  useEffect(() => {
-    for (const p of PROVIDERS) {
-      window.sudal.cli.status(p).then((s) => setStatus((prev) => ({ ...prev, [p]: s })));
+  const checkProvider = useCallback(async (provider: Provider) => {
+    const requestId = ++checkRequestIds.current[provider];
+    const isCurrentRequest = () => mounted.current && checkRequestIds.current[provider] === requestId;
+    setStatus((prev) => ({ ...prev, [provider]: null }));
+    setCheckErrors((prev) => ({ ...prev, [provider]: undefined }));
+    try {
+      const result = await window.sudal.cli.status(provider);
+      if (isCurrentRequest()) setStatus((prev) => ({ ...prev, [provider]: result }));
+    } catch (e) {
+      if (isCurrentRequest()) setCheckErrors((prev) => ({ ...prev, [provider]: e instanceof Error ? e.message : String(e) }));
     }
-    loadHandoff().then(setHandoff).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    for (const p of PROVIDERS) void checkProvider(p);
+    return () => {
+      mounted.current = false;
+      for (const p of PROVIDERS) ++checkRequestIds.current[p];
+    };
+  }, [checkProvider]);
+
+  useEffect(() => {
+    let alive = true;
+    loadHandoff().then((h) => { if (alive) setHandoff(h); }).catch(console.error);
+    return () => { alive = false; };
   }, [loadHandoff]);
+
+  const requestClose = () => {
+    if (!switchInFlight.current) onClose();
+  };
 
   const paneFocus = usePaneFocusRef();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!paneFocus.current) return; // 분할 화면의 다른 칸이 연 모달이면 그쪽 몫
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
       // 네이티브 <select> 에서 항목을 고르는 Enter 는 확인이 아니다
       const inField = e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (e.key === "Enter" && !busy && !inField) void confirm();
+      if (e.key === "Enter" && !busy && !inField && !(e.target instanceof HTMLButtonElement)) void confirm();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -58,24 +88,29 @@ export function ProviderSwitchModal({
 
   const canConfirm = selected !== null && selected !== current && !!status[selected]?.installed;
   const confirm = async () => {
-    if (!canConfirm || !selected) return;
+    if (switchInFlight.current || !canConfirm || !selected) return;
+    switchInFlight.current = true;
+    setError(null);
     setBusy(true);
     try {
       await onSwitch({ provider: selected, model: model || undefined, preserveContext: preserve, askSummary: preserve && askSummary });
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
+      switchInFlight.current = false;
       setBusy(false);
     }
   };
 
   return (
-    <Modal variant="pane" onClose={onClose} className="w-[640px]">
+    <Modal variant="pane" onClose={requestClose} className="w-[640px]">
       <div className="flex items-start justify-between border-b border-line px-6 py-5">
         <div>
           <h2 className="text-[17px] font-semibold">{t("nav.providerSwitch.title")}</h2>
           <p className="mt-1 text-muted">{t("nav.providerSwitch.description")}</p>
         </div>
-        <button onClick={onClose} className="rounded-md border border-line p-1.5 text-muted hover:text-fg">
+        <button onClick={requestClose} disabled={busy} className="rounded-md border border-line p-1.5 text-muted hover:text-fg disabled:opacity-40">
           <Icon name="x" size={14} />
         </button>
       </div>
@@ -86,20 +121,23 @@ export function ProviderSwitchModal({
           <div className="flex flex-col gap-2" role="radiogroup">
             {PROVIDERS.map((p) => {
               const s = status[p];
+              const checkError = checkErrors[p];
+              const checking = !s && checkError === undefined;
               const isCurrent = p === current;
-              const disabled = isCurrent || !s?.installed;
+              const disabled = busy || isCurrent || !s?.installed;
               const active = selected === p;
               return (
+                <div key={p}>
                 <button
-                  key={p}
                   role="radio"
                   aria-checked={active}
+                  aria-busy={checking}
                   disabled={disabled}
                   onClick={() => {
                     setSelected(p);
                     setModel(""); // 제공자마다 모델 목록이 다르다
                   }}
-                  className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left ${
+                  className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left ${
                     active ? "border-accent bg-accent-tint" : "border-line bg-panel-2/40 hover:bg-panel-2"
                   } ${disabled ? "cursor-default opacity-60 hover:bg-panel-2/40" : ""}`}
                   data-agent-option={p}
@@ -111,9 +149,15 @@ export function ProviderSwitchModal({
                       {isCurrent && <span className="label rounded bg-line px-1.5 py-0.5">{t("nav.providerSwitch.current")}</span>}
                       {!isCurrent && s?.installed && <span className="label rounded bg-ok-bg px-1.5 py-0.5 text-ok">{t("nav.providerSwitch.ready")}</span>}
                       {s && !s.installed && <span className="label rounded bg-err-bg px-1.5 py-0.5 text-err" title={s.error}>{t("nav.providerSwitch.notInstalled")}</span>}
+                      {checkError !== undefined && <span className="label rounded bg-warn-bg px-1.5 py-0.5 text-warn">{t("nav.providerSwitch.checkFailed")}</span>}
                     </span>
                     <span className="mono mt-0.5 block truncate text-muted" title={s?.path ?? ""}>
-                      {s?.version ?? (s ? "" : t("nav.providerSwitch.checking"))}
+                      {checking ? (
+                        <span className="inline-flex items-center gap-1.5" role="status">
+                          <Icon name="refresh" size={11} className="motion-safe:animate-spin" />
+                          {t("nav.providerSwitch.checking")}
+                        </span>
+                      ) : s?.version}
                       {s?.path ? ` · ${s.path}` : ""}
                     </span>
                   </span>
@@ -121,6 +165,13 @@ export function ProviderSwitchModal({
                     <span className={`h-4 w-4 shrink-0 rounded-full border-2 ${active ? "border-accent bg-accent" : "border-muted-2"}`} />
                   )}
                 </button>
+                {checkError !== undefined && (
+                  <div className="mt-1 flex items-start gap-3 px-4 text-[11px]">
+                    <span role="alert" className="min-w-0 flex-1 break-words text-warn">{checkError || t("nav.providerSwitch.checkFailed")}</span>
+                    <button disabled={busy} onClick={() => void checkProvider(p)} className="shrink-0 text-accent hover:underline disabled:opacity-40">{t("nav.providerSwitch.retryCheck")}</button>
+                  </div>
+                )}
+                </div>
               );
             })}
           </div>
@@ -136,7 +187,7 @@ export function ProviderSwitchModal({
               </div>
               <select
                 value={model}
-                disabled={!selected}
+                disabled={busy || !selected}
                 onChange={(e) => setModel(e.target.value)}
                 className="mono rounded-md border border-line bg-panel px-2.5 py-1.5 disabled:opacity-50"
                 title={selected ? "" : t("nav.providerSwitch.pickAgentFirst")}
@@ -155,7 +206,7 @@ export function ProviderSwitchModal({
                   {t("nav.providerSwitch.carrySummaryHint")}
                 </div>
               </div>
-              <Toggle value={preserve} onChange={setPreserve} />
+              <Toggle value={preserve} onChange={setPreserve} disabled={busy} />
             </div>
             {preserve && (
               <div className="flex items-center justify-between border-t border-line px-4 py-3">
@@ -165,7 +216,7 @@ export function ProviderSwitchModal({
                     {t("nav.providerSwitch.askSummaryHint")}
                   </div>
                 </div>
-                <Toggle value={askSummary} onChange={setAskSummary} />
+                <Toggle value={askSummary} onChange={setAskSummary} disabled={busy} />
               </div>
             )}
           </div>
@@ -193,6 +244,8 @@ export function ProviderSwitchModal({
           </div>
         )}
 
+        {error && <div role="alert" className="rounded-md bg-err-bg px-3 py-2 text-err">{error}</div>}
+
         {running && (
           <div className="flex items-center gap-2 rounded-md bg-warn-bg px-3 py-2 text-warn">
             <Icon name="info" size={13} />
@@ -202,19 +255,20 @@ export function ProviderSwitchModal({
       </div>
 
       <div className="flex items-center justify-between border-t border-line px-6 py-4">
-        <span className="mono text-[10px] text-muted">{t("nav.providerSwitch.keyHint")}</span>
+        <span className="mono text-[10px] text-muted">{t(busy ? "nav.providerSwitch.switching" : "nav.providerSwitch.keyHint")}</span>
         <div className="flex gap-2">
-          <button onClick={onClose} className="rounded-md border border-line px-4 py-1.5 hover:bg-panel-2">
+          <button onClick={requestClose} disabled={busy} className="rounded-md border border-line px-4 py-1.5 hover:bg-panel-2 disabled:opacity-40">
             {t("common.cancel")}
           </button>
           <button
             onClick={() => void confirm()}
             disabled={busy || !canConfirm}
+            aria-busy={busy}
             className="flex items-center gap-2 rounded-md bg-primary px-4 py-1.5 font-medium text-on-primary disabled:opacity-40"
             data-switch-confirm
           >
-            <Icon name="switch" size={13} />
-            {selected && selected !== current ? t("nav.providerSwitch.switchTo", { name: LABEL[selected] }) : t("nav.providerSwitch.pickAgent")}
+            <Icon name={busy ? "refresh" : "switch"} size={13} className={busy ? "motion-safe:animate-spin" : ""} />
+            <span role="status">{busy ? t("nav.providerSwitch.switching") : selected && selected !== current ? t("nav.providerSwitch.switchTo", { name: LABEL[selected] }) : t("nav.providerSwitch.pickAgent")}</span>
           </button>
         </div>
       </div>
@@ -222,11 +276,12 @@ export function ProviderSwitchModal({
   );
 }
 
-export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({ value, onChange, disabled = false }: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       onClick={() => onChange(!value)}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${value ? "bg-accent" : "bg-line"}`}
+      disabled={disabled}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${value ? "bg-accent" : "bg-line"}`}
     >
       <span
         className={`absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${

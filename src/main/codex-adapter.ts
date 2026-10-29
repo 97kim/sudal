@@ -7,7 +7,7 @@ import { CODEX_PERMISSION_TOOL } from "@shared/tool-state";
 import type { ChatEvent, PermissionAnswer, PermissionPolicy, PermissionRequestEvent } from "@shared/chat-events";
 import { buildCodexInput, type StoredChatImage } from "./chat-attachments";
 import { mapCodexEvent } from "./codex-events";
-import { AppServerError, CodexAppServer, classifyResumeFailure, mapAppServerNotification, normalizeFileChanges, resumeConflictMessage, type AppServerTurnContext, type FileChangeDto } from "./codex-app-server";
+import { AppServerError, CodexAppServer, classifyResumeFailure, mapAppServerNotification, mapCodexChildNotification, normalizeFileChanges, resumeConflictMessage, type AppServerTurnContext, type FileChangeDto } from "./codex-app-server";
 import { Codex } from "@openai/codex-sdk";
 import { codexHasDeveloperInstructions } from "./cli-defaults";
 import { launchSpec } from "./cli-launch";
@@ -40,6 +40,8 @@ export interface CodexTurnRequest {
   model?: string;
   abort: AbortController;
   onEvent(event: ChatEvent): void;
+  /** 부모 턴이 끝난 뒤 도착하는 하위 에이전트의 화면 갱신. */
+  onAmbientEvent?(event: ChatEvent): void;
   /** app-server 경로에서 승인 요청이 오면 renderer 가 답할 때까지 기다린다. */
   requestPermission?(req: PermissionRequestEvent): Promise<PermissionAnswer>;
   log?(line: string): void;
@@ -90,6 +92,8 @@ interface LiveCodex {
   /** 스레드 start/resume 까지 끝나면 resolve. 예열 중 들어온 첫 턴이 이걸 기다린다. */
   ready: Promise<void>;
   threadId: string | null;
+  codexAgents: NonNullable<AppServerTurnContext["codexAgents"]>;
+  onAmbientEvent?: CodexTurnRequest["onAmbientEvent"];
   /** app-server 가 thread/start·resume 응답으로 알려 준 실제 모델. 고른 모델이 없을 때(기본값) 헤더·사용량에 쓴다. */
   model: string | null;
   /** 화면에 마지막으로 알린 모델. 바뀌면 세션 이벤트를 다시 보낸다(다시 연 탭도 헤더가 채워지게). */
@@ -157,7 +161,7 @@ function openSession(runtime: CodexRuntime, key: string, cwd: string, log?: (lin
 }
 
 async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, log?: (line: string) => void): Promise<LiveCodex> {
-  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
+  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, codexAgents: new Map(), model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
   const server = new CodexAppServer({
     log,
     onNotification: (method, params) => handleNotification(s, method, params),
@@ -178,10 +182,23 @@ async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, l
 }
 
 function handleNotification(s: LiveCodex, method: string, params: Record<string, unknown>) {
+  if (s.dead) return;
   const t = s.turn;
   if (method === "thread/started") {
-    const th = params.thread as { id?: string } | undefined;
-    if (th?.id) s.threadId = th.id;
+    const th = params.thread as { id?: string; parentThreadId?: string | null; source?: { subAgent?: unknown } } | undefined;
+    // 하위 스레드 시작 알림으로 부모 세션 id를 바꾸면 이후 부모 이벤트가 모두 걸러진다.
+    if (th?.id && !th.parentThreadId && !th.source?.subAgent && (!s.threadId || s.threadId === th.id)) s.threadId = th.id;
+    return;
+  }
+  const ctx = t?.ctx ?? { startedAt: 0, lastUsage: null, codexAgents: s.codexAgents };
+  if (typeof params.threadId === "string" && params.threadId !== s.threadId) {
+    const emit = s.onAmbientEvent ?? t?.req.onEvent;
+    for (const event of mapCodexChildNotification(method, params, Date.now(), ctx)) emit?.(event);
+    return;
+  }
+  if ((method === "item/started" || method === "item/completed") && (params.item as { type?: string } | undefined)?.type === "subAgentActivity") {
+    const emit = s.onAmbientEvent ?? t?.req.onEvent;
+    for (const event of mapAppServerNotification(method, params, Date.now(), ctx)) emit?.(event);
     return;
   }
   if (!t) return;
@@ -373,6 +390,7 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
     throw e;
   }
   if (!s.threadId) throw new MsgError("session.msg.codexThreadOpen");
+  s.onAmbientEvent = req.onAmbientEvent;
   if (s.idleTimer) {
     clearTimeout(s.idleTimer);
     s.idleTimer = null;
@@ -400,7 +418,7 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
   s.toolsSinceReminder = 0;
   clearCodexLangReminder(s.threadId);
   const done = new Promise<void>((resolve, reject) => {
-    s.turn = { req, turnId: null, ctx: { model, startedAt: Date.now(), lastUsage: null }, resolve, reject, permissionSeq: 0 };
+    s.turn = { req, turnId: null, ctx: { model, startedAt: Date.now(), lastUsage: null, codexAgents: s.codexAgents }, resolve, reject, permissionSeq: 0 };
   });
   const turn = s.turn!;
   let graceTimer: ReturnType<typeof setTimeout> | null = null;

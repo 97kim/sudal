@@ -11,6 +11,21 @@ import {
 } from "./session-state";
 
 let clock = 1000;
+
+test("Codex 하위 에이전트 상태 갱신은 부모의 응답 스트리밍·reasoning·툴 결과를 보존한다", () => {
+  const input = { codexAgent: true, operation: "spawnAgent", description: "검토", agents: [{ id: "child", status: "running" }] };
+  const state = replaySession([
+    { type: "tool_use", ts: 1, toolUseId: "spawn", name: "Agent", input },
+    { type: "tool_result", ts: 2, toolUseId: "spawn", output: "spawned", isError: false },
+    { type: "text_delta", ts: 3, blockId: "parent", text: "부모 응답" },
+    { type: "thinking_delta", ts: 4, text: "진행 중" },
+  ]);
+  const next = reduceSession(state, { type: "tool_use", ts: 5, toolUseId: "spawn", name: "Agent", input: { ...input, agents: [{ id: "child", status: "completed" }] } });
+  assert.equal(next.reasoning, state.reasoning);
+  assert.equal(next.reasoningStale, state.reasoningStale);
+  assert.equal(next.blocks[1].kind === "text" && next.blocks[1].streaming, true);
+  assert.equal(next.blocks[0].kind === "tool" && next.blocks[0].result?.output, "spawned");
+});
 const ev = <T extends ChatEvent["type"]>(
   type: T,
   fields: Omit<Extract<ChatEvent, { type: T }>, "type" | "ts">,

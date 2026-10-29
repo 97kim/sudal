@@ -12,6 +12,7 @@ import { RunInTerminalContext, normalizeCommand } from "../terminal-run";
 import { shortenHome } from "@shared/path-display";
 import { formatElapsed, useNow } from "../hooks/useNow";
 import { IS_WIN } from "../platform";
+import { readCodexAgentInput } from "@shared/codex-agents";
 
 const OUTPUT_PREVIEW_LINES = 12;
 
@@ -234,6 +235,7 @@ export function ToolCard({ block }: { block: ToolBlock }) {
         </span>
         <Icon name="chevronDown" size={12} className={`text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
       </button>
+      {readCodexAgentInput(block.input) && <CodexAgentProgress input={block.input} />}
       {block.subagent && (
         // Skill·Agent 가 띄운 하위 에이전트의 활동. 접혀 있어도 보인다 — 턴을 잡고 있는 게 무엇인지 알 수 있게.
         <div className="flex items-center gap-2 border-t border-line px-3 py-1.5 text-[11px] text-muted" data-subagent>
@@ -272,6 +274,34 @@ export function ToolCard({ block }: { block: ToolBlock }) {
           {block.result && <ToolOutput output={msgText(i18n, block.result.outputMsg, block.result.output)} isError={block.result.isError} />}
         </div>
       )}
+    </div>
+  );
+}
+
+function CodexAgentProgress({ input }: { input: unknown }) {
+  const { t } = useTranslation();
+  const info = readCodexAgentInput(input);
+  if (!info) return null;
+  return (
+    <div className="border-t border-line px-3 py-1.5 text-[11px] text-muted" data-codex-agents>
+      <div className="flex items-center gap-2">
+        <Icon name="arrowRight" size={11} className="shrink-0 text-muted-2" />
+        <span>{t("toolCard.subagent")}</span>
+        <span className="rounded bg-accent-tint px-1 text-[10px] text-accent">Codex</span>
+        <span className="truncate">{t(`toolCard.codexAgentOperation.${info.operation}`, { defaultValue: info.operation })}</span>
+      </div>
+      {info.agents.map((agent) => {
+        const running = agent.status === "running" || agent.status === "pendingInit";
+        const failed = agent.status === "errored" || agent.status === "notFound";
+        return (
+          <div key={agent.id} role="status" className="mt-1 flex min-w-0 items-center gap-2 pl-5" data-codex-agent={agent.id}>
+            <Icon name={running ? "refresh" : failed ? "x" : agent.status === "completed" ? "check" : "info"} size={11} className={`shrink-0 ${running ? "motion-safe:animate-spin" : failed ? "text-err" : "text-muted-2"}`} />
+            <span className="mono max-w-[35%] truncate" title={agent.id}>{agent.id}</span>
+            <span className={`shrink-0 ${failed ? "text-err" : ""}`}>{t(`toolCard.codexAgentStatus.${agent.status}`)}</span>
+            {agent.message && <span className="min-w-0 truncate" title={agent.message}>{agent.message}</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }

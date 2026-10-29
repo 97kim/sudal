@@ -133,6 +133,7 @@ export const settings: DeepPartial<typeof ko> = {
     rescan: "Scan again",
     scanning: "Scanning",
     scanned: "Scan complete",
+    scanFailed: "CLI scan failed. Please try again.",
     connectable_one: "{{count}} ready to use",
     connectable_other: "{{count}} ready to use",
     shellFound_one: "{{count}} found in the shell PATH",

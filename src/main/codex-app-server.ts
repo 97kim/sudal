@@ -10,6 +10,7 @@ import { appMsg, mt } from "./i18n";
 import { launchSpec } from "./cli-launch";
 import { aiReviewNotice } from "./ai-review";
 import type { ChatEvent, ModelUsageEntry, TokenUsage } from "@shared/chat-events";
+import { codexAgentStatus, type CodexAgentInput, type CodexAgentInfo } from "@shared/codex-agents";
 
 type Json = Record<string, unknown>;
 
@@ -188,6 +189,8 @@ export interface AppServerTurnContext {
   startedAt: number;
   /** 마지막으로 받은 thread/tokenUsage/updated 의 last. turn/completed 때 사용량으로 쓴다. */
   lastUsage: TokenUsage | null;
+  /** 하위 에이전트의 활동을 최초 호출 카드에 반영한다. 세션 안에서 턴 간 공유한다. */
+  codexAgents?: Map<string, { id: string; input: CodexAgentInput }>;
 }
 
 interface Item {
@@ -218,8 +221,10 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
       // 요약 단락 경계 — 화면에서 줄을 나눠 보이게만
       return [{ type: "thinking_delta", ts, text: "\n" }];
     case "item/started":
+      if ((params.item as Item)?.type === "collabAgentToolCall" || (params.item as Item)?.type === "subAgentActivity") return agentItem(params.item as Item, ts, ctx, false);
       return itemStarted(params.item as Item, ts);
     case "item/completed":
+      if ((params.item as Item)?.type === "collabAgentToolCall" || (params.item as Item)?.type === "subAgentActivity") return agentItem(params.item as Item, ts, ctx, true);
       return itemCompleted(params.item as Item, ts);
     case "item/autoApprovalReview/started":
     case "item/autoApprovalReview/completed":
@@ -264,6 +269,91 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
     default:
       return [];
   }
+}
+
+/** 네이티브 협업 호출과 수명 주기 이벤트를 공통 Agent 카드로 보낸다. */
+function agentItem(item: Item, ts: number, ctx: AppServerTurnContext, completed: boolean): ChatEvent[] {
+  if (!item.id) return [];
+  const agents: NonNullable<AppServerTurnContext["codexAgents"]> = ctx.codexAgents ??= new Map();
+  if (item.type === "subAgentActivity") {
+    const agentId = str(item.agentThreadId);
+    if (!agentId) return [];
+    const parent = agents.get(agentId);
+    const state = item.kind === "completed" ? "completed" : item.kind === "interrupted" ? "interrupted" : item.kind === "started" ? "running" : parent?.input.agents.find((agent) => agent.id === agentId)?.status ?? "unknown";
+    if (parent) {
+      parent.input = { ...parent.input, agents: parent.input.agents.map((a) => a.id === agentId ? { ...a, status: state } : a) };
+      return [{ type: "tool_use", ts, toolUseId: parent.id, name: "Agent", input: parent.input }];
+    }
+    const input: CodexAgentInput = { codexAgent: true, operation: str(item.kind), description: str(item.agentPath) || agentId, agents: [{ id: agentId, status: state }] };
+    agents.set(agentId, { id: item.id, input });
+    return [
+      { type: "tool_use", ts, toolUseId: item.id, name: "Agent", input },
+      { type: "tool_result", ts, toolUseId: item.id, output: "", isError: state === "interrupted" },
+    ];
+  }
+  const states = item.agentsStates && typeof item.agentsStates === "object" ? item.agentsStates as Record<string, { status?: unknown; message?: unknown }> : {};
+  const ids = [...new Set([...(Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds.filter((id): id is string => typeof id === "string") : []), ...Object.keys(states)])];
+  const agentStates: CodexAgentInfo[] = ids.map((id) => ({
+    id, status: states[id]?.status === undefined ? agents.get(id)?.input.agents.find((agent) => agent.id === id)?.status ?? "unknown" : codexAgentStatus(states[id]?.status),
+    ...(typeof states[id]?.message === "string" ? { message: states[id].message as string } : {}),
+  }));
+  const operation = str(item.tool);
+  const input: CodexAgentInput = {
+    codexAgent: true, operation,
+    description: str(item.prompt).split("\n")[0] || mt("toolCard.subagent"),
+    ...(typeof item.prompt === "string" ? { prompt: item.prompt } : {}),
+    ...(typeof item.model === "string" ? { model: item.model } : {}),
+    agents: agentStates,
+  };
+  const entry = { id: item.id, input };
+  for (const agent of agentStates) {
+    const parent = agents.get(agent.id);
+    if (operation === "spawnAgent" || !parent) agents.set(agent.id, entry);
+  }
+  const events: ChatEvent[] = [{ type: "tool_use", ts, toolUseId: item.id, name: "Agent", input }];
+  // wait/send/close가 알려 준 최신 상태도 최초 호출 카드에 반영한다.
+  const updated = new Set<string>();
+  for (const agent of agentStates) {
+    const parent = agents.get(agent.id)!;
+    if (parent.id === item.id) continue;
+    parent.input = { ...parent.input, agents: parent.input.agents.map((a) => a.id === agent.id ? agent : a) };
+    if (!updated.has(parent.id)) {
+      updated.add(parent.id);
+      events.push({ type: "tool_use", ts, toolUseId: parent.id, name: "Agent", input: parent.input });
+    } else {
+      const event = events.find((e) => e.type === "tool_use" && e.toolUseId === parent.id);
+      if (event?.type === "tool_use") event.input = parent.input;
+    }
+  }
+  if (completed) events.push({ type: "tool_result", ts, toolUseId: item.id, output: JSON.stringify({ agentsStates: states }), isError: item.status === "failed" || item.status === "interrupted" });
+  return events;
+}
+
+/** 자식 스레드의 도구·응답만 부모 카드의 진행 로그로 전달한다. 사용량·턴 완료는 부모에게 합치지 않는다. */
+export function mapCodexChildNotification(method: string, params: Json, ts: number, ctx: AppServerTurnContext): ChatEvent[] {
+  const parent = ctx.codexAgents?.get(str(params.threadId));
+  const item = params.item as Item | undefined;
+  if (!parent) return [];
+  if (method === "turn/started" || method === "turn/completed") {
+    const turn = params.turn as { status?: string } | undefined;
+    if (method === "turn/completed" && !turn?.status) return [];
+    const status = method === "turn/started" ? "running" : turn?.status === "completed" ? "completed" : turn?.status === "interrupted" ? "interrupted" : "errored";
+    parent.input = { ...parent.input, agents: parent.input.agents.map((agent) => agent.id === params.threadId ? { ...agent, status } : agent) };
+    return [{ type: "tool_use", ts, toolUseId: parent.id, name: "Agent", input: parent.input }];
+  }
+  if (!item) return [];
+  if (method === "item/completed" && item.type === "agentMessage") {
+    const text = str(item.text).trim().split("\n").filter(Boolean).pop()?.slice(0, 160);
+    return text ? [{ type: "subagent_activity", ts, parentToolUseId: parent.id, text }] : [];
+  }
+  const events = method === "item/started" ? itemStarted(item, ts) : method === "item/completed" && item.type === "fileChange" ? itemCompleted(item, ts) : [];
+  const event = events.find((e) => e.type === "tool_use");
+  if (event?.type !== "tool_use") return [];
+  const input: Record<string, string> = {};
+  for (const [key, value] of Object.entries(event.input && typeof event.input === "object" ? event.input : {})) {
+    if (typeof value === "string") input[key] = value.slice(0, 200);
+  }
+  return [{ type: "subagent_activity", ts, parentToolUseId: parent.id, tool: event.name, input }];
 }
 
 /** fileChange 아이템의 변경 하나. kind 는 add/delete/update, diff 는 unified diff(add 는 + 줄만). ApplyPatch 카드·승인 카드가 그대로 쓴다. */
