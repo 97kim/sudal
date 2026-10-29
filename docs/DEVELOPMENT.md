@@ -21,13 +21,52 @@ yarn package    # ad-hoc 서명 arm64 DMG (release/sudal-<version>-arm64.dmg)
 
 ## 릴리스
 
-로컬에서 빌드해 GitHub Releases 에 올린다. 서명·공증을 하지 않아 CI 로 옮길 이유가 없다.
+GitHub Actions의 `release` 워크플로가 macOS arm64 DMG와 Windows x64 설치 파일을 각 운영체제에서 빌드한다.
+로컬 Mac은 필요 없다. Windows에서도 아래 명령으로 버전 커밋과 태그를 올리면 배포가 시작된다.
+
+### 최초 설정
+
+`97kim/sudal` 저장소 Settings → Secrets and variables → Actions에 `HOMEBREW_TAP_TOKEN`을 등록한다.
+GitHub fine-grained personal access token의 대상 저장소는 `97kim/homebrew-sudal` 하나,
+Repository permissions → **Contents: Read and write**로 설정한다. 토큰은 채팅·코드에 붙여 넣지 않는다.
+기본 `GITHUB_TOKEN`은 현재 저장소에만 접근할 수 있어 Homebrew 저장소 갱신에는 별도 토큰이 필요하다.
+앱 릴리즈 생성에는 Actions가 제공하는 `GITHUB_TOKEN`을 사용한다.
+
+실제 공개를 요청했는데 Homebrew 토큰이 없거나 유효하지 않으면 빌드 전 단계에서 실패한다.
+PR 빌드·수동 빌드 검증에는 이 토큰이 필요하지 않다.
+
+### Windows 또는 macOS에서 시작
 
 ```bash
-yarn release          # 지금 package.json 버전으로
-yarn release 0.2.0    # 버전을 올려 커밋하고 릴리스
-DRY_RUN=1 yarn release  # 올리지 않고 할 일만 본다
+git switch main
+git pull --ff-only
+yarn install --frozen-lockfile
+yarn release 0.15.0 --dry-run  # 변경 없이 검사. 예시 버전은 현재보다 높게 정한다.
+yarn release 0.15.0            # 버전 커밋 + 태그를 함께 push → Actions 실행
 ```
+
+Node.js 22 이상, Yarn, Git과 저장소 push 권한이 필요하다. `main`은 깨끗하고 원격과 같아야 한다.
+`yarn release`에 버전을 생략하면 현재 `package.json` 버전을 사용한다. 이미 존재하는 태그는 덮어쓰지 않는다.
+버전 커밋·태그 생성 후 push가 실패하면 원인을 해결하고 `git push --atomic origin main refs/tags/v버전`으로 재시도한다.
+이 경우 버전 올리기 명령을 다시 실행할 필요는 없다.
+
+두 OS에서 타입 검사·테스트·패키징이 모두 성공해야 공개한다. macOS는 `macos-26` arm64/Xcode 26 이상,
+Windows는 `windows-2025` x64를 사용한다. 기존과 같이 macOS는 ad-hoc 서명이며 공증하지 않고, Windows도 코드 서명하지 않는다.
+모은 DMG·EXE·blockmap·`latest.yml`의 존재·버전·EXE 체크섬을 확인하고,
+GitHub의 draft 릴리즈에 파일을 모두 업로드한 뒤 공개한다. `SHA256SUMS`와 Homebrew `sudal.rb`도 함께 제공한다.
+공개 후에는 실제 공개된 DMG의 SHA-256으로 `97kim/homebrew-sudal`의 `Casks/sudal.rb`를 갱신한다.
+
+릴리즈 관련 파일을 바꾸는 PR에서는 같은 빌드를 실행해 Actions artifacts로만 보관한다. 태그·릴리즈·Homebrew는 수정하지 않는다.
+빌드 산출물은 각 실행 페이지의 Artifacts에서 14일 동안 받을 수 있다.
+
+### 실패한 릴리즈 재실행
+
+- Actions → 해당 `release` 실행 → **Re-run failed jobs**로 실패한 단계부터 재실행한다.
+- 또는 Actions → release → **Run workflow**에서 브랜치는 `main`, `tag`는 기존 `v버전`을 입력한다.
+  `publish`를 끄면 빌드만 검증하고, 켜면 공개와 Homebrew 갱신까지 진행한다.
+- 이미 공개한 릴리즈 파일은 재업로드하지 않는다. Homebrew 단계만 실패했다면 공개된 DMG로 갱신을 재시도한다.
+- 새 버전을 이미 공개한 뒤에는 이전 버전을 latest로 만들거나 Homebrew를 이전 버전으로 되돌리지 않는다.
+- 태그의 버전과 `package.json`이 다르거나 태그가 `main`에 포함되지 않은 커밋이면 공개하지 않는다.
 
 ### 버전을 어떻게 올리나
 
@@ -44,11 +83,11 @@ DRY_RUN=1 yarn release  # 올리지 않고 할 일만 본다
 
 애매하면 낮은 쪽으로 간다. 혼자 쓰는 앱이라 번호를 아껴서 손해 볼 일이 없다.
 
-`scripts/release.sh` 가 순서대로 한다 — main 브랜치이고 작업 트리가 깨끗한지 확인, 타입체크·테스트, `yarn package`,
-태그와 푸시, DMG 를 붙인 릴리스 생성. 노트는 지난 태그 이후의 커밋 제목으로 만들고 설치 안내를 덧붙인다.
-같은 버전의 태그나 릴리스가 이미 있으면 멈춘다.
+`scripts/release.mjs`는 로컬 버전·태그 생성, `scripts/release-ci.mjs`는 Actions의 검증·공개·Homebrew 갱신을 맡는다.
+`scripts/release.sh`는 예전 명령 경로를 위한 래퍼다. 릴리즈 노트는 GitHub의 자동 생성 노트에 설치 안내를 덧붙인다.
+예전 로컬 빌드 옵션 `PUBLIC_REPO`, `TAP_REPO`, `RELEASE_NOTES`는 사용하지 않는다. 노트는 공개 후 GitHub에서 편집할 수 있다.
 
-새 버전은 설정 → 일반 → 업데이트에서 "업데이트 확인"을 눌러 확인한다. Homebrew로 설치한 앱은 "업데이트"를 누르면 새 버전을 설치하고, 완료 후 "다시 시작"을 누르면 새 버전으로 열린다. `electron-updater`는 사용하지 않는다.
+새 버전은 설정 → 일반 → 업데이트에서 "업데이트 확인"을 눌러 확인한다. Homebrew로 설치한 앱은 "업데이트"를 누르면 새 버전을 설치하고, 완료 후 "다시 시작"을 누르면 새 버전으로 열린다. Windows는 릴리즈의 `latest.yml`을 읽는 `electron-updater`로 업데이트한다.
 터미널에서는 `brew update && brew upgrade --cask sudal`로 업데이트한다. 앱에서도 Homebrew 탭을 갱신한 뒤 업그레이드하고 설치된 버전을 확인한다. GitHub 릴리스가 Homebrew 탭에 아직 반영되지 않았다면 잠시 뒤 다시 시도한다.
 DMG로 직접 설치한 앱도 새 버전을 확인할 수 있지만 앱 안에서 설치할 수는 없다. 릴리스 페이지에서 새 DMG를 받아 Applications 폴더의 Sudal.app을 교체한다.
 

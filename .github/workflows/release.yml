@@ -1,0 +1,168 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'scripts/release*'
+      - 'scripts/sign-adhoc.cjs'
+      - 'scripts/postinstall.mjs'
+      - 'electron-builder.config.cjs'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'build/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '검증하거나 재배포할 기존 태그 (예: v0.15.0)'
+        required: true
+        type: string
+      publish:
+        description: '빌드 성공 후 공개 및 Homebrew 갱신 (main에서만 실행)'
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# 여러 버전의 공개 순서가 뒤집히거나 실행 중 업로드가 취소되지 않게 한다.
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha: ${{ steps.meta.outputs.sha }}
+      publish: ${{ steps.meta.outputs.publish }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 수동 실행에서는 main의 검증 코드로 태그를 검사한 뒤 빌드 커밋을 고른다.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: meta
+        run: node scripts/release-ci.mjs prepare
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          HOMEBREW_TAP_TOKEN: ${{ (github.event_name == 'push' || inputs.publish == true) && secrets.HOMEBREW_TAP_TOKEN || '' }}
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            platform: mac
+            command: yarn package
+            assets: release/*.dmg
+          - os: windows-2025
+            platform: win
+            command: yarn package:win
+            assets: |
+              release/*.exe
+              release/*.exe.blockmap
+              release/latest.yml
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn typecheck
+      - run: yarn test:release
+      - run: yarn test --test-timeout=120000
+      - run: ${{ matrix.command }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ matrix.assets }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  verify:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - run: node scripts/release-ci.mjs verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-checksums
+          path: |
+            release/SHA256SUMS
+            release/sudal.rb
+
+  publish:
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, verify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - run: node scripts/release-ci.mjs publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+
+  homebrew:
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, publish]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/release-ci.mjs tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
