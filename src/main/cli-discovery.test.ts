@@ -31,6 +31,7 @@ test("windowsExtraDirs: 네이티브 설치기·npm 전역·winget·pnpm·scoop�
   assert.deepEqual(windowsExtraDirs({ USERPROFILE: "C:\\Users\\a", APPDATA: "C:\\Users\\a\\AppData\\Roaming", LOCALAPPDATA: "C:\\Users\\a\\AppData\\Local" }), [
     "C:\\Users\\a\\.local\\bin",
     "C:\\Users\\a\\AppData\\Roaming\\npm",
+    "C:\\Users\\a\\AppData\\Local\\agy\\bin",
     "C:\\Users\\a\\AppData\\Local\\Microsoft\\WinGet\\Links",
     "C:\\Users\\a\\AppData\\Local\\pnpm",
     "C:\\Users\\a\\scoop\\shims",

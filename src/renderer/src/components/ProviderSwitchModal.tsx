@@ -9,7 +9,7 @@ import { ProviderLogo } from "./ProviderLogo";
 import { modelOptions, useModels } from "../models";
 import { Modal } from "./Modal";
 
-const LABEL: Record<Provider, string> = { claude: "Claude Code", codex: "OpenAI Codex" };
+const LABEL: Record<Provider, string> = { claude: "Claude Code", codex: "OpenAI Codex", agy: "Google Antigravity" };
 
 export function ProviderSwitchModal({
   current,
@@ -31,7 +31,7 @@ export function ProviderSwitchModal({
   const [preserve, setPreserve] = useState(true);
   // 떠나는 쪽이 직접 쓴 인계서가 우리가 기록을 잘라 만든 요약보다 낫다 — 기본값으로 둔다.
   const [askSummary, setAskSummary] = useState(true);
-  const [status, setStatus] = useState<Record<Provider, CliStatusDto | null>>({ claude: null, codex: null });
+  const [status, setStatus] = useState<Record<Provider, CliStatusDto | null>>({ claude: null, codex: null, agy: null });
   const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const { models: targetModels } = useModels(selected ?? current);

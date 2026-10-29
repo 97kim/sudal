@@ -52,6 +52,8 @@ export function Composer({
   running,
   runningHint,
   providerLabel,
+  imagesDisabledReason,
+  policyTag,
   policy,
   commands,
   commandsLoading,
@@ -76,6 +78,8 @@ export function Composer({
   /** 턴이 돌 때 입력창에 보일 안내(없으면 기본 문구). 하위 에이전트·외부 프로세스가 턴을 잡고 있을 때 상황을 알린다. */
   runningHint?: string;
   providerLabel: string;
+  imagesDisabledReason?: string;
+  policyTag?: string;
   policy: PermissionPolicy;
   /** "/" 자동완성 목록(앱이 처리하는 명령 포함). null 이면 이 provider 에선 지원하지 않음, [] 는 로딩 중. */
   commands: SlashCommandDto[] | null;
@@ -129,7 +133,8 @@ export function Composer({
     if (!draftKey) return;
     return onComposerDraftAppend(draftKey, (block, imgs) => {
       setText((cur) => appendToDraft(cur, block));
-      if (imgs && imgs.length > 0)
+      if (imgs?.length && imagesDisabledReason) setError(imagesDisabledReason);
+      else if (imgs && imgs.length > 0)
         setImages((prev) => {
           const all = [...prev, ...imgs.map((img) => ({ ...img, dataUrl: `data:${img.mime};base64,${img.base64}` }))];
           // 넘치는 건 버리되 말없이 버리지 않는다 — 붙여 넣기·끌어다 놓기와 같은 경고를 띄운다.
@@ -144,7 +149,7 @@ export function Composer({
         el.scrollTop = el.scrollHeight;
       });
     });
-  }, [draftKey]);
+  }, [draftKey, imagesDisabledReason]);
 
   // ===== "/" 팔레트: 스니펫 + 커맨드 =====
   // 커맨드가 없는 provider(Codex)라도 스니펫이 있으면 팔레트를 연다.
@@ -265,6 +270,7 @@ export function Composer({
   const submit = useCallback(async () => {
     const trimmed = text.trim();
     if ((!trimmed && images.length === 0 && files.length === 0) || disabled) return;
+    if (images.length > 0 && imagesDisabledReason) { setError(imagesDisabledReason); return; }
     setError(null);
     setImageLimit(false);
     // CLI 의 /clear 를 앱의 대화 비우기로 잇는다. 그냥 흘려보내면 CLI 는 제 맥락만 비우고,
@@ -303,7 +309,7 @@ export function Composer({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [text, images, files, disabled, onSend, draftKey, onClear, t, commands, isAppCommand]);
+  }, [text, images, files, disabled, onSend, draftKey, onClear, t, commands, isAppCommand, imagesDisabledReason]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // 한국어 IME 조합 중 Enter 는 조합 확정이지 전송이 아니다.
@@ -348,6 +354,7 @@ export function Composer({
   const addFiles = (files: File[]) => {
     const imgs = files.filter((f) => IMAGE_MIMES.has(f.type));
     if (imgs.length === 0) return;
+    if (imagesDisabledReason) { setError(imagesDisabledReason); return; }
     if (images.length + imgs.length > MAX_IMAGES) {
       setImageLimit(true);
       return;
@@ -589,9 +596,9 @@ export function Composer({
           />
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={disabled}
+            disabled={disabled || Boolean(imagesDisabledReason)}
             className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-muted hover:bg-panel-2 hover:text-fg disabled:opacity-40"
-            title={t("chat.composer.attachImage")}
+            title={imagesDisabledReason ?? t("chat.composer.attachImage")}
           >
             <Icon name="paperclip" size={13} />
             <span className="hidden @[440px]:inline">{t("chat.composer.attach")}</span>
@@ -613,10 +620,10 @@ export function Composer({
               <span className="hidden @[440px]:inline">{t("chat.composer.saveSnippet")}</span>
             </button>
           )}
-          <span className="label ml-auto hidden min-w-0 items-center gap-2 truncate text-accent @[380px]:flex" title={`${providerLabel} · ${POLICY_TAG[policy]}`}>
+          <span className="label ml-auto hidden min-w-0 items-center gap-2 truncate text-accent @[380px]:flex" title={`${providerLabel} · ${policyTag ?? POLICY_TAG[policy]}`}>
             <span className="truncate">{providerLabel.toUpperCase()}</span>
             <span className="text-muted">·</span>
-            <span className="text-muted">{POLICY_TAG[policy]}</span>
+            <span className="text-muted">{policyTag ?? POLICY_TAG[policy]}</span>
           </span>
           <span className="ml-auto @[380px]:hidden" />
           {running ? (

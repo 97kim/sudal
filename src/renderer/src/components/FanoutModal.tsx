@@ -120,7 +120,7 @@ export function FanoutModal({
             {variants.map((v, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-inset px-2.5 py-1.5" data-fanout-variant={variantLabel(i)}>
                 <span className="mono w-4 text-[11px] text-muted">{variantLabel(i)}</span>
-                {(["claude", "codex"] as Provider[]).map((p) => (
+                {(["claude", "codex", "agy"] as Provider[]).map((p) => (
                   <button
                     key={p}
                     // provider 를 바꾸면 모델은 그 provider 의 기본으로(다른 provider 의 모델명이 남지 않게)
@@ -172,6 +172,7 @@ export function FanoutModal({
             ))}
           </div>
           <div className="text-[11px] text-muted">{t("fanout.modal.policyNote", { description: t(`fanout.modal.policy.${policy}.description`) })}</div>
+          {variants.some((v) => v.provider === "agy") && <div className="text-[11px] text-muted">{t("session.msg.agyHeadlessPermissions")}</div>}
         </div>
         {error && (
           <div className="rounded-md border border-err/40 bg-err-bg px-3 py-2 text-[12px] text-err" data-fanout-error>

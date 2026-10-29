@@ -341,7 +341,7 @@ export function windowsExtraDirs(env: NodeJS.ProcessEnv): string[] {
   const out: string[] = [];
   if (home) out.push(w.join(home, ".local", "bin"));
   if (appData) out.push(w.join(appData, "npm"));
-  if (local) out.push(w.join(local, "Microsoft", "WinGet", "Links"), w.join(local, "pnpm"));
+  if (local) out.push(w.join(local, "agy", "bin"), w.join(local, "Microsoft", "WinGet", "Links"), w.join(local, "pnpm"));
   if (home) out.push(w.join(home, "scoop", "shims"), w.join(home, ".bun", "bin"));
   return out;
 }

@@ -45,6 +45,7 @@ export type SettingsSection = "general" | "cli" | "mcp" | "snippets" | "schedule
 const LABEL: Record<Provider, [string, string]> = {
   claude: ["Claude Code", "Anthropic"],
   codex: ["Codex CLI", "OpenAI"],
+  agy: ["Antigravity CLI", "Google"],
 };
 
 function NewTabModelRow({ provider, value, disabled, onChange }: { provider: Provider; value: string; disabled: boolean; onChange: (model: string) => void }) {
@@ -101,6 +102,7 @@ export function SettingsView({
   const [state, setState] = useState<Record<Provider, ProviderState>>({
     claude: initial(),
     codex: initial(),
+    agy: initial(),
   });
   const [diag, setDiag] = useState<CliDiagnosticsDto | null>(null);
   const [scannedAt, setScannedAt] = useState<number | null>(null);

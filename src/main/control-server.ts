@@ -400,7 +400,7 @@ export class ControlServer {
         const policy = params.policy !== undefined ? this.requireString(params, "policy") : undefined;
         if (policy !== undefined && !isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
         const provider = params.provider !== undefined ? this.requireString(params, "provider") : "claude";
-        if (provider !== "claude" && provider !== "codex") throw new ControlError(mt("cli.control.providerInvalid"));
+        if (provider !== "claude" && provider !== "codex" && provider !== "agy") throw new ControlError(mt("cli.control.providerInvalid"));
         // --cwd 를 안 주면 워크스페이스 기본 경로로 돈다. 이름만으로 만든 워크스페이스에는 그 값이 없어
         // 저장이 막히므로, 그때는 --cwd 로 직접 준다(화면의 "폴더 고르기" 와 같은 값이다).
         const cwd = params.cwd !== undefined ? this.requireString(params, "cwd") : undefined;
@@ -490,7 +490,7 @@ export class ControlServer {
         if (cwd) patch.cwd = cwd;
         const provider = params.provider !== undefined ? this.requireString(params, "provider") : undefined;
         if (provider) {
-          if (provider !== "claude" && provider !== "codex") throw new ControlError(mt("cli.control.providerInvalid"));
+          if (provider !== "claude" && provider !== "codex" && provider !== "agy") throw new ControlError(mt("cli.control.providerInvalid"));
           patch.provider = provider;
         }
         const policy = params.policy !== undefined ? this.requireString(params, "policy") : undefined;
@@ -767,7 +767,7 @@ export class ControlServer {
         return { worker: await orch.workerCleanup({ runId: needRun(), actor: coordActor, key, dispatchId: this.requireString(p, "dispatch") }) };
       case "worker-start": {
         const provider = str(p.agent) ?? str(p.provider) ?? "claude";
-        if (provider !== "claude" && provider !== "codex") throw new ControlError(mt("cli.control.agentInvalid"));
+        if (provider !== "claude" && provider !== "codex" && provider !== "agy") throw new ControlError(mt("cli.control.agentInvalid"));
         const policy = str(p.policy);
         if (policy !== undefined && !isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.agentPolicyInvalid"));
         const wt = p.worktree;

@@ -305,7 +305,7 @@ function statusLabel(t: TFunction, status: string): string {
   return key ? t(key) : status;
 }
 
-const providerName = (p: string | null) => (p === "codex" ? "Codex" : p === "claude" ? "Claude" : null);
+const providerName = (p: string | null) => (p === "codex" ? "Codex" : p === "claude" ? "Claude" : p === "agy" ? "Antigravity" : null);
 const isWorking = (status: string) => status === "running" || status === "queued";
 
 /** 탭 상태 점. 작업 중은 도는 고리, 응답 필요는 노랑, 오류는 빨강. */

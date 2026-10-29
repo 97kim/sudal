@@ -1,6 +1,8 @@
 // 세션·에이전트 연결(main)의 문구. msg 아래는 대화 기록에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
 export const session = {
   error: {
+    agyImagesUnsupported: "Antigravity 채팅은 아직 이미지 첨부를 지원하지 않습니다. 이미지를 제거하거나 다른 에이전트를 선택해 주세요.",
+    agyTerminalUnsupported: "Antigravity는 아직 같은 대화의 터미널 전환을 지원하지 않습니다. 별도 터미널에서 agy를 사용할 수 있습니다.",
     queueMissing: "대기열에 없는 지시입니다.",
     steerCodexOnly: "Codex 가 작업 중일 때만 바로 반영할 수 있습니다.",
     steerBusy: "다른 지시를 반영하는 중입니다.",
@@ -102,7 +104,20 @@ export const session = {
     initPrompt: "이 저장소의 기여 안내서 역할을 하는 AGENTS.md 파일을 만들어 주세요. 프로젝트 구조, 빌드·테스트 명령, 코드 스타일과 관례를 살펴보고 간결하게 써 주세요.",
     skills: "스킬 목록을 열어요($로도 열 수 있어요)",
   },
+  agyCommand: {
+    plan: "실행 전 단계별 계획을 먼저 세워요",
+    boost: "깊이 있는 추론·다각도 검토·철저한 검증으로 처리해요",
+    goal: "목표를 달성할 때까지 멈추지 않고 끝까지 수행해요",
+    "grill-me": "질문·인터뷰를 통해 설계와 요구사항을 함께 구체화해요",
+    teamwork: "여러 하위 에이전트가 역할을 나눠 협업해요",
+    browser: "웹 검색이나 브라우저 탐색을 활용해요",
+    schedule: "반복 실행이나 타이머 작업을 예약해요",
+    learn: "해결한 설정이나 교정 내용을 다음 작업을 위해 기억해요",
+    promptHint: "[작업 설명]",
+  },
   msg: {
+    agyHeadlessPermissions: "Antigravity 채팅은 CLI 권한 설정을 따릅니다. 이 화면에서는 도구 실행을 승인할 수 없으며, 추가 승인이 필요한 작업은 자동 거절됩니다.",
+    agyTurnFailed: "Antigravity 작업이 완료되지 않았습니다 ({{status}})",
     aiReview: {
       denied: "AI가 이 작업을 거절했어요: {{action}}",
       deniedReason: "AI가 이 작업을 거절했어요: {{action}} — {{reason}}",

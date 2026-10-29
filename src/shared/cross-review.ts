@@ -22,7 +22,7 @@ export function reviewScopeParams(changes: { path: string; added: number; delete
 export function buildReviewPrompt(t: TFunction, o: { originTitle: string; changes: { path: string; kind: string }[]; diff: string; author: Provider }): string {
   const diff = o.diff.length > CROSS_REVIEW_DIFF_MAX ? `${o.diff.slice(0, CROSS_REVIEW_DIFF_MAX)}\n${t("promptDoc.review.diffClipped", { n: o.diff.length - CROSS_REVIEW_DIFF_MAX })}` : o.diff;
   const files = o.changes.map((c) => `- ${c.path} (${c.kind})`).join("\n");
-  const authorLabel = o.author === "claude" ? "Claude Code" : "Codex";
+  const authorLabel = o.author === "claude" ? "Claude Code" : o.author === "codex" ? "Codex" : "Antigravity";
   return [
     t("promptDoc.review.intro", { author: authorLabel, title: o.originTitle }),
     "",

@@ -397,6 +397,7 @@ function RunningFooter({ since, blocks, status, ambientFromBg }: { since: number
 const ASSISTANT: Record<Provider, { label: string }> = {
   claude: { label: "Claude" },
   codex: { label: "Codex" },
+  agy: { label: "Antigravity" },
 };
 
 function Avatar({ provider }: { provider: Provider }) {

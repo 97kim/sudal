@@ -21,6 +21,7 @@ import type { StoredChatImage } from "./chat-attachments";
 import type { BackgroundTasksSource } from "./claude-adapter";
 import { applyClaudePolicy, closeAllClaudeSessions, closeClaudeSession, interruptClaudeSession, runClaudeTurn, warmClaudeSession, type ClaudeRuntime } from "./claude-adapter";
 import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, runCodexTurn, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
+import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
 import {
   isUsageLimitText,
@@ -167,6 +168,7 @@ interface Session {
 function closeProviderSessions(tabId: string) {
   closeClaudeSession(tabId);
   closeCodexSession(tabId);
+  closeAgySession(tabId);
 }
 
 export interface SessionStore {
@@ -188,6 +190,7 @@ export interface SessionManagerDeps {
   /** tabId: 그 탭의 에이전트 프로세스에 자기 탭 id(SUDAL_TAB_ID)를 알려 준다. */
   claudeRuntime(tabId?: string): Promise<ClaudeRuntime>;
   codexRuntime(tabId?: string): Promise<CodexRuntime>;
+  agyRuntime?(tabId?: string): Promise<AgyRuntime>;
   /** 이 폴더를 신뢰했나(묻지 않는다). 예열은 신뢰한 폴더에서만 한다. 없으면 신뢰한 것으로 본다. */
   folderTrusted?(cwd: string): Promise<boolean>;
   /** Claude 턴을 열기 전에 신뢰를 확인하고, 아직이면 사용자에게 묻는다. false 면 띄우지 않는다. */
@@ -285,6 +288,7 @@ const AGENT_TOOLS = new Set(["Skill", "Agent", "Task"]);
 export const PROVIDER_LABEL: Record<Provider, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  agy: "Antigravity",
 };
 
 export class SessionManager {
@@ -539,6 +543,10 @@ export class SessionManager {
         if (this.deps.folderTrusted && !(await this.deps.folderTrusted(s.cwd))) return;
         const r = await warmClaudeSession(await this.deps.claudeRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[claude] 예열 시작");
+      } else if (s.provider === "agy") {
+        if (!this.deps.agyRuntime) return;
+        const r = await warmAgySession(await this.deps.agyRuntime(tabId), req);
+        if (r === "opened") this.deps.log?.(tabId, "[agy] 예열 시작");
       } else {
         const r = await warmCodexSession(await this.deps.codexRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[codex] 예열 시작");
@@ -628,6 +636,7 @@ export class SessionManager {
     { ok: true; snapshot: SessionSnapshot } | { ok: false; error: string }
   > {
     const s = this.ensure(tabId);
+    if (s.provider === "agy") return { ok: false, error: mt("session.error.agyTerminalUnsupported") };
     if (s.controller === "terminal")
       return { ok: true, snapshot: this.snapshot(tabId) };
     if (this.isBusy(tabId))
@@ -777,6 +786,8 @@ export class SessionManager {
    * (/resume 으로 옛 세션을 이어도 첫 프롬프트부터 그 파일이 바뀐다). 파일이 바뀌면 그 세션의 이전 대화를 불러온다.
    */
   externalCliStarted(tabId: string, provider: Provider, cwd: string, pid: number, resumeId: string | null = null): void {
+    // agy 기록 동기화는 아직 없다. Claude/Codex 기록을 잘못 붙이지 않는다.
+    if (provider === "agy") return;
     const s = this.ensure(tabId);
     if (s.controller !== "app" || this.isBusy(tabId) || s.external) return;
     if (s.provider !== provider) {
@@ -960,7 +971,7 @@ export class SessionManager {
     s.codexApproval = null;
     s.controller = "app";
     // CLI 가 첫 메시지 전에 끝나면 기록 파일이 없다 → 그 id 로 SDK resume 하면 실패하므로 새 세션으로 돌린다.
-    if (s.sessionId && !file) {
+    if (s.provider !== "agy" && s.sessionId && !file) {
       const roots = this.deps.transcriptRoots;
       const exists =
         roots &&
@@ -993,6 +1004,7 @@ export class SessionManager {
 
   /** fileHint: 훅이 알려 준 기록 파일 경로. 있으면 그걸 우선 쓴다(projects/ 아래 어느 키 디렉토리에 있든). startOffset: 그 파일에서 이미 읽어 들인 길이. */
   private startMirror(s: Session, isNew: boolean, fileHint: string | null = null, startOffset: number | null = null) {
+    if (s.provider === "agy") return;
     const roots = this.deps.transcriptRoots;
     if (!roots) return;
     // 이미 돌던 워처가 있으면 놓고 간다. 남겨 두면 같은 파일을 둘이 tail 하며 같은 줄을 두 번 옮긴다.
@@ -1281,6 +1293,7 @@ export class SessionManager {
     userEvent: ChatEvent,
   ): Promise<{ ok: true; queued: boolean; pending?: boolean } | { ok: false; error: string }> {
     const s = this.ensure(tabId);
+    if (s.provider === "agy" && images.length > 0) return { ok: false, error: mt("session.error.agyImagesUnsupported") };
     if (s.controller === "terminal")
       return {
         ok: false,
@@ -1367,7 +1380,22 @@ export class SessionManager {
 
     void (async () => {
       try {
-        if (s.provider === "codex") {
+        if (s.provider === "agy") {
+          if (!this.deps.agyRuntime) throw new Error("agyRuntime is not configured");
+          const runtime = await this.deps.agyRuntime(s.tabId);
+          await runAgyTurn(runtime, {
+            sessionKey: s.tabId,
+            cwd: s.cwd!,
+            prompt: turn.prompt,
+            images: turn.images,
+            sessionId: s.sessionId,
+            policy: s.policy,
+            model: s.model,
+            abort,
+            onEvent: emit,
+            log: (line) => this.deps.log?.(s.tabId, line),
+          });
+        } else if (s.provider === "codex") {
           const runtime = await this.deps.codexRuntime(s.tabId);
           await runCodexTurn(runtime, {
             sessionKey: s.tabId,
@@ -1578,7 +1606,7 @@ export class SessionManager {
         })
         .catch(() => {});
     } else {
-      const r = applyCodexPolicy(tabId, policy);
+      const r = s.provider === "agy" ? applyAgyPolicy(tabId, policy) : applyCodexPolicy(tabId, policy);
       if (r !== "none") this.deps.log?.(tabId, `[codex] 권한 ${policy} — ${r === "applied" ? "이번 턴부터(샌드박스는 다음 턴부터)" : "다음 턴부터"}`);
     }
     if (policy !== "full") return;
@@ -1752,6 +1780,7 @@ export class SessionManager {
     this.abortAll({ keepQueue: true });
     closeAllClaudeSessions();
     closeAllCodexSessions();
+    closeAllAgySessions();
     for (const s of this.sessions.values()) {
       s.mirror?.stop();
       s.mirror = null;

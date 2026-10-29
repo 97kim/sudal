@@ -3,6 +3,8 @@ import type { DeepPartial } from "../types";
 
 export const session: DeepPartial<typeof ko> = {
   error: {
+    agyImagesUnsupported: "Antigravity chat does not support image attachments yet. Remove the images or select another agent.",
+    agyTerminalUnsupported: "Antigravity does not support handing this conversation to the terminal yet. You can run agy in a separate terminal.",
     queueMissing: "That prompt is no longer in the queue.",
     steerCodexOnly: "You can only apply a prompt right away while Codex is working.",
     steerBusy: "Another prompt is being applied.",
@@ -104,7 +106,20 @@ export const session: DeepPartial<typeof ko> = {
     initPrompt: "Create an AGENTS.md file that serves as a contributor guide for this repository. Look at the project structure, build and test commands, code style, and conventions, and keep it concise.",
     skills: "Open the skill list (you can also type $)",
   },
+  agyCommand: {
+    plan: "Create a step-by-step plan before execution",
+    boost: "Deep thinking, multiple perspectives, and rigorous verification",
+    goal: "Keep working thoroughly until the goal is achieved",
+    "grill-me": "Align on design decisions through an interactive interview",
+    teamwork: "Coordinate a team of autonomous subagents",
+    browser: "Use web search or browser automation",
+    schedule: "Schedule a recurring instruction or timer",
+    learn: "Persist learned setup or corrections for future tasks",
+    promptHint: "[task]",
+  },
   msg: {
+    agyHeadlessPermissions: "Antigravity chat follows your CLI permission settings. Tool requests cannot be approved here; actions requiring additional approval are automatically denied.",
+    agyTurnFailed: "Antigravity did not complete the turn ({{status}})",
     aiReview: {
       denied: "AI review denied this action: {{action}}",
       deniedReason: "AI review denied this action: {{action}} — {{reason}}",

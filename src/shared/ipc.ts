@@ -21,8 +21,8 @@ import type { SearchHit } from "./transcript-search";
 import type { WorkspaceModel } from "./workspace-model";
 import type { PricingEntry, UsageFilter, UsageSummary } from "./usage";
 
-export type Provider = "claude" | "codex";
-export const PROVIDERS: Provider[] = ["claude", "codex"];
+export type Provider = "claude" | "codex" | "agy";
+export const PROVIDERS: Provider[] = ["claude", "codex", "agy"];
 
 /** 모델 피커의 한 줄. id 는 CLI 에 넘기는 값(별칭 또는 전체 이름). */
 export interface ModelOptionDto {

@@ -167,13 +167,13 @@ export function UsageView() {
               ))}
             </div>
             <div className="flex rounded-md border border-line bg-panel p-0.5">
-              {(["all", "claude", "codex"] as const).map((p) => (
+              {(["all", "claude", "codex", "agy"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setProvider(p)}
                   className={`rounded px-3 py-1 ${provider === p ? "bg-accent-tint text-accent" : "text-muted hover:text-fg"}`}
                 >
-                  {p === "all" ? t("usage.providerAll") : p === "claude" ? "Claude" : "Codex"}
+                  {p === "all" ? t("usage.providerAll") : p === "claude" ? "Claude" : p === "codex" ? "Codex" : "Antigravity"}
                 </button>
               ))}
             </div>

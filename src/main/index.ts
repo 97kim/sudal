@@ -52,6 +52,7 @@ import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
 import { forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { setAgySessionIdleMs, type AgyRuntime } from "./agy-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
 import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
 import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/handoff";
@@ -259,6 +260,13 @@ async function codexRuntime(tabId?: string): Promise<CodexRuntime> {
   return { codexPath: cli.path, env: await sdkEnv(tabId) };
 }
 
+async function agyRuntime(tabId?: string): Promise<AgyRuntime> {
+  const cli = await cliDiscovery().find("agy");
+  if (!cli.installed || !cli.path)
+    throw new Error(cli.error || mt("session.error.cli.notFound", { command: "agy" }));
+  return { agyPath: cli.path, env: await sdkEnv(tabId) };
+}
+
 async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
   const env = await cliDiscovery().buildEnv();
   const shellPathDirs = (env.PATH || "").split(delimiter).filter(Boolean);
@@ -267,7 +275,7 @@ async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
   const key = (d: string) => (process.platform === "win32" ? d.toLowerCase() : d);
   const appSet = new Set(appPathDirs.map(key));
   const missingInApp: CliDiagnosticsDto["missingInApp"] = [];
-  for (const provider of ["claude", "codex"] as const) {
+  for (const provider of PROVIDERS) {
     const status = await cliDiscovery().find(provider);
     if (!status.path) continue;
     const dir = dirname(status.path);
@@ -1476,6 +1484,7 @@ function skillTargets(): { agent: Provider; label: string; home: string; path: s
   return [
     { agent: "claude", label: "Claude Code", home: join(home, ".claude"), path: join(home, ".claude", "skills", "sudal-cli", "SKILL.md") },
     { agent: "codex", label: "Codex CLI", home: codexHome, path: join(codexHome, "skills", "sudal-cli", "SKILL.md") },
+    { agent: "agy", label: "Antigravity", home: join(home, ".gemini", "antigravity-cli"), path: join(home, ".gemini", "antigravity-cli", "skills", "sudal-cli", "SKILL.md") },
   ];
 }
 
@@ -1627,7 +1636,7 @@ function appSettings(): AppSettingsDto {
     maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.SUDAL_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
     newTabPolicy: isNewTabPolicy(raw.newTabPolicy) ? raw.newTabPolicy : "inherit",
-    newTabModel: { claude: modelSetting(raw.newTabModel?.claude), codex: modelSetting(raw.newTabModel?.codex) },
+    newTabModel: { claude: modelSetting(raw.newTabModel?.claude), codex: modelSetting(raw.newTabModel?.codex), agy: modelSetting(raw.newTabModel?.agy) },
     otter: raw.otter === true,
     otterRoam: raw.otterRoam === true,
     otterRoamPauseSec: roamValue(raw.otterRoamPauseSec, "pauseSec"),
@@ -1672,6 +1681,7 @@ function applyAppSettings(s: AppSettingsDto) {
   }
   setClaudeSessionIdleMs(s.sessionIdleMinutes * 60_000);
   setCodexSessionIdleMs(s.sessionIdleMinutes * 60_000);
+  setAgySessionIdleMs(s.sessionIdleMinutes * 60_000);
   sessions.setMaxConcurrent(s.maxConcurrent);
 }
 
@@ -1817,6 +1827,7 @@ function bootstrap() {
     },
     claudeRuntime,
     codexRuntime,
+    agyRuntime,
     newTabModel: (provider) => appSettings().newTabModel[provider] || undefined,
     folderTrusted: isFolderTrusted,
     ensureFolderTrust: (_tabId, cwd) => ensureFolderTrust(cwd),
@@ -1875,7 +1886,9 @@ function bootstrap() {
     terminalCli: {
       async spawn(tabId, provider, cwd, sessionId, isNew, hookLog) {
         const env = await sdkEnv(tabId);
-        if (provider === "claude") {
+        if (provider === "agy") {
+          throw new Error(mt("session.error.agyTerminalUnsupported"));
+        } else if (provider === "claude") {
           const cli = await cliDiscovery().find("claude");
           if (!cli.installed || !cli.path)
             throw new Error(cli.error || mt("main.error.claudeCliMissing"));
@@ -2112,6 +2125,8 @@ async function handleChatSend(
   payload: ChatSendDto,
 ): Promise<ChatSendResult> {
   const text = (payload?.text ?? "").trim();
+  if (sessions.snapshot(tabId).provider === "agy" && payload?.images?.length)
+    return { ok: false, error: mt("session.error.agyImagesUnsupported") };
   const prepared = prepareChatImages(payload?.images);
   if (!prepared.ok) return { ok: false, error: prepared.error };
   if (!text && prepared.prepared.length === 0)
@@ -2343,6 +2358,7 @@ function registerIpc() {
       next.newTabModel = {
         claude: patch.newTabModel.claude !== undefined ? modelSetting(patch.newTabModel.claude) : cur.claude,
         codex: patch.newTabModel.codex !== undefined ? modelSetting(patch.newTabModel.codex) : cur.codex,
+        agy: patch.newTabModel.agy !== undefined ? modelSetting(patch.newTabModel.agy) : cur.agy,
       };
     }
     // 경로를 고르는 건 main 의 선택 창(app:pick-worktree-dir)만 한다 — 여기서는 기본값으로 되돌리기만 받는다
@@ -2400,7 +2416,7 @@ function registerIpc() {
   ipcMain.handle(IPC.appModels, (_e, provider: Provider, opts?: { force?: boolean }) => {
     if (!PROVIDERS.includes(provider)) return { models: [], source: "static" as const };
     if (opts?.force) invalidateModels(provider);
-    return listModels(provider, { claude: () => claudeRuntime(), codex: () => codexRuntime(), log: (l) => console.log(l) });
+    return listModels(provider, { claude: () => claudeRuntime(), codex: () => codexRuntime(), agy: () => agyRuntime(), log: (l) => console.log(l) }, opts);
   });
   ipcMain.handle(
     IPC.cliCandidates,
@@ -2874,7 +2890,7 @@ function registerIpc() {
 
   ipcMain.handle(IPC.pickDirectory, (e) => pickDirectory(e.sender));
   ipcMain.handle(IPC.controlInstallCli, () => installCliShim(true));
-  ipcMain.handle(IPC.controlInstallSkill, (_e, agent?: unknown) => installSkillStub(agent === "claude" || agent === "codex" ? agent : undefined));
+  ipcMain.handle(IPC.controlInstallSkill, (_e, agent?: unknown) => installSkillStub(agent === "claude" || agent === "codex" || agent === "agy" ? agent : undefined));
   ipcMain.handle(IPC.controlInstallStatus, () => installStatus());
   ipcMain.handle(IPC.previewUrl, async (_e, cwd: string, path: string) => {
     if (typeof cwd !== "string" || typeof path !== "string") return { ok: false, error: mt("main.error.badArgs") };
@@ -3486,7 +3502,7 @@ app.whenReady().then(async () => {
   // 서명·공증이 없으면 electron-updater 의 자동 설치는 Gatekeeper 에 막힌다. Windows 만 electron-updater 를 쓴다(app-update-win.ts).
 
   // 시작 시 탐지 결과를 콘솔에 남긴다 — 설정 화면과 별개로 로그만으로 진단 가능.
-  for (const provider of ["claude", "codex"] as const) {
+  for (const provider of PROVIDERS) {
     void cliStatus(provider).then((s) =>
       console.log(
         `[cli] ${provider}:`,
