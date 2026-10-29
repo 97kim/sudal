@@ -18,6 +18,7 @@ import {
   type ForkPoint,
 } from "./chat-events";
 import type { Provider } from "./ipc";
+import { readCodexAgentInput } from "./codex-agents";
 
 export interface UserBlock {
   kind: "user";
@@ -328,7 +329,11 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
         })),
       };
 
-    case "tool_use":
+    case "tool_use": {
+      // 하위 에이전트 상태가 바뀌어도 부모의 응답 스트림·생각 표시는 계속 유지한다.
+      if (readCodexAgentInput(event.input) && state.blocks.some((block) => block.kind === "tool" && block.id === event.toolUseId)) {
+        return { ...state, blocks: state.blocks.map((block) => block.kind === "tool" && block.id === event.toolUseId ? { ...block, input: event.input } : block) };
+      }
       return {
         ...state,
         reasoningStale: true,
@@ -347,6 +352,8 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           aiReview: b?.aiReview,
         })),
       };
+
+    }
 
     case "subagent_activity": {
       // 상위 툴 호출 id 로 찾고, 없으면(중첩 에이전트 등) 진행 중인 Skill·Agent 카드에 붙인다

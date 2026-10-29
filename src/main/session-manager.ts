@@ -12,6 +12,7 @@ import type {
   TurnResultEvent,
 } from "@shared/chat-events";
 import { sameCwdOrNull } from "@shared/any-path";
+import { readCodexAgentInput } from "@shared/codex-agents";
 import { buildDedupeIndex, dropReplayedPrefix, indexEvent, type DedupeIndex, type ReplayCutStats } from "@shared/event-dedupe";
 import { buildHandoff, estimateTokens, type Handoff } from "@shared/handoff";
 import type { Provider, ProviderRateLimitDto } from "@shared/ipc";
@@ -1408,6 +1409,7 @@ export class SessionManager {
             model: s.model,
             abort,
             onEvent: emit,
+            onAmbientEvent: (event) => this.ambientEvent(s.tabId, event),
             requestPermission: (req) => this.waitPermission(s, req, abort.signal),
             log: (line) => this.deps.log?.(s.tabId, line),
           });
@@ -1660,7 +1662,7 @@ export class SessionManager {
     }
     // 백그라운드 하위 에이전트가 일하는 소식은 메인 턴이 끝난 뒤에도 계속 온다. 그건 메인이 다시 도는 게 아니라서
     // "도는 중" 으로 올리지 않는다 — 올리면 하위 에이전트가 일하는 내내 탭이 바빠 보이고, 보낸 말이 대기열로 간다.
-    if (e.type === "subagent_activity") {
+    if (e.type === "subagent_activity" || (e.type === "tool_use" && readCodexAgentInput(e.input)) || (e.type === "tool_result" && this.events(tabId).some((event) => event.type === "tool_use" && event.toolUseId === e.toolUseId && readCodexAgentInput(event.input)))) {
       this.record(s, e);
       return;
     }

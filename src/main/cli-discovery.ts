@@ -35,7 +35,8 @@ export interface CliDiscovery {
 function captureVersion(binPath: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   const spec = launchSpec(binPath, ["--version"]);
   return new Promise((resolve) => {
-    execFile(spec.command, spec.args, { timeout: 1500, env, shell: spec.shell, windowsHide: true }, (err, stdout, stderr) => {
+    // Windows에서 CLI 첫 실행은 백신 검사 등으로 수 초 걸릴 수 있다.
+    execFile(spec.command, spec.args, { timeout: 10_000, env, shell: spec.shell, windowsHide: true }, (err, stdout, stderr) => {
       if (err) return resolve(null);
       const text = (stdout || stderr || "").toString().trim();
       resolve(text ? text.split("\n")[0] : null);
@@ -295,7 +296,7 @@ class DefaultCliDiscovery implements CliDiscovery {
 
   async listCandidates(provider: Provider): Promise<CliCandidateDto[]> {
     const env = await this.buildEnv();
-    // 모든 후보를 병렬로 verify해 1.5초 timeout 안에 끝나도록 한다.
+    // 모든 후보를 병렬로 verify해 후보 수만큼 대기 시간이 늘어나지 않도록 한다.
     return Promise.all(
       this.candidates(provider, env).map(async (p) => {
         const versionOutput = await captureVersion(p, env);

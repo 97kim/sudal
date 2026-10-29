@@ -131,6 +131,7 @@ export const settings = {
     rescan: "다시 찾기",
     scanning: "찾는 중",
     scanned: "찾기 완료",
+    scanFailed: "CLI 탐색에 실패했어요. 다시 시도해 주세요.",
     connectable_one: "{{count}}개 연결 가능",
     connectable_other: "{{count}}개 연결 가능",
     shellFound_one: "셸 PATH에서 발견 {{count}}개",

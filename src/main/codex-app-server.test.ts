@@ -1,6 +1,70 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appServerUsage, classifyResumeFailure, sudalEnvArgs, mapAppServerNotification, normalizeFileChanges, reasoningSummaryArgs, resumeConflictMessage, type AppServerTurnContext } from "./codex-app-server";
+import { mapCodexChildNotification } from "./codex-app-server";
+import { readCodexAgentInput } from "@shared/codex-agents";
+import { replaySession } from "@shared/session-state";
+import type { ChatEvent } from "@shared/chat-events";
+
+const collab = (id: string, tool: string, states: Record<string, { status: string; message?: string }>) => ({
+  type: "collabAgentToolCall", id, tool, senderThreadId: "parent", receiverThreadIds: Object.keys(states),
+  status: "completed", prompt: "코드 조사", agentsStates: states,
+});
+
+test("Codex 하위 에이전트: 생성 호출 완료는 작업 완료가 아니며 wait가 각 생성 카드도 갱신한다", () => {
+  const c = ctx();
+  const first = mapAppServerNotification("item/completed", { item: collab("spawn-a", "spawnAgent", { a: { status: "running" } }) }, 1, c);
+  const second = mapAppServerNotification("item/completed", { item: collab("spawn-b", "spawnAgent", { b: { status: "running" } }) }, 2, c);
+  assert.equal(first[1].type === "tool_result" && first[1].isError, false);
+  assert.equal(first[0].type === "tool_use" && readCodexAgentInput(first[0].input)?.agents[0].status, "running");
+  const waited = mapAppServerNotification("item/completed", { item: collab("wait", "wait", { a: { status: "completed", message: "검토 완료" }, b: { status: "errored", message: "실행 실패" } }) }, 3, c);
+  const replay = replaySession([...first, ...second, ...waited]);
+  const a = replay.blocks.find((block) => block.kind === "tool" && block.id === "spawn-a");
+  const b = replay.blocks.find((block) => block.kind === "tool" && block.id === "spawn-b");
+  assert.equal(a?.kind === "tool" && readCodexAgentInput(a.input)?.agents[0].status, "completed");
+  assert.equal(a?.kind === "tool" && a.result?.isError, false);
+  assert.equal(b?.kind === "tool" && readCodexAgentInput(b.input)?.agents[0].status, "errored");
+  assert.equal(b?.kind === "tool" && readCodexAgentInput(b.input)?.agents[0].message, "실행 실패");
+});
+
+test("Codex 하위 에이전트: 여러 대상의 상태를 한 카드에 보존하고 다른 턴에서도 수명 주기를 반영한다", () => {
+  const c = ctx();
+  mapAppServerNotification("item/completed", { item: collab("spawn", "spawnAgent", { a: { status: "running" }, b: { status: "pendingInit" } }) }, 1, c);
+  const next: AppServerTurnContext = { ...ctx(), codexAgents: c.codexAgents };
+  mapAppServerNotification("item/completed", { item: collab("wait", "wait", { a: { status: "completed" }, b: { status: "running" } }) }, 2, next);
+  const updated = mapAppServerNotification("item/completed", { item: { type: "subAgentActivity", id: "activity", agentThreadId: "b", agentPath: "/b", kind: "interrupted" } }, 3, next);
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].type === "tool_use" && updated[0].toolUseId, "spawn");
+  assert.deepEqual(updated[0].type === "tool_use" && readCodexAgentInput(updated[0].input)?.agents.map((a) => a.status), ["completed", "interrupted"]);
+});
+
+test("Codex 하위 에이전트: 오류·중단 호출과 알 수 없는 상태를 성공으로 해석하지 않는다", () => {
+  for (const status of ["failed", "interrupted"]) {
+    const events = mapAppServerNotification("item/completed", { item: { ...collab("bad", "spawnAgent", { a: { status: "newFutureState" } }), status } }, 1, ctx());
+    assert.equal(events[0].type === "tool_use" && readCodexAgentInput(events[0].input)?.agents[0].status, "unknown");
+    assert.equal(events.at(-1)?.type === "tool_result" && (events.at(-1) as Extract<ChatEvent, { type: "tool_result" }>).isError, true);
+  }
+  assert.equal(readCodexAgentInput({ codexAgent: true, agents: [null, {}, { id: "a", status: "future" }] })?.agents.length, 1);
+  assert.equal(readCodexAgentInput({ agents: [] }), null);
+});
+
+test("Codex 자식 알림: 도구·최종 응답만 원래 카드에 붙이고 사용량·reasoning·턴 완료는 합치지 않는다", () => {
+  const c = ctx();
+  mapAppServerNotification("item/completed", { item: collab("spawn", "spawnAgent", { child: { status: "running" } }) }, 1, c);
+  const events = mapCodexChildNotification("item/started", { threadId: "child", item: { id: "cmd", type: "commandExecution", command: "yarn test" } }, 2, c);
+  assert.deepEqual(events, [{ type: "subagent_activity", ts: 2, parentToolUseId: "spawn", tool: "Bash", input: { command: "yarn test" } }]);
+  assert.deepEqual(mapCodexChildNotification("item/completed", { threadId: "child", item: { id: "reply", type: "agentMessage", text: "첫 줄\n완료했어요" } }, 3, c), [{ type: "subagent_activity", ts: 3, parentToolUseId: "spawn", text: "완료했어요" }]);
+  for (const method of ["thread/tokenUsage/updated", "turn/completed", "item/reasoning/textDelta"]) assert.deepEqual(mapCodexChildNotification(method, { threadId: "child" }, 4, c), []);
+  assert.deepEqual(mapCodexChildNotification("item/started", { threadId: "unrelated", item: { id: "cmd", type: "commandExecution", command: "x" } }, 5, c), []);
+});
+
+test("Codex 하위 에이전트: spawn 정보가 없는 수명 주기와 상태 없는 wait도 처리한다", () => {
+  const c = ctx();
+  const activity = mapAppServerNotification("item/completed", { item: { type: "subAgentActivity", id: "activity", agentThreadId: "a", agentPath: "/review", kind: "started" } }, 1, c);
+  assert.equal(activity[0].type === "tool_use" && readCodexAgentInput(activity[0].input)?.agents[0].status, "running");
+  mapAppServerNotification("item/started", { item: { type: "collabAgentToolCall", id: "wait", tool: "wait", receiverThreadIds: ["a"], agentsStates: {} } }, 2, c);
+  assert.equal(c.codexAgents?.get("a")?.input.agents[0].status, "running");
+});
 
 test("normalizeFileChanges: kind 객체/문자열 모두 문자열로, 빠진 값은 빈 문자열, 배열이 아니면 빈 목록", () => {
   assert.deepEqual(normalizeFileChanges([{ path: "a.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-a\n+b" }, { path: "b.ts", kind: "add" }]), [

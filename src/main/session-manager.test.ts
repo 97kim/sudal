@@ -474,6 +474,9 @@ test("백그라운드 하위 에이전트가 일하는 소식은 탭을 바쁘�
   // 메인 턴은 끝났고(idle), 백그라운드로 띄운 하위 에이전트만 일한다
   inner.ambientEvent("tab1", { type: "subagent_activity", ts: Date.now(), parentToolUseId: "toolu_bg", tool: "Bash", input: { command: "yarn test" } });
   assert.equal(manager.snapshot("tab1").status, "idle", "메인은 쉬고 있으니 보낸 말은 대기열이 아니라 바로 간다");
+  inner.ambientEvent("tab1", { type: "tool_use", ts: Date.now(), toolUseId: "codex-agent", name: "Agent", input: { codexAgent: true, operation: "spawnAgent", description: "검토", agents: [{ id: "child", status: "completed" }] } });
+  inner.ambientEvent("tab1", { type: "tool_result", ts: Date.now(), toolUseId: "codex-agent", output: "", isError: false });
+  assert.equal(manager.snapshot("tab1").status, "idle", "Codex 하위 에이전트 상태 갱신도 부모 턴을 시작하지 않는다");
   // 메인이 결과를 받아 스스로 이어가면 그때는 도는 중이다
   inner.ambientEvent("tab1", { type: "assistant_text", ts: Date.now(), blockId: "b", text: "결과를 정리할게요" });
   assert.equal(manager.snapshot("tab1").status, "running");

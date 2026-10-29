@@ -15,6 +15,16 @@ export const toolCard = {
   openInEditorLines: "에디터로 열기 ({{range}}줄)",
   runInTerminalHint: "터미널에 넣습니다. Enter 는 직접 치세요 ({{kAlt}}클릭: 바로 실행)",
   subagent: "하위 에이전트",
+  codexAgentOperation: {
+    spawnAgent: "에이전트 생성", sendInput: "작업 전달", resumeAgent: "에이전트 재개",
+    wait: "결과 대기", closeAgent: "에이전트 종료", sendMessage: "메시지 전달",
+    followupTask: "후속 작업 전달", interruptAgent: "에이전트 중단", listAgents: "에이전트 조회",
+    started: "작업 시작", interacted: "작업 진행", interrupted: "작업 중단", completed: "작업 완료",
+  },
+  codexAgentStatus: {
+    pendingInit: "시작 준비 중", running: "실행 중", interrupted: "중단됨", completed: "완료",
+    errored: "오류", shutdown: "종료됨", notFound: "찾을 수 없음", unknown: "상태 확인 중",
+  },
   aiApproved: "AI 승인",
   aiApprovedHint: "승인이 필요한 작업이라 AI가 검토하고 허용했어요.",
   aiReviewing: "AI 검토 중",

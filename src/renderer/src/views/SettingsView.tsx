@@ -106,6 +106,7 @@ export function SettingsView({
   });
   const [diag, setDiag] = useState<CliDiagnosticsDto | null>(null);
   const [scannedAt, setScannedAt] = useState<number | null>(null);
+  const [scanning, setScanning] = useState(true);
   const [override, setOverride] = useState<{ provider: Provider; path: string }>({ provider: "claude", path: "" });
 
   const load = useCallback(async (provider: Provider) => {
@@ -124,17 +125,31 @@ export function SettingsView({
     }
   }, []);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (refresh = false) => {
     const started = Date.now();
-    await Promise.all(PROVIDERS.map(load));
-    setDiag(await window.sudal.cli.diagnostics());
-    setScannedAt(Date.now() - started);
+    setScanning(true);
+    setScannedAt(null);
+    setState((s) => ({
+      claude: { ...s.claude, loading: true, message: null },
+      codex: { ...s.codex, loading: true, message: null },
+      agy: { ...s.agy, loading: true, message: null },
+    }));
+    try {
+      if (refresh) await window.sudal.cli.refresh();
+      await Promise.all(PROVIDERS.map(load));
+      setDiag(await window.sudal.cli.diagnostics());
+      setScannedAt(Date.now() - started);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setState((s) => ({
+        claude: { ...s.claude, loading: false, message },
+        codex: { ...s.codex, loading: false, message },
+        agy: { ...s.agy, loading: false, message },
+      }));
+    } finally {
+      setScanning(false);
+    }
   }, [load]);
-
-  const rescan = async () => {
-    await window.sudal.cli.refresh();
-    await loadAll();
-  };
 
   useEffect(() => {
     void loadAll();
@@ -208,17 +223,19 @@ export function SettingsView({
                 <p className="mt-1 text-muted">{t("settings.cli.description")}</p>
               </div>
               <button
-                onClick={() => void rescan()}
-                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-primary px-3.5 py-2 font-medium text-on-primary hover:bg-primary-hover"
+                onClick={() => void loadAll(true)}
+                disabled={scanning}
+                aria-busy={scanning}
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-primary px-3.5 py-2 font-medium text-on-primary hover:bg-primary-hover disabled:cursor-wait disabled:opacity-70"
               >
-                <Icon name="refresh" size={13} />
-                {t("settings.cli.rescan")}
+                <Icon name="refresh" size={13} className={scanning ? "motion-safe:animate-spin" : ""} />
+                {t(scanning ? "settings.cli.scanning" : "settings.cli.rescan")}
               </button>
             </div>
 
-            <div className="mb-4 flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-3">
-              <span className={`h-2 w-2 rounded-full ${scannedAt === null ? "bg-muted animate-pulse" : "bg-ok"}`} />
-              <span className="font-medium">{scannedAt === null ? t("settings.cli.scanning") : t("settings.cli.scanned")}</span>
+            <div role="status" aria-busy={scanning} className="mb-4 flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-3">
+              <span className={`h-2 w-2 rounded-full ${scanning ? "bg-primary motion-safe:animate-pulse" : scannedAt !== null ? "bg-ok" : "bg-muted"}`} />
+              <span className="font-medium">{t(scanning ? "settings.cli.scanning" : scannedAt !== null ? "settings.cli.scanned" : "settings.cli.scanFailed")}</span>
               <span className="text-muted">
                 {t("settings.cli.connectable", { count: detected })}{pathIssues > 0 ? ` · ${t("settings.cli.shellFound", { count: pathIssues })}` : ""}
               </span>
@@ -1139,10 +1156,11 @@ function ProviderCard({
           <div className="text-[11px] text-muted">{vendor}</div>
         </div>
         <span
-          className={`label rounded px-2 py-1 ${
+          className={`label inline-flex items-center gap-1.5 rounded px-2 py-1 ${
             loading ? "bg-panel-2 text-muted" : installed ? "bg-ok-bg text-ok" : "bg-err-bg text-err"
           }`}
         >
+          {loading && <Icon name="refresh" size={11} className="motion-safe:animate-spin" />}
           {loading ? t("settings.cli.scanning") : installed ? t("settings.status.connectable") : t("settings.status.notInstalled")}
         </span>
       </div>
