@@ -9,7 +9,7 @@ import type { Msg, MsgKey } from "./i18n/msg";
 export const STALE_NOTE = ko.session.msg.stale;
 export const STALE_NOTE_KEY = "session.msg.stale";
 
-export function staleRunEvents(t: TFunction, events: ChatEvent[], now = Date.now()): ChatEvent[] {
+export function staleRunEvents(t: TFunction, events: Iterable<ChatEvent>, now = Date.now()): ChatEvent[] {
   const note = (key: MsgKey): { text: string; msg: Msg } => ({ text: t(key), msg: { key } });
   const fanoutNote = note("session.msg.staleFanout");
   const reviewNote = note("session.msg.staleReview");
@@ -20,9 +20,16 @@ export function staleRunEvents(t: TFunction, events: ChatEvent[], now = Date.now
   const openTools = new Set<string>();
   let lastStatus: SessionStatus | null = null;
   for (const e of events) {
-    if (e.type === "verify" && !e.partial) verify.set(e.runId, e);
-    else if (e.type === "fanout") fanout.set(e.fanoutId, e);
-    else if (e.type === "review") review.set(e.reviewTabId, e);
+    if (e.type === "verify" && !e.partial) {
+      if (e.status === "running") verify.set(e.runId, e);
+      else verify.delete(e.runId);
+    } else if (e.type === "fanout") {
+      if (e.status === "running") fanout.set(e.fanoutId, e);
+      else fanout.delete(e.fanoutId);
+    } else if (e.type === "review") {
+      if (e.status === "requested") review.set(e.reviewTabId, e);
+      else review.delete(e.reviewTabId);
+    }
     else if (e.type === "tool_use") openTools.add(e.toolUseId);
     else if (e.type === "tool_result") openTools.delete(e.toolUseId);
     else if (e.type === "status") lastStatus = e.status;

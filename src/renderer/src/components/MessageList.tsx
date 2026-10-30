@@ -15,6 +15,8 @@ import { VerifyCard } from "./VerifyCard";
 import { FanoutCard } from "./FanoutCard";
 import { OrchestrationCard } from "./OrchestrationCard";
 import { formatElapsed, useNow } from "../hooks/useNow";
+import { VirtualRows, type VirtualRowsApi } from "./VirtualRows";
+import { HistoryRowContext } from "../hooks/useHistoryRowState";
 
 /** 위로 올린 직후 이만큼은 바닥에 있어도 다시 따라가지 않는다(막 떠나는 중). */
 const UP_GRACE_MS = 300;
@@ -33,6 +35,11 @@ export function MessageList({
   ambientFromBg = false,
   loading = false,
   queuedCount = 0,
+  hasMore = false,
+  loadingOlder = false,
+  onLoadOlder,
+  historyError = null,
+  onReload,
 }: {
   tabId: string;
   blocks: Block[];
@@ -56,9 +63,15 @@ export function MessageList({
   loading?: boolean;
   /** 응답 중에 보내 대기열에 있는 메시지 수. 목록에는 앞 응답이 끝난 뒤에야 나타난다. */
   queuedCount?: number;
+  hasMore?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => Promise<void>;
+  historyError?: string | null;
+  onReload?: () => void;
 }) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
+  const virtualApi = useRef<VirtualRowsApi | null>(null);
   // 검색 결과에서 "이 블록으로": 예약된 블록이 이 탭의 것이고 화면에 생겼으면 스크롤 + 잠깐 강조.
   // 블록 목록이 바뀔 때마다(재생 진행) 다시 시도하므로 닫혀 있던 세션도 마운트 뒤 정상 이동한다.
   const [revealTick, setRevealTick] = useState(0);
@@ -66,18 +79,24 @@ export function MessageList({
   useEffect(() => {
     const blockId = pendingReveal(tabId);
     if (!blockId) return;
-    const el = containerRef.current?.querySelector<HTMLElement>(
-      `[data-block-id="${CSS.escape(blockId)}"]`,
-    );
-    if (!el) return;
-    clearReveal();
-    // 프로그램이 올린 스크롤이라도 보고 있던 자리다. 바닥에 붙어 있었다면 바로 뒤의 응답·백그라운드 소식이 다시 끌어내린다.
+    const block = blocks.find((b) => b.id === blockId);
+    if (!block) {
+      if (hasMore && !loadingOlder && !historyError) void onLoadOlder?.();
+      return;
+    }
     release();
-    el.scrollIntoView({ block: "center" });
-    el.classList.add("reveal-flash");
-    const t = setTimeout(() => el.classList.remove("reveal-flash"), 1600);
-    return () => clearTimeout(t);
-  }, [tabId, blocks, revealTick]);
+    virtualApi.current?.reveal(`${block.kind}:${block.id}`);
+    const frame = requestAnimationFrame(() => {
+      const el = containerRef.current?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
+      if (!el) return;
+      clearReveal();
+      release();
+      el.scrollIntoView({ block: "center" });
+      el.classList.add("reveal-flash");
+      setTimeout(() => el.classList.remove("reveal-flash"), 1600);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [tabId, blocks, revealTick, hasMore, loadingOlder, historyError, onLoadOlder]);
   // 자동 스크롤: 사용자가 맨 아래에 있을 때만 따라간다. 위로 올려 읽는 중이면 새 블록(툴카드·응답)이 와도 끌어내리지 않는다 —
   // 자동으로 내려가는데 사람이 올리면 위아래로 튀기 때문. 예외는 사용자가 방금 보낸 메시지(자기 메시지는 보고 싶으니 맨 아래로).
   // 내용 높이가 바뀔 때(스트리밍·이미지·코드 하이라이트)도 같은 규칙으로 따라간다. "맨 아래로" pill 로 언제든 복귀.
@@ -195,6 +214,7 @@ export function MessageList({
   const onScroll = () => {
     const el = containerRef.current;
     if (!el) return;
+    if (!stickToBottom.current && el.scrollTop < 160 && hasMore && !loadingOlder && !historyError) void onLoadOlder?.();
     const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
     lastScrollAtEnd.current = atEnd;
     // 바닥까지 내려오면 다시 따라간다. 바닥 "근처" 로 넓히지 않는다 — 조금 올려 읽는 중에 다시 붙어 버리면 끌어내리기가 이어져 떨린다.
@@ -208,7 +228,7 @@ export function MessageList({
   useEffect(() => {
     if (lastUserId !== prevUserId.current) {
       prevUserId.current = lastUserId;
-      if (lastUserId) follow();
+      if (lastUserId && !pendingReveal(tabId)) follow();
     }
     if (queuedCount > prevQueued.current) follow();
     prevQueued.current = queuedCount;
@@ -228,13 +248,12 @@ export function MessageList({
   }, []);
 
   // 연속된 어시스턴트 블록(text/tool/turn)을 한 그룹으로 묶어 아바타를 한 번만 그린다.
-  const groups: { kind: GroupKind; blocks: Block[] }[] = [];
+  const groups: { kind: GroupKind; blocks: Block[]; continued: boolean }[] = [];
   for (const b of blocks) {
     const kind: GroupKind =
       b.kind === "user" ? "user" : b.kind === "compacted" ? "compacted" : b.kind === "error" ? "error" : b.kind === "notice" ? "notice" : b.kind === "review" ? "review" : b.kind === "verify" ? "verify" : b.kind === "fanout" ? "fanout" : b.kind === "orchestration" ? "orchestration" : "assistant";
     const last = groups[groups.length - 1];
-    if (last && last.kind === kind && kind === "assistant") last.blocks.push(b);
-    else groups.push({ kind, blocks: [b] });
+    groups.push({ kind, blocks: [b], continued: !!last && last.kind === kind && kind === "assistant" });
   }
 
   // 턴 끝의 "여기서 분기": 지금 이어지는 세션의 턴이고 탭이 쉬고 있을 때만
@@ -251,9 +270,17 @@ export function MessageList({
       onWheel={onWheel}
       onPointerDown={onPointerDown}
       className="h-full overflow-y-auto px-6 py-5"
+      style={{ overflowAnchor: "none" }}
       data-message-list
+      data-history-count={blocks.length}
     >
       <div ref={contentRef} className="mx-auto flex max-w-[820px] flex-col gap-5">
+        {(hasMore || historyError) && <div className="text-center text-xs text-muted" data-older-history>
+          {historyError && <p role="alert">{historyError}</p>}
+          <button disabled={loadingOlder} onClick={() => historyError ? onReload?.() : void onLoadOlder?.()}>
+            {loadingOlder ? t("chat.messages.loading") : t("chat.messages.loadOlder")}
+          </button>
+        </div>}
         {blocks.length === 0 &&
           (loading ? (
             <LoadingConversation />
@@ -265,9 +292,9 @@ export function MessageList({
               <p className="text-muted">{t("chat.messages.empty")}</p>
             </div>
           ))}
-        {groups.map((g, i) => (
-          <Group key={g.blocks[0].id + i} group={g} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} />
-        ))}
+        <VirtualRows rows={groups.map((g, i) => ({ key: `${g.blocks[0].kind}:${g.blocks[0].id}`, gap: groups[i + 1]?.continued ? 4 : 20, estimate: g.kind === "assistant" ? 100 : 72 }))}
+          container={containerRef} following={stickToBottom} api={virtualApi}
+          render={(index) => <HistoryRowContext.Provider value={`${tabId}:${groups[index].blocks[0].id}`}><Group group={groups[index]} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} /></HistoryRowContext.Provider>} />
         {thinking && (
           <Thinking
             withAvatar={groups[groups.length - 1]?.kind !== "assistant"}
@@ -414,7 +441,7 @@ function Group({
   onCompareFanout,
   onOpenOrchestration,
 }: {
-  group: { kind: GroupKind; blocks: Block[] };
+  group: { kind: GroupKind; blocks: Block[]; continued?: boolean };
   provider: Provider;
   tabId: string;
   onRerunVerify?: (commands: string[]) => void;
@@ -554,11 +581,11 @@ function Group({
 
   return (
     <div className="flex gap-3">
-      <Avatar provider={provider} />
+      {group.continued ? <div className="avatar-gap" /> : <Avatar provider={provider} />}
       <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline gap-2">
+        {!group.continued && <div className="mb-1 flex items-baseline gap-2">
           <span className="font-semibold">{ASSISTANT[provider].label}</span>
-        </div>
+        </div>}
         <div className="flex flex-col gap-1">
           {group.blocks.map((b) => (
             <div key={b.id} data-block-id={b.id} className="reveal-target">
@@ -606,6 +633,8 @@ function BlockView({ block }: { block: Block }) {
                 <img
                   key={i}
                   src={img.dataUrl}
+                  loading="lazy"
+                  decoding="async"
                   className="max-h-20 max-w-full rounded-md border border-line"
                   alt=""
                 />

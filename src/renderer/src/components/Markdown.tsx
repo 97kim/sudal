@@ -15,6 +15,7 @@ import { RunInTerminalContext, isShellLanguage, normalizeCommand } from "../term
 import { relativeAny } from "@shared/any-path";
 import { loadMarkdownImage, markdownUrlTransform } from "../markdown-image";
 import { IS_WIN } from "../platform";
+import { useHistoryRowState } from "../hooks/useHistoryRowState";
 
 // ===== 답변 속 파일 참조("ProductByPoController.kt:63") → 에디터로 열기 =====
 // rehype 단계에서 모양이 파일 참조인 텍스트·인라인 코드에 data-file-* 를 달아 두고, FileRef 가 렌더될 때 main 의 file:locate 로
@@ -338,8 +339,22 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unkno
   const file = base?.file;
   const key = JSON.stringify([imageCwd, file, src]);
   const [loaded, setLoaded] = useState<{ key: string; url: string | null } | null>(null);
+  const placeholder = useRef<HTMLSpanElement>(null);
+  const [visibleKey, setVisibleKey] = useState<string | null>(null);
   useEffect(() => {
-    if (!imageCwd || typeof src !== "string" || !src) return;
+    const el = placeholder.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisibleKey(key);
+        observer.disconnect();
+      }
+    }, { rootMargin: "300px" });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [key]);
+  useEffect(() => {
+    if (visibleKey !== key || !imageCwd || typeof src !== "string" || !src) return;
     let alive = true;
     loadMarkdownImage(src, { cwd: imageCwd, file }, window.sudal.files).then(
       (url) => alive && setLoaded({ key, url }),
@@ -348,11 +363,12 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unkno
     return () => {
       alive = false;
     };
-  }, [imageCwd, file, src, key]);
+  }, [imageCwd, file, src, key, visibleKey]);
   const url = loaded?.key === key ? loaded.url : null;
   // 못 받았거나 받는 중이면 대체 글만 — 깨진 그림 아이콘을 띄우지 않는다.
-  if (!url) return rest.alt ? <span className="text-muted">{rest.alt}</span> : null;
-  return <img src={url} {...rest} />;
+  return <span ref={placeholder} className="inline-block max-w-full" style={!url ? { minHeight: 48, minWidth: 80 } : undefined} data-lazy-image>
+    {url ? <img src={url} {...rest} loading="lazy" decoding="async" /> : <span className="text-muted">{rest.alt}</span>}
+  </span>;
 }
 
 /**
@@ -363,7 +379,7 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unkno
 function MdChatImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
   const { t } = useTranslation();
   // 승인한 주소를 기억한다 — 참/거짓만 두면 스트리밍 중 같은 자리의 주소가 바뀌어도(참조 링크가 뒤에 붙는 등) 승인이 그대로 남는다
-  const [allowedSrc, setAllowedSrc] = useState<string | null>(null);
+  const [allowedSrc, setAllowedSrc] = useHistoryRowState<string | null>(`image:${props.src}`, null);
   const { src } = props;
   if (typeof src === "string" && /^https?:/i.test(src) && allowedSrc !== src) {
     let host = src;

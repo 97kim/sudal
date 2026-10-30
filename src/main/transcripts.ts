@@ -1,7 +1,7 @@
 // 로컬 트랜스크립트 스캐너 — 터미널에서 쓴 사용량까지 합산한다.
 //   Claude Code: ~/.claude/projects/<cwd-encoded>/*.jsonl  (assistant 항목의 message.usage, 메시지 id 중복 제거)
 //   Codex:       ~/.codex/sessions/**/*.jsonl              (event_msg/token_count 의 누적값 차분)
-// 파서는 줄 배열을 받는 순수 함수(테스트 가능). 스캐너는 mtime+size 기준 증분 캐시와 fs.watch 를 맡는다.
+// 파서는 한 줄씩 받아 집계 상태만 보관한다. 스캐너는 mtime+size 기준 증분 캐시와 fs.watch 를 맡는다.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +16,16 @@ export type CodexRateLimit = ProviderRateLimitDto;
 export interface ParseResult {
   records: UsageRecord[];
   rateLimit?: CodexRateLimit;
+}
+
+interface LineParser {
+  push(line: string): void;
+  finish(): ParseResult;
+}
+
+function parseLines(lines: Iterable<string>, parser: LineParser): ParseResult {
+  for (const line of lines) parser.push(line);
+  return parser.finish();
 }
 
 /** (sessionId, model, cwd, 시간 버킷) 으로 합쳐 캐시를 작게 유지한다. */
@@ -53,19 +63,23 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
  * id 별로 마지막(가장 큰 usage) 하나만 센다. `<synthetic>` 모델은 API 호출이 아니라 제외.
  */
 export function parseClaudeLines(lines: Iterable<string>): ParseResult {
+  return parseLines(lines, createClaudeParser());
+}
+
+function createClaudeParser(): LineParser {
   const byId = new Map<string, UsageRecord>();
   let seq = 0;
-  for (const line of lines) {
-    if (!line.includes('"assistant"')) continue;
+  const push = (line: string) => {
+    if (!line.includes('"assistant"')) return;
     const e = safeJson(line);
-    if (!e || e.type !== "assistant") continue;
+    if (!e || e.type !== "assistant") return;
     const msg = e.message as Record<string, unknown> | undefined;
-    if (!msg) continue;
+    if (!msg) return;
     const usage = msg.usage as Record<string, unknown> | undefined;
     const model = typeof msg.model === "string" ? msg.model : "";
-    if (!usage || !model || model === "<synthetic>") continue;
+    if (!usage || !model || model === "<synthetic>") return;
     const ts = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
-    if (!Number.isFinite(ts)) continue;
+    if (!Number.isFinite(ts)) return;
     const id = typeof msg.id === "string" ? msg.id : `noid-${seq++}`;
     const rec: UsageRecord = {
       ts,
@@ -82,8 +96,8 @@ export function parseClaudeLines(lines: Iterable<string>): ParseResult {
     const prev = byId.get(id);
     // 같은 id 면 토큰이 더 큰 쪽(최종본)을 남긴다.
     if (!prev || rec.output + rec.input >= prev.output + prev.input) byId.set(id, rec);
-  }
-  return { records: compactRecords([...byId.values()]) };
+  };
+  return { push, finish: () => ({ records: compactRecords([...byId.values()]) }) };
 }
 
 /**
@@ -91,6 +105,10 @@ export function parseClaudeLines(lines: Iterable<string>): ParseResult {
  * 같은 누적값이 반복되면(rate limit 갱신만) 건너뛴다. 모델은 직전 turn_context 의 model.
  */
 export function parseCodexLines(lines: Iterable<string>): ParseResult {
+  return parseLines(lines, createCodexParser());
+}
+
+function createCodexParser(): LineParser {
   const records: UsageRecord[] = [];
   let cwd = "";
   let sessionId = "";
@@ -98,32 +116,32 @@ export function parseCodexLines(lines: Iterable<string>): ParseResult {
   let prev = { input: 0, cached: 0, output: 0 };
   let rateLimit: CodexRateLimit | undefined;
 
-  for (const line of lines) {
-    if (!line.includes("session_meta") && !line.includes("turn_context") && !line.includes("token_count")) continue;
+  const push = (line: string) => {
+    if (!line.includes("session_meta") && !line.includes("turn_context") && !line.includes("token_count")) return;
     const e = safeJson(line);
-    if (!e) continue;
+    if (!e) return;
     const payload = (e.payload ?? {}) as Record<string, unknown>;
     if (e.type === "session_meta") {
       if (typeof payload.cwd === "string") cwd = payload.cwd;
       const id = payload.id ?? payload.session_id;
       if (typeof id === "string") sessionId = id;
-      continue;
+      return;
     }
     if (e.type === "turn_context") {
       if (typeof payload.model === "string") model = payload.model;
       if (typeof payload.cwd === "string") cwd = payload.cwd;
-      continue;
+      return;
     }
-    if (e.type !== "event_msg" || payload.type !== "token_count") continue;
+    if (e.type !== "event_msg" || payload.type !== "token_count") return;
     const ts = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
-    if (!Number.isFinite(ts)) continue;
+    if (!Number.isFinite(ts)) return;
 
     const limits = payload.rate_limits as Record<string, unknown> | null | undefined;
     if (limits) rateLimit = splitCodexWindows([codexWindow(limits.primary), codexWindow(limits.secondary)], ts) ?? rateLimit;
 
     const info = payload.info as Record<string, unknown> | null | undefined;
     const total = info?.total_token_usage as Record<string, unknown> | undefined;
-    if (!total) continue;
+    if (!total) return;
     const cur = {
       input: num(total.input_tokens),
       cached: num(total.cached_input_tokens),
@@ -133,7 +151,7 @@ export function parseCodexLines(lines: Iterable<string>): ParseResult {
     const dCached = cur.cached - prev.cached;
     const dOut = cur.output - prev.output;
     prev = cur;
-    if (dIn <= 0 && dOut <= 0) continue; // 반복 이벤트 또는 리셋
+    if (dIn <= 0 && dOut <= 0) return; // 반복 이벤트 또는 리셋
     records.push({
       ts,
       provider: "codex",
@@ -147,8 +165,8 @@ export function parseCodexLines(lines: Iterable<string>): ParseResult {
       cacheWrite: 0,
       requests: 1,
     });
-  }
-  return { records: compactRecords(records), rateLimit };
+  };
+  return { push, finish: () => ({ records: compactRecords(records), rateLimit }) };
 }
 
 function codexWindow(raw: unknown): RateLimitWindowDto | null {
@@ -191,21 +209,25 @@ export function codexRateLimitFromAppServer(resp: unknown, observedAt: number): 
 /** Sudal already stores normalized per-turn usage for Antigravity. Other providers
  * use their native transcripts, so ignore them here to avoid double counting. */
 export function parseSudalAgyLines(lines: Iterable<string>): ParseResult {
+  return parseLines(lines, createSudalAgyParser());
+}
+
+function createSudalAgyParser(): LineParser {
   let provider: unknown = null;
   let sessionId = "";
   let cwd = "";
   let model = "";
   const records: UsageRecord[] = [];
-  for (const line of lines) {
+  const push = (line: string) => {
     const event = safeJson(line);
-    if (!event) continue;
+    if (!event) return;
     if (event.type === "session") {
       provider = event.provider;
       sessionId = typeof event.sessionId === "string" ? event.sessionId : "";
       cwd = typeof event.cwd === "string" ? event.cwd : "";
       model = typeof event.model === "string" ? event.model : "";
     }
-    if (event.type !== "turn_result" || provider !== "agy" || !sessionId || !num(event.ts)) continue;
+    if (event.type !== "turn_result" || provider !== "agy" || !sessionId || !num(event.ts)) return;
     const entries = event.modelUsage && typeof event.modelUsage === "object" ? Object.entries(event.modelUsage) : [];
     const usages = entries.length ? entries : [[model || "unknown", event.usage]];
     for (const [modelId, raw] of usages) {
@@ -217,8 +239,8 @@ export function parseSudalAgyLines(lines: Iterable<string>): ParseResult {
       records.push({ ts: num(event.ts), provider: "agy", sessionId, cwd, model: String(modelId),
         input: Math.max(0, input - cacheRead), output, cacheRead, cacheWrite, requests: Math.max(1, num(event.numTurns)) });
     }
-  }
-  return { records: compactRecords(records) };
+  };
+  return { push, finish: () => ({ records: compactRecords(records) }) };
 }
 
 // ===== 스캐너 =====
@@ -316,7 +338,8 @@ export class UsageScanner {
       const cached = this.cache.files[file];
       if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) continue;
       try {
-        const result = kind === "claude" ? await parseFile(file, parseClaudeLines) : kind === "codex" ? await parseFile(file, parseCodexLines) : await parseFile(file, parseSudalAgyLines);
+        const parser = kind === "claude" ? createClaudeParser() : kind === "codex" ? createCodexParser() : createSudalAgyParser();
+        const result = await parseFile(file, parser);
         this.cache.files[file] = { mtimeMs: st.mtimeMs, size: st.size, records: result.records, rateLimit: result.rateLimit };
         changed = true;
       } catch (e) {
@@ -431,10 +454,15 @@ function listFiles(root: string, ext: string): string[] {
   return out;
 }
 
-/** 큰 파일(수십 MB)을 통째로 읽지 않고 줄 단위로 스트리밍한다. */
-async function parseFile(file: string, parser: (lines: Iterable<string>) => ParseResult): Promise<ParseResult> {
-  const lines: string[] = [];
-  const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
-  for await (const line of rl) lines.push(line);
-  return parser(lines);
+/** 원문은 쌓지 않고 한 줄을 읽을 때마다 처리한다. 오류 시에도 파일 스트림을 닫는다. */
+async function parseFile(file: string, parser: LineParser): Promise<ParseResult> {
+  const input = fs.createReadStream(file, { encoding: "utf8" });
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of rl) parser.push(line);
+    return parser.finish();
+  } finally {
+    rl.close();
+    input.destroy();
+  }
 }

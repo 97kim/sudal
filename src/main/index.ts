@@ -295,6 +295,7 @@ async function cliDiagnostics(): Promise<CliDiagnosticsDto> {
 // ===== Broadcast helpers =====
 
 let mainWindow: BrowserWindow | null = null;
+const chatSequences = new Map<string, number>();
 let mainWindowReady = false;
 /** 살아 있는 메인 창. 닫은 뒤의 객체나 수달 창은 아니다. */
 function liveMainWindow(): BrowserWindow | null {
@@ -1803,7 +1804,9 @@ function bootstrap() {
   };
   sessions = new SessionManager({
     emit(tabId, event) {
-      sendAll(IPC.chatEvent, { tabId, event } satisfies ChatEventEnvelope);
+      const sequence = (chatSequences.get(tabId) ?? 0) + 1;
+      chatSequences.set(tabId, sequence);
+      sendAll(IPC.chatEvent, { tabId, event, sequence } satisfies ChatEventEnvelope);
       attention.event(tabId, event);
       if (scheduleEngine?.watches(tabId)) {
         // 회차의 끝은 이 신호들로만 판정한다(실측으로 고정한 규칙).
@@ -2684,6 +2687,11 @@ function registerIpc() {
     sessions.snapshot(tabId),
   );
   ipcMain.handle(IPC.chatEvents, (_e, tabId: string) => sessions.events(tabId));
+  ipcMain.handle(IPC.chatHistory, async (_e, tabId: string, before?: string) => {
+    if (typeof tabId !== "string" || (before !== undefined && typeof before !== "string")) throw new Error(mt("main.error.badArgs"));
+    const sequence = chatSequences.get(tabId) ?? 0;
+    return { ...await sessions.history(tabId, before), sequence };
+  });
   ipcMain.handle(IPC.chatClear, (_e, tabId: string) => sessions.clear(tabId));
   // 압축은 되도록 provider 에게 맡긴다 — 모델이 무엇을 남길지 정하고 세션도 끊기지 않는다.
   ipcMain.handle(

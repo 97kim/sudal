@@ -388,6 +388,24 @@ test("TranscriptWatcher: 기존 내용은 건너뛰고 새로 붙는 줄만 이�
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("TranscriptWatcher bounds reads, preserves split UTF-8, and flushes its backlog on stop", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sudal-watch-chunks-"));
+  const file = join(dir, "history.jsonl");
+  const lines = ["x".repeat(256 * 1024 - 1) + "한글", "가".repeat(200_000), "end"];
+  writeFileSync(file, lines.join("\n") + "\npartial");
+  const got: string[] = [];
+  const watcher = new TranscriptWatcher({ resolveFile: () => file, skipExisting: false, map: (line) => [line], onEvents: (events) => got.push(...events) });
+  try {
+    watcher.start();
+    assert.equal(got.length, 0, "the first bounded read ends inside a UTF-8 character");
+    watcher.stop();
+    assert.deepEqual(got, lines);
+    appendFileSync(file, "-finished\n");
+    watcher.poll();
+    assert.equal(got.at(-1), "partial-finished");
+  } finally { watcher.stop(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("mapClaudeHookLine/claudeHookSettings: 훅 stdin JSON → 권한 요청·툴 종료·턴 종료", () => {
   const perm = JSON.stringify({
     session_id: "s",

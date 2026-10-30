@@ -14,6 +14,34 @@ import { ZERO_USAGE, type ChatEvent } from "@shared/chat-events";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+test("history pages stream persisted events without requesting the full event array", async () => {
+  const events: ChatEvent[] = Array.from({ length: 450 }, (_, i) => ({ type: "user_message", id: `user-${i}`, ts: i, text: `message ${i}` }));
+  const manager = new SessionManager({
+    emit() {}, claudeRuntime: async () => { throw new Error("unused"); }, codexRuntime: async () => { throw new Error("unused"); },
+    store: { appendEvent() {}, resetThread() {}, readEvents() { throw new Error("bulk read is not allowed"); }, *iterateEvents() { yield* events; } },
+  });
+  const latest = await manager.history("tab");
+  assert.equal(latest.state.blocks.length, 200);
+  assert.equal(latest.before, "user-250");
+  assert.equal((await manager.history("tab", latest.before!)).before, "user-50");
+  assert.equal((await manager.history("tab", "user-50")).hasMore, false);
+});
+
+test("history yields to live work and cancels cleanly when its tab closes", async () => {
+  let closed = 0;
+  const manager = new SessionManager({
+    emit() {}, claudeRuntime: async () => { throw new Error("unused"); }, codexRuntime: async () => { throw new Error("unused"); },
+    store: { appendEvent() {}, resetThread() {}, readEvents: () => [], *iterateEvents() {
+      try { for (let i = 0; i < 2000; i++) yield { type: "user_message" as const, id: `u${i}`, ts: i, text: "message" }; }
+      finally { closed++; }
+    } },
+  });
+  const pending = manager.history("tab");
+  manager.release("tab");
+  await assert.rejects(pending);
+  assert.equal(closed, 2, "both restoration and cancelled history iterators release their resources");
+});
+
 test("Antigravity 미지원 입력·터미널 전환은 대화 ID와 제어권을 바꾸지 않는다", async () => {
   let spawned = false;
   const sessionId = "11111111-2222-3333-4444-555555555555";

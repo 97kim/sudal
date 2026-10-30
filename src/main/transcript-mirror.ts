@@ -4,6 +4,7 @@
 // 포맷은 CLI 내부 형식이라 방어적으로 읽는다. 못 읽는 줄은 조용히 버린다 — 미러가 멈춰도 터미널은 정상이다.
 
 import fs from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import path from "node:path";
 import type { ChatEvent, TokenUsage } from "@shared/chat-events";
 import { toolResultText } from "./claude-events";
@@ -547,31 +548,42 @@ export interface WatcherOptions<T = ChatEvent> {
 /** 기록 파일을 주기적으로 읽어 새 줄만 이벤트로 넘긴다. 줄 경계에서 잘린 조각은 다음 폴링까지 보관한다. */
 export class TranscriptWatcher<T = ChatEvent> {
   private timer: ReturnType<typeof setInterval> | null = null;
+  private continuation: ReturnType<typeof setImmediate> | null = null;
   private file: string | null = null;
   private offset = 0;
-  private partial = "";
-  private readonly state = newMirrorState();
+  private partial: string[] = [];
+  private decoder = new StringDecoder("utf8");
+  private state = newMirrorState();
 
   constructor(private readonly opts: WatcherOptions<T>) {}
 
   start(): void {
     if (this.timer) return;
-    this.poll();
     this.timer = setInterval(() => this.poll(), this.opts.intervalMs ?? 700);
+    this.poll();
   }
 
   /** 마지막으로 한 번 더 읽고 멈춘다. */
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.continuation) clearImmediate(this.continuation);
+    this.continuation = null;
+    // Flush the finite prefix present at stop; each read is still bounded.
     this.poll();
+    let end = this.offset;
+    try { if (this.file) end = fs.statSync(this.file).size; } catch { /* file removed during stop */ }
+    while (this.offset < end && this.lastReadProgress) this.poll();
   }
 
   currentFile(): string | null {
     return this.file;
   }
 
+  private lastReadProgress = false;
+
   poll(): void {
+    this.lastReadProgress = false;
     try {
       if (!this.file) {
         const f = this.opts.resolveFile();
@@ -581,20 +593,38 @@ export class TranscriptWatcher<T = ChatEvent> {
         this.opts.onFile?.(f);
       }
       const st = fs.statSync(this.file);
-      if (st.size < this.offset) this.offset = 0; // 파일이 새로 쓰였다
+      if (st.size < this.offset) {
+        this.offset = 0;
+        this.partial = [];
+        this.decoder = new StringDecoder("utf8");
+        this.state = newMirrorState();
+      }
       if (st.size === this.offset) return;
       const fd = fs.openSync(this.file, "r");
-      const buf = Buffer.alloc(st.size - this.offset);
-      const n = fs.readSync(fd, buf, 0, buf.length, this.offset);
-      fs.closeSync(fd);
+      const buf = Buffer.allocUnsafe(Math.min(256 * 1024, st.size - this.offset));
+      let n: number;
+      try { n = fs.readSync(fd, buf, 0, buf.length, this.offset); }
+      finally { fs.closeSync(fd); }
       this.offset += n;
-      const chunk = this.partial + buf.toString("utf8", 0, n);
+      this.lastReadProgress = n > 0;
+      const chunk = this.decoder.write(buf.subarray(0, n));
       const lines = chunk.split("\n");
-      this.partial = lines.pop() ?? "";
+      const complete = lines.length > 1;
+      if (!complete) this.partial.push(chunk);
+      else {
+        lines[0] = [...this.partial, lines[0]].join("");
+        this.partial = [lines.pop() ?? ""];
+      }
       const events: T[] = [];
-      for (const line of lines)
+      for (const line of complete ? lines : [])
         if (line.trim()) events.push(...this.opts.map(line, this.state));
       if (events.length > 0) this.opts.onEvents(events);
+      if (this.timer && this.offset < st.size && !this.continuation) {
+        this.continuation = setImmediate(() => {
+          this.continuation = null;
+          this.poll();
+        });
+      }
     } catch {
       /* 파일이 잠깐 없거나 읽기 실패 — 다음 폴링에 다시 */
     }

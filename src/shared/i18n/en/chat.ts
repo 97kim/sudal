@@ -237,6 +237,7 @@ export const chat: DeepPartial<typeof ko> = {
     compacted: "Compacted · {{tokens}} · the conversation above was replaced by a summary",
     compactedAuto: "Auto-compacted · {{tokens}} · the conversation above was replaced by a summary",
     loading: "Loading conversation…",
+    loadOlder: "Load earlier messages",
     turnFailed: "The task could not be completed. Check the changed files and ask again.",
     forkHint: "Branch the conversation up to this turn into a new tab and continue in a different direction. The original tab stays as is, and files are not reverted",
     forking: "Branching…",
