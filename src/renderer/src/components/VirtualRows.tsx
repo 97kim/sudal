@@ -108,9 +108,17 @@ export function VirtualRows({ rows, container, following, api, render }: {
     }
     return ref;
   };
+  // Select rows using the anchored viewport during the prepend commit too.
+  // Waiting for the layout effect would first unmount the visible rows using
+  // their old coordinates, discarding image loads and local component state.
+  const oldAnchor = !following.current && previous.current !== layouts
+    ? previous.current.find((row) => row.start + row.height > viewport.top) ?? previous.current.at(-1)
+    : undefined;
+  const nextAnchor = oldAnchor && layouts.find((row) => row.key === oldAnchor.key);
+  const renderTop = viewport.top + (oldAnchor && nextAnchor ? nextAnchor.start - oldAnchor.start : 0);
   return <div ref={root} data-virtual-list style={{ position: "relative", height: total, overflowAnchor: "none" }}>
     {layouts.map((row, index) => {
-      if (row.start + row.height < viewport.top - 800 || row.start > viewport.top + viewport.height + 800) return null;
+      if (row.start + row.height < renderTop - 800 || row.start > renderTop + viewport.height + 800) return null;
       return <div key={row.key} data-virtual-row={row.key}
         ref={rowRef(row.key)}
         style={{ position: "absolute", top: row.start, left: 0, right: 0 }}>

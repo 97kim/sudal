@@ -127,12 +127,18 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
             />
           )}
           {r.limit.overage?.enabled && <OverageLine limit={r.limit} />}
-          {r.limit.groups?.map((group) => (
-            <div key={group.label} className="flex flex-col gap-1">
-              <span className="truncate pl-1 text-[10px] text-muted" title={group.label}>{group.label}</span>
-              {group.windows.map((w) => <MiniBar key={w.windowMinutes} w={w} />)}
+          {!!r.limit.groups?.length && (
+            <div className="flex flex-col gap-2 pt-0.5">
+              {r.limit.groups.map((group) => (
+                <div key={group.label} className="flex flex-col gap-1.5" data-limits-group={group.label}>
+                  <span className="truncate pl-1 text-[10px] font-medium leading-snug text-fg" title={group.label}>{group.label}</span>
+                  <div className="ml-1 flex flex-col gap-1 border-l-2 border-line pl-1">
+                    {group.windows.map((w) => <MiniBar key={w.windowMinutes} w={w} />)}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       ))}
     </button>

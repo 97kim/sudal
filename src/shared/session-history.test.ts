@@ -97,3 +97,51 @@ test("updates during older-page loading are replayed on the hydrated card withou
   current = mergeHistoryPage(current, pendingPage, true, pushes);
   assert.deepEqual(current.state, replaySession([...events, ...pushes]));
 });
+
+test("off-page agent metadata drops large prompts and messages but keeps running status and restores full input on demand", () => {
+  const large = "x".repeat(8 * 1024 * 1024);
+  const input = { codexAgent: true, operation: "spawnAgent", description: large, prompt: large, agents: [{ id: "child", status: "running", message: large }] };
+  const events: ChatEvent[] = [{ type: "tool_use", ts: 0, toolUseId: "agent", name: "Agent", input }];
+  for (let i = 0; i < 220; i++) events.push({ type: "assistant_text", ts: i + 1, blockId: `a${i}`, text: "small" });
+  events.push({ type: "turn_result", ts: 222, usage: ZERO_USAGE, modelUsage: {}, costUsd: 0, durationMs: 1, numTurns: 1, isError: false });
+  const latest = replayHistory(events);
+  assert.ok(JSON.stringify(latest.prefix).length < 16 * 1024, "off-page bodies do not bypass the page byte budget");
+  const agent = latest.prefix[0];
+  assert.equal(agent.kind, "tool");
+  if (agent.kind !== "tool") return;
+  assert.deepEqual(agent.input, { codexAgent: true, agents: [{ id: "child", status: "running" }] });
+  assert.equal(agent.result, undefined, "a running background agent survives the parent turn ending");
+  let current = mergeHistoryPage(initialHistoryState(), latest, false, []);
+  const update: ChatEvent = { type: "tool_use", ts: 223, toolUseId: "agent", name: "Agent", input: { ...input, agents: [{ id: "child", status: "completed", message: large }] } };
+  current = reduceHistoryEvent(current, update);
+  assert.ok(JSON.stringify(current.prefix).length < 16 * 1024, "live updates also discard off-page body data");
+  let before = latest.before!;
+  for (;;) {
+    const page = replayHistory([...events, update], before);
+    assert.ok(JSON.stringify(page.suffix).length < 128 * 1024, "newer context is also kept lightweight");
+    current = mergeHistoryPage(current, page, true, []);
+    if (!page.hasMore) break;
+    before = page.before!;
+  }
+  assert.deepEqual(current.state.blocks, replaySession([...events, update]).blocks);
+});
+
+test("older-page replay routes explicit and nested subagent activity to its snapshot target only", () => {
+  const agentInput = { codexAgent: true, operation: "spawnAgent", description: "background", agents: [{ id: "child", status: "running" }] };
+  const events: ChatEvent[] = [];
+  for (let i = 0; i < 450; i++) events.push(i === 100 || i === 400
+    ? { type: "tool_use", ts: i, toolUseId: `agent-${i}`, name: "Agent", input: agentInput }
+    : { type: "assistant_text", ts: i, blockId: `text-${i}`, text: "message" });
+  const latest = replayHistory(events);
+  const older = replayHistory(events, latest.before!);
+  for (const parentToolUseId of ["agent-400", "nested-child", "agent-100"]) {
+    let current = mergeHistoryPage(initialHistoryState(), latest, false, []);
+    const activity: ChatEvent = { type: "subagent_activity", ts: 500, parentToolUseId, tool: "Bash", input: { command: "echo activity" } };
+    current = reduceHistoryEvent(current, activity);
+    current = mergeHistoryPage(current, older, true, [activity]);
+    const expected = replaySession([...events, activity]);
+    assert.deepEqual(current.state.blocks, expected.blocks.slice(50), `activity from ${parentToolUseId} stays on its actual target`);
+    const intendedId = parentToolUseId === "agent-100" ? "agent-100" : "agent-400";
+    for (const block of current.state.blocks) if (block.kind === "tool") assert.equal(block.subagent?.toolCalls, block.id === intendedId ? 1 : undefined);
+  }
+});

@@ -26,6 +26,11 @@ const { _electron } = require("playwright-core");
     events.push({ type: "user_message", id: `user-${i}`, ts: now + i * 10, text: `question-${i}` });
     events.push(i === 300
       ? { type: "tool_use", toolUseId: "answer-300", ts: now + i * 10 + 1, name: "Bash", input: { command: "long-running-command" } }
+      : i === 301
+      ? { type: "verify", runId: "verify-301", ts: now + i * 10 + 1, status: "failed", cwd: profile, head: null, commands: [
+        { cmd: "echo first-output", status: "passed", exitCode: 0, output: "saved first output" },
+        { cmd: "echo second-output", status: "failed", exitCode: 1, output: "saved second output" },
+      ] }
       : { type: "assistant_text", blockId: `answer-${i}`, ts: now + i * 10 + 1,
         text: `answer-${i}\n\n${"본문 내용입니다. ".repeat(i % 5 * 12 + 1)}\n\n![preview](pixel.png)` });
     if (i === 300) events.push({ type: "tool_result", ts: now + i * 10 + 1, toolUseId: "answer-300", output: "initial-background-result", isError: false });
@@ -111,13 +116,17 @@ const { _electron } = require("playwright-core");
     const anchor = await page.evaluate(() => {
       const container = document.querySelector("[data-message-list]");
       const top = container.getBoundingClientRect().top;
-      const row = [...document.querySelectorAll("[data-virtual-row]")].find((el) => el.getBoundingClientRect().top >= top + 30);
+      // Track the row being read. A later row may legitimately move when an
+      // image below the reading position finishes loading inside this row.
+      const row = [...document.querySelectorAll("[data-virtual-row]")].find((el) => el.getBoundingClientRect().bottom > top);
+      window.__historyAnchor = row;
       return { key: row.dataset.virtualRow, top: row.getBoundingClientRect().top };
     });
     await page.evaluate(() => document.querySelector("[data-older-history] button").click());
     await page.waitForSelector("[data-history-count='400']");
     await page.waitForTimeout(350);
     const after = await page.locator(`[data-virtual-row="${anchor.key}"]`).boundingBox();
+    assert.ok(await page.evaluate(() => window.__historyAnchor?.isConnected), "prepending keeps the visible row mounted");
     assert.ok(after && Math.abs(after.y - anchor.top) < 8, `prepend anchor moved ${after ? after.y - anchor.top : 'offscreen'}`);
 
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:shortcut", "search"));
@@ -128,6 +137,25 @@ const { _electron } = require("playwright-core");
     assert.ok((await oldTool.innerText()).includes("long-running-command"), "hydrated tool keeps its original input");
     if (await oldTool.getAttribute("data-tool-open") !== "true") await oldTool.locator("[data-tool-toggle]").click();
     assert.ok((await oldTool.innerText()).includes("late-background-result"), "push during older-page loading updates the hydrated card");
+
+    const findVerify = async () => {
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:shortcut", "search"));
+      await page.locator("[data-search-palette] input").fill("question-301");
+      await page.locator("[data-search-hit]").first().click();
+      await page.locator('[data-verify-card="verify-301"]').waitFor();
+    };
+    await findVerify();
+    const verify = page.locator('[data-verify-card="verify-301"]');
+    const commands = verify.locator("[data-verify-cmd]");
+    assert.equal(await commands.nth(0).locator("[data-verify-output]").count(), 0, "passed output starts collapsed");
+    assert.equal(await commands.nth(1).locator("[data-verify-output]").count(), 1, "failed output starts expanded");
+    await commands.nth(0).getByRole("button", { name: "echo first-output", exact: true }).click();
+    await commands.nth(1).getByRole("button", { name: "echo second-output", exact: true }).click();
+    await page.locator("[data-scroll-bottom]").click();
+    await page.waitForFunction(() => !document.querySelector('[data-verify-card="verify-301"]'));
+    await findVerify();
+    assert.equal(await commands.nth(0).locator("[data-verify-output]").count(), 1, "user expansion survives virtual remount");
+    assert.equal(await commands.nth(1).locator("[data-verify-output]").count(), 0, "user collapse is independent of the other command");
 
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:shortcut", "search"));
     await page.locator("[data-search-palette] input").fill("question-0");
@@ -156,7 +184,7 @@ const { _electron } = require("playwright-core");
     assert.ok(Math.abs(await list.evaluate((el) => el.scrollTop) - parkedTop) < 8, "reading position survives streaming below the viewport");
     await page.screenshot({ path: path.join(repo, ".sudal/history-e2e.png") });
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, tallRowDeltaPx: tallRowDelta, lateToolResult: true, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true }));
+    console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, tallRowDeltaPx: tallRowDelta, lateToolResult: true, verifyExpansionRetained: true, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true }));
   } catch (error) {
     console.error("History E2E failed:", error);
     throw error;

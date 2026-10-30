@@ -1,5 +1,4 @@
 // 검증 결과 카드 — 저장한 명령을 순서대로 돌린 결과(명령별 통과/실패·출력 꼬리·실행 시점 HEAD). 진행 중엔 출력이 흐르고 중단할 수 있다.
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { VerifyCommandResult } from "@shared/chat-events";
 import type { VerifyBlock } from "@shared/session-state";
@@ -8,6 +7,7 @@ import { failedCommandTitle, formatDuration, verifyOutputText, verifySummary } f
 import { appendComposerDraft } from "../composer-draft";
 import { Icon } from "./Icon";
 import { useNow } from "../hooks/useNow";
+import { useHistoryRowState } from "../hooks/useHistoryRowState";
 
 function StatusDot({ status }: { status: VerifyCommandResult["status"] }) {
   if (status === "passed") return <Icon name="check" size={11} className="text-ok" />;
@@ -17,10 +17,10 @@ function StatusDot({ status }: { status: VerifyCommandResult["status"] }) {
   return <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-2/60" />;
 }
 
-function CommandRow({ c, tabId, live }: { c: VerifyCommandResult; tabId: string; live: boolean }) {
+function CommandRow({ c, index, tabId, live }: { c: VerifyCommandResult; index: number; tabId: string; live: boolean }) {
   const { t, i18n } = useTranslation();
   // 실패·실행 중은 출력을 펼쳐 두고, 통과한 것은 접어 둔다(클릭으로 펼침)
-  const [open, setOpen] = useState<boolean | null>(null);
+  const [open, setOpen] = useHistoryRowState<boolean | null>(`verify-open:${index}`, null);
   const expanded = open ?? (c.status === "failed" || c.status === "running");
   const outputText = verifyOutputText(i18n, c);
   const hasOutput = !!outputText.trim();
@@ -123,7 +123,7 @@ export function VerifyCard({ block, tabId, onRerun }: { block: VerifyBlock; tabI
       </div>
       <div>
         {block.commands.map((c, i) => (
-          <CommandRow key={i} c={c} tabId={tabId} live={running && c.status === "running"} />
+          <CommandRow key={i} index={i} c={c} tabId={tabId} live={running && c.status === "running"} />
         ))}
       </div>
     </div>
