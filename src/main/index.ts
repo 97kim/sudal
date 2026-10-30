@@ -51,7 +51,7 @@ import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
-import { forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { currentCodexBackgroundJobs, onCodexBackgroundJobsChanged, forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
 import { setAgySessionIdleMs, type AgyRuntime } from "./agy-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
 import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
@@ -342,15 +342,17 @@ let jobWatcher: BackgroundJobWatcher | null = null;
 /** Claude Code 가 백그라운드로 돌리는 일(명령·하위 에이전트). SDK 가 살아 있는 전체 집합을 준다. */
 const bgTasks = new BackgroundTaskRegistry();
 
-/** 사용자에게 "아직 도는 일" 은 한 종류다 — 플러그인 작업과 백그라운드 명령을 합쳐 한 목록으로 보낸다. */
+/** 플러그인·Claude 작업·Codex 하위 에이전트를 같은 백그라운드 작업 줄에 표시한다. */
 function allBackgroundJobs(): BackgroundJobDto[] {
-  return [...(jobWatcher?.current() ?? []), ...bgTasks.current()];
+  return [...(jobWatcher?.current() ?? []), ...bgTasks.current(), ...currentCodexBackgroundJobs()];
 }
 
 function sendBackgroundJobs() {
   const jobs = allBackgroundJobs();
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.backgroundJobsChanged, jobs);
 }
+
+onCodexBackgroundJobsChanged(sendBackgroundJobs);
 
 function onBackgroundJobFinished(job: BackgroundJobDto) {
   const tabId = sessions.tabForSessionId(job.sessionId);
