@@ -3,7 +3,7 @@ import type { DeepPartial } from "../types";
 
 export const usage: DeepPartial<typeof ko> = {
   title: "Usage",
-  description: "Usage is calculated from the Claude Code and Codex conversation history stored on this computer.",
+  description: "Usage is calculated from the Claude Code, Codex and Antigravity conversation history stored on this computer.",
   scanning: "Calculating usage…",
   scanInfo_one: "{{count}} file · updated {{time}}",
   scanInfo_other: "{{count}} files · updated {{time}}",
@@ -68,6 +68,8 @@ export const usage: DeepPartial<typeof ko> = {
     claudeHint: "Updated while you work. Refreshing checks your usage limits at no extra cost.",
     codex: "Codex subscription limits",
     codexHint: "Usage limit information left in the Codex conversation history. Terminal usage is included.",
+    agy: "Antigravity subscription limits",
+    agyHint: "Updated on app startup and after replies (at most once per minute). Refresh to fetch current limits for each model group.",
     source: "Source",
     sourceInApp: "In-app {{cost}}",
     sourceTerminal: "Terminal {{cost}}",

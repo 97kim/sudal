@@ -448,6 +448,8 @@ export interface ProviderRateLimitDto {
   weekly: RateLimitWindowDto | null;
   /** 특정 모델에만 적용되는 주간 창 (Claude 의 "Current week (Fable)" 등). label 은 모델 표시명. */
   modelWeekly: (RateLimitWindowDto & { label: string }) | null;
+  /** 모델 그룹마다 독립적인 한도 창이 있을 때 사용한다. */
+  groups?: { label: string; windows: RateLimitWindowDto[] }[];
   /** 관측 시각(ms). 턴이 돌아야 갱신되므로 화면에 같이 표시한다. */
   observedAt: number;
   /** rate_limit_event 가 status "rejected" 였으면 그 리셋 시각(epoch 초). 자동 재시도 예약에 쓴다. */
@@ -486,6 +488,7 @@ export interface UsageStatusDto {
   rateLimits: {
     claude: ProviderRateLimitDto | null;
     codex: ProviderRateLimitDto | null;
+    agy: ProviderRateLimitDto | null;
   };
   roots: { claude: string; codex: string };
   /** userData/pricing.json 이 있으면 true (기본 가격표 대체). */

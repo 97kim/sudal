@@ -75,6 +75,7 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
   const rows: { name: string; limit: ProviderRateLimitDto }[] = [];
   if (limits?.claude) rows.push({ name: "Claude", limit: limits.claude });
   if (limits?.codex) rows.push({ name: "Codex", limit: limits.codex });
+  if (limits?.agy) rows.push({ name: "Antigravity", limit: limits.agy });
   if (rows.length === 0 && !refreshing) {
     return (
       <button
@@ -126,6 +127,12 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
             />
           )}
           {r.limit.overage?.enabled && <OverageLine limit={r.limit} />}
+          {r.limit.groups?.map((group) => (
+            <div key={group.label} className="flex flex-col gap-1">
+              <span className="truncate pl-1 text-[10px] text-muted" title={group.label}>{group.label}</span>
+              {group.windows.map((w) => <MiniBar key={w.windowMinutes} w={w} />)}
+            </div>
+          ))}
         </div>
       ))}
     </button>
