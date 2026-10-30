@@ -166,7 +166,7 @@ test("UsageScanner watches the first Antigravity conversation in a new profile",
   const threads = path.join(dir, "threads");
   let changed!: () => void;
   const scanned = new Promise<void>((resolve) => { changed = resolve; });
-  const scanner = new UsageScanner({ claudeDir: path.join(dir, "claude"), codexDir: path.join(dir, "codex"), sudalThreadsDir: threads, cachePath: path.join(dir, "cache.json"), onChange: () => changed() });
+  const scanner = new UsageScanner({ claudeDir: path.join(dir, "claude"), codexDir: path.join(dir, "codex"), sudalThreadsDir: threads, cachePath: path.join(dir, "cache.json"), pollIntervalMs: 100, onChange: () => changed() });
   try {
     scanner.watch();
     fs.writeFileSync(path.join(threads, "first.jsonl"), [

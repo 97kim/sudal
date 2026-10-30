@@ -249,6 +249,7 @@ export interface ScannerOptions {
   claudeDir: string;
   codexDir: string;
   sudalThreadsDir?: string;
+  pollIntervalMs?: number;
   cachePath: string;
   onChange?: () => void;
 }
@@ -258,6 +259,7 @@ export class UsageScanner {
   private status: ScanStatus;
   private watchers: fs.FSWatcher[] = [];
   private debounce: ReturnType<typeof setTimeout> | null = null;
+  private poll: ReturnType<typeof setInterval> | null = null;
   private inflight: Promise<void> | null = null;
 
   constructor(private readonly opts: ScannerOptions) {
@@ -350,6 +352,9 @@ export class UsageScanner {
   /** 기록 루트를 재귀 감시. 변경 후 2초 정지하면 재스캔. */
   watch(): void {
     this.unwatch();
+    // fs.watch 이벤트는 플랫폼·파일 생성 시점에 따라 누락될 수 있다.
+    this.poll = setInterval(() => { void this.scan(); }, this.opts.pollIntervalMs ?? 30_000);
+    this.poll.unref();
     for (const dir of [this.opts.claudeDir, this.opts.codexDir, this.opts.sudalThreadsDir]) {
       if (!dir) continue;
       try {
@@ -366,6 +371,8 @@ export class UsageScanner {
   }
 
   unwatch(): void {
+    if (this.poll) clearInterval(this.poll);
+    this.poll = null;
     for (const w of this.watchers) w.close();
     this.watchers = [];
     if (this.debounce) clearTimeout(this.debounce);
