@@ -122,6 +122,7 @@ import { notificationOptions, notificationTarget } from "./notification-target";
 import { mobileRoutes, mobileStatics, MobileStream } from "./mobile-api";
 import { TerminalManager } from "./terminals";
 import { fetchUsageText } from "./claude-control";
+import { AgyQuotaRefresher, fetchAgyQuota } from "./agy-usage";
 import { initFolderTrust, isFolderTrusted, trustFolder, trustScope } from "./folder-trust";
 import { mergeRateLimit, parseUsageText } from "./claude-events";
 import { WorkspaceService } from "./workspaces";
@@ -1588,6 +1589,20 @@ function pricing(): PricingEntry[] {
   return store.loadPricing<PricingEntry[]>() ?? DEFAULT_PRICING;
 }
 
+const agyQuotaRefresh = new AgyQuotaRefresher(async () => {
+  try {
+    const quota = await fetchAgyQuota(await agyRuntime(), app.getPath("home"));
+    store.saveRateLimit("agy", quota);
+    sendAll(IPC.usageChanged, null);
+  } catch {
+    // CLI 없음·로그아웃·네트워크 오류에는 마지막 정상 관측값을 유지한다.
+    console.warn("[usage] Antigravity quota refresh unavailable");
+  }
+});
+function refreshAgyQuota(force = false): Promise<void> {
+  return agyQuotaRefresh.request(force);
+}
+
 function usageStatus(): UsageStatusDto {
   const { codexRateLimit, ...scan } = usage.getStatus();
   // Codex 한도는 기록 파일(대화할 때)과 새로고침(app-server)에서 온다 — 더 최근에 본 것을 쓴다.
@@ -1598,6 +1613,7 @@ function usageStatus(): UsageStatusDto {
     rateLimits: {
       claude: store.loadRateLimits().claude ?? null,
       codex,
+      agy: store.loadRateLimits().agy ?? null,
     },
     customPricing: store.loadPricing() !== null,
     pricing: pricing(),
@@ -1812,6 +1828,7 @@ function bootstrap() {
           tabId,
         );
       } else if (event.type === "turn_result") {
+        if (sessions.snapshot(tabId).provider === "agy") void refreshAgyQuota();
         // 응답 완료 알림: 설정에 따라 항상 / 창이 포커스 밖이거나 다른 탭을 볼 때 / 끔
         const focused = BrowserWindow.getAllWindows().some((w) => w.isFocused());
         const isActive = workspaces.isVisible(tabId);
@@ -1999,6 +2016,7 @@ function bootstrap() {
   });
   // 시작 시 전체 1회(증분 캐시) + 이후 파일 변경 감시. 터미널에서 쓴 사용량도 30초 안에 반영.
   void usage.scan().then(() => usage.watch());
+  void refreshAgyQuota();
 }
 
 /**
@@ -3187,6 +3205,7 @@ function registerIpc() {
           console.warn("[usage] Codex 한도 새로고침 실패:", e);
         }
       })(),
+      refreshAgyQuota(true),
       usage.scan(),
     ]);
     if (claude) {
@@ -3547,6 +3566,7 @@ app.on("before-quit", (e) => {
       .finally(() => app.quit());
     return;
   }
+  agyQuotaRefresh.dispose();
   orchestrator?.stop();
   verifyRunner.dispose();
   previewServer.close();

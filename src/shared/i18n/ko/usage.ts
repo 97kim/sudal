@@ -1,7 +1,7 @@
 // usage 영역의 한국어 문구.
 export const usage = {
   title: "사용량",
-  description: "이 컴퓨터에 저장된 Claude Code·Codex 대화 기록을 바탕으로 사용량을 계산합니다.",
+  description: "이 컴퓨터에 저장된 Claude Code·Codex·Antigravity 대화 기록을 바탕으로 사용량을 계산합니다.",
   scanning: "사용량 집계 중…",
   scanInfo_one: "{{count}}개 파일 · {{time}} 갱신",
   scanInfo_other: "{{count}}개 파일 · {{time}} 갱신",
@@ -66,6 +66,8 @@ export const usage = {
     claudeHint: "작업 중 갱신됩니다. 새로고침하면 추가 비용 없이 사용 한도를 조회합니다.",
     codex: "Codex 구독 한도",
     codexHint: "Codex 대화 기록에 남은 사용 한도 정보입니다. 터미널에서 사용한 내역도 반영합니다.",
+    agy: "Antigravity 구독 한도",
+    agyHint: "앱 시작·대화 완료 시 갱신됩니다(최대 분당 한 번). 새로고침하면 모델 그룹별 한도를 즉시 조회합니다.",
     source: "출처",
     sourceInApp: "인앱 {{cost}}",
     sourceTerminal: "터미널 {{cost}}",

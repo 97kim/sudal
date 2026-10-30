@@ -469,6 +469,14 @@ export function UsageView() {
                   onRefresh={refreshLimits}
                   refreshing={refreshingLimits}
                 />
+                <RateLimitBlock
+                  label={t("usage.limits.agy")}
+                  color="bg-accent"
+                  limit={limits?.agy ?? null}
+                  hint={t("usage.limits.agyHint")}
+                  onRefresh={refreshLimits}
+                  refreshing={refreshingLimits}
+                />
 
                 {summary && (
                   <div className="border-t border-line pt-3">
@@ -711,6 +719,12 @@ function RateLimitBlock({
               suffix={` · ${t("usage.limits.modelOnly", { model: limit.modelWeekly.label })}`}
             />
           )}
+          {limit.groups?.map((group) => (
+            <div key={group.label} className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium">{group.label}</span>
+              {group.windows.map((w) => <RateLimitBar key={w.windowMinutes} color={color} w={w} />)}
+            </div>
+          ))}
           <p className="text-[10.5px] text-muted">{hint}</p>
         </div>
       ) : (
