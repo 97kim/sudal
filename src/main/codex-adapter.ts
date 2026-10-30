@@ -170,9 +170,25 @@ const opening = new Map<string, Promise<LiveCodex>>();
 /** app-server 를 한 번 못 띄웠으면(옛 CLI) 이 실행 동안은 exec 로만 간다. */
 let appServerUnavailable: string | null = null;
 
+function hasRunningAgents(s: LiveCodex): boolean {
+  return [...s.codexAgents.values()].some((entry) => entry.input.agents.some((agent) => agent.status === "running" || agent.status === "pendingInit"));
+}
+
+function finishRunningAgents(s: LiveCodex): void {
+  const entries = new Set(s.codexAgents.values());
+  const emit = s.onAmbientEvent ?? s.turn?.req.onEvent;
+  for (const entry of entries) {
+    if (!entry.input.agents.some((agent) => agent.status === "running" || agent.status === "pendingInit")) continue;
+    entry.input = { ...entry.input, agents: entry.input.agents.map((agent) => agent.status === "running" || agent.status === "pendingInit" ? { ...agent, status: "interrupted" as const } : agent) };
+    emit?.({ type: "tool_use", ts: Date.now(), toolUseId: entry.id, name: "Agent", input: entry.input });
+    emit?.({ type: "tool_result", ts: Date.now(), toolUseId: entry.id, output: mt("session.msg.sessionEnded"), outputMsg: { key: "session.msg.sessionEnded" }, isError: true });
+  }
+}
+
 export function closeCodexSession(key: string): void {
   const s = live.get(key);
   if (!s) return;
+  finishRunningAgents(s);
   live.delete(key);
   s.dead = true;
   if (s.idleTimer) clearTimeout(s.idleTimer);
@@ -188,8 +204,10 @@ export function closeAllCodexSessions(): void {
 
 function armIdle(s: LiveCodex) {
   if (s.idleTimer) clearTimeout(s.idleTimer);
+  s.idleTimer = null;
+  if (hasRunningAgents(s)) return;
   s.idleTimer = setTimeout(() => {
-    if (live.get(s.key) === s && !s.turn) {
+    if (live.get(s.key) === s && !s.turn && !hasRunningAgents(s)) {
       s.log?.(`[codex ${s.key}] idle ${sessionIdleMs}ms — 프로세스 종료`);
       closeCodexSession(s.key);
     }
@@ -214,6 +232,7 @@ async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, l
     onNotification: (method, params) => handleNotification(s, method, params),
     onServerRequest: (method, params) => handleServerRequest(s, method, params),
     onExit: (code, error) => {
+      finishRunningAgents(s);
       if (live.get(key) === s) live.delete(key);
       s.dead = true;
       if (s.idleTimer) clearTimeout(s.idleTimer);
@@ -242,11 +261,13 @@ function handleNotification(s: LiveCodex, method: string, params: Record<string,
   if (typeof params.threadId === "string" && params.threadId !== s.threadId) {
     const emit = s.onAmbientEvent ?? t?.req.onEvent;
     emitAgentEvents(mapCodexChildNotification(method, params, Date.now(), ctx), emit);
+    if (!s.turn) armIdle(s);
     return;
   }
   if ((method === "item/started" || method === "item/completed") && (params.item as { type?: string } | undefined)?.type === "subAgentActivity") {
     const emit = s.onAmbientEvent ?? t?.req.onEvent;
     emitAgentEvents(mapAppServerNotification(method, params, Date.now(), ctx), emit);
+    if (!s.turn) armIdle(s);
     return;
   }
   if (!t) return;

@@ -70,3 +70,16 @@ test("staleRunEvents: 정상으로 끝난 기록에는 아무것도 더하지 �
   ];
   assert.deepEqual(staleRunEvents(t, events, 100), []);
 });
+
+
+test("staleRunEvents closes a Codex background card after restart even if its parent is idle", () => {
+  const events: ChatEvent[] = [
+    { type: "tool_use", ts: 1, toolUseId: "agent", name: "Agent", input: { codexAgent: true, operation: "spawnAgent", description: "review", agents: [{ id: "child", status: "running" }] } },
+    { type: "status", ts: 2, status: "idle" },
+  ];
+  const out = staleRunEvents(t, events, 3);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].type === "tool_result" && out[0].toolUseId, "agent");
+  assert.equal(out[0].type === "tool_result" && out[0].isError, true);
+  assert.deepEqual(staleRunEvents(t, [...events, ...out], 4), []);
+});

@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeCodexSession, runCodexTurn, currentCodexBackgroundJobs, onCodexBackgroundJobsChanged } from "./codex-adapter";
+import { closeCodexSession, runCodexTurn, currentCodexBackgroundJobs, onCodexBackgroundJobsChanged, setCodexSessionIdleMs, CODEX_SESSION_IDLE_MS } from "./codex-adapter";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import type { ChatEvent } from "@shared/chat-events";
 
@@ -42,7 +42,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     notify('item/completed',{threadId:'child',turnId:'child-turn',item:{type:'agentMessage',id:'reply',text:'검토 완료'}});
     notify('turn/completed',{threadId:'child',turn:{id:'child-turn',status:'completed'}});
     notify('item/completed',{threadId:'parent',turnId,item:{type:'subAgentActivity',id:'other-finished',agentThreadId:'other',agentPath:'/other',kind:'completed'}});
-  }, 30);
+  }, 200);
 });
 `, { mode: 0o755 });
   let codexPath = script;
@@ -67,6 +67,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       ambient.push(event);
     },
   };
+  setCodexSessionIdleMs(50);
   try {
     const runtime = { codexPath, env: { ...process.env } as Record<string, string> };
     await runCodexTurn(runtime, request);
@@ -93,10 +94,12 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     assert.equal(events.filter((e) => e.type === "turn_result").length, 5);
     closeCodexSession(dir);
     assert.deepEqual(currentCodexBackgroundJobs(), [], "세션을 닫으면 실행 중 표시도 정리한다");
+    assert.ok(ambient.some((event) => event.type === "tool_result" && event.toolUseId === "spawn-5" && event.isError), "closing the process also closes the running card");
     assert.deepEqual(jobSnapshots.at(-1), [], "정리된 목록을 구독자에게 알린다");
   } finally {
     closeCodexSession(dir);
     offJobs();
+    setCodexSessionIdleMs(CODEX_SESSION_IDLE_MS);
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

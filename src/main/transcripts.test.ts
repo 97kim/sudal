@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { codexRateLimitFromAppServer, compactRecords, parseClaudeLines, parseCodexLines } from "./transcripts";
+import { codexRateLimitFromAppServer, compactRecords, parseSudalAgyLines, UsageScanner, parseClaudeLines, parseCodexLines } from "./transcripts";
 
 const claudeLine = (o: { id: string; model?: string; ts: string; usage: Record<string, number>; cwd?: string; sessionId?: string }) =>
   JSON.stringify({
@@ -124,4 +124,59 @@ test("codexRateLimitFromAppServer: app-server 한도 응답을 창 길이로 세
   assert.deepEqual([old?.session, old?.weekly?.usedPercent, old?.weekly?.resetsAt], [null, 5, 0]);
   assert.equal(codexRateLimitFromAppServer({ rateLimits: { primary: null, secondary: null } }, 1), null);
   assert.equal(codexRateLimitFromAppServer(null, 1), null);
+});
+
+
+test("Antigravity usage reads normalized turns and excludes other providers and zero-usage turns", () => {
+  const session = (provider: string) => ({ type: "session", provider, sessionId: "s", cwd: "/repo" });
+  const usage = { input: 100, output: 20, cacheRead: 40, cacheWrite: 0 };
+  const turn = { type: "turn_result", ts: 1000, numTurns: 1, usage, modelUsage: { argon: usage } };
+  const result = parseSudalAgyLines([session("agy"), turn, { ...turn, ts: 2000 }, session("codex"), turn,
+    session("agy"), { ...turn, modelUsage: {}, usage: { input: 0 } }].map((value) => JSON.stringify(value)));
+  assert.equal(result.records.length, 1);
+  assert.deepEqual(result.records[0], { ts: 0, provider: "agy", sessionId: "s", cwd: "/repo", model: "argon", input: 120, output: 40, cacheRead: 80, cacheWrite: 0, requests: 2 });
+});
+
+test("UsageScanner includes persisted Antigravity history and does not duplicate a rescan", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-agy-usage-"));
+  try {
+    const threads = path.join(dir, "threads");
+    fs.mkdirSync(threads);
+    fs.writeFileSync(path.join(threads, "tab.jsonl"), [
+      { type: "session", ts: 1, provider: "agy", sessionId: "agy-session", cwd: "/repo" },
+      { type: "turn_result", ts: 1000, usage: { input: 100, output: 20 }, modelUsage: {}, numTurns: 1 },
+    ].map((value) => JSON.stringify(value)).join("\n"));
+    const scanner = new UsageScanner({ claudeDir: path.join(dir, "claude"), codexDir: path.join(dir, "codex"), sudalThreadsDir: threads, cachePath: path.join(dir, "cache.json") });
+    await scanner.scan();
+    await scanner.scan();
+    assert.equal(scanner.records().length, 1);
+    assert.equal(scanner.records()[0].input, 100);
+    assert.equal(scanner.records()[0].provider, "agy");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner watches the first Antigravity conversation in a new profile", { timeout: 8000 }, async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-first-usage-"));
+  const threads = path.join(dir, "threads");
+  let changed!: () => void;
+  const scanned = new Promise<void>((resolve) => { changed = resolve; });
+  const scanner = new UsageScanner({ claudeDir: path.join(dir, "claude"), codexDir: path.join(dir, "codex"), sudalThreadsDir: threads, cachePath: path.join(dir, "cache.json"), onChange: () => changed() });
+  try {
+    scanner.watch();
+    fs.writeFileSync(path.join(threads, "first.jsonl"), [
+      { type: "session", ts: 1, provider: "agy", sessionId: "first", cwd: "/repo" },
+      { type: "turn_result", ts: 1000, usage: { input: 100, output: 20 }, numTurns: 1 },
+    ].map((value) => JSON.stringify(value)).join("\n"));
+    await scanned;
+    assert.equal(scanner.records()[0]?.input, 100);
+  } finally {
+    scanner.unwatch();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

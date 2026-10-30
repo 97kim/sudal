@@ -272,6 +272,15 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
 }
 
 /** 네이티브 협업 호출과 수명 주기 이벤트를 공통 Agent 카드로 보낸다. */
+function agentProgress(id: string, input: CodexAgentInput, ts: number): ChatEvent[] {
+  const events: ChatEvent[] = [{ type: "tool_use", ts, toolUseId: id, name: "Agent", input }];
+  const terminal = input.agents.length > 0 && input.agents.every((agent) => !["running", "pendingInit", "unknown"].includes(agent.status));
+  if (terminal) events.push({ type: "tool_result", ts, toolUseId: id,
+    output: input.agents.map((agent) => agent.message ?? "").filter(Boolean).join("\n"),
+    isError: input.agents.some((agent) => ["errored", "interrupted", "notFound"].includes(agent.status)) });
+  return events;
+}
+
 function agentItem(item: Item, ts: number, ctx: AppServerTurnContext, completed: boolean): ChatEvent[] {
   if (!item.id) return [];
   const agents: NonNullable<AppServerTurnContext["codexAgents"]> = ctx.codexAgents ??= new Map();
@@ -282,21 +291,24 @@ function agentItem(item: Item, ts: number, ctx: AppServerTurnContext, completed:
     const state = item.kind === "completed" ? "completed" : item.kind === "interrupted" ? "interrupted" : item.kind === "started" ? "running" : parent?.input.agents.find((agent) => agent.id === agentId)?.status ?? "unknown";
     if (parent) {
       parent.input = { ...parent.input, agents: parent.input.agents.map((a) => a.id === agentId ? { ...a, status: state } : a) };
-      return [{ type: "tool_use", ts, toolUseId: parent.id, name: "Agent", input: parent.input }];
+      return agentProgress(parent.id, parent.input, ts);
     }
     const input: CodexAgentInput = { codexAgent: true, operation: str(item.kind), description: str(item.agentPath) || agentId, agents: [{ id: agentId, status: state }] };
     agents.set(agentId, { id: item.id, input });
-    return [
-      { type: "tool_use", ts, toolUseId: item.id, name: "Agent", input },
-      { type: "tool_result", ts, toolUseId: item.id, output: "", isError: state === "interrupted" },
-    ];
+    return agentProgress(item.id, input, ts);
   }
   const states = item.agentsStates && typeof item.agentsStates === "object" ? item.agentsStates as Record<string, { status?: unknown; message?: unknown }> : {};
   const ids = [...new Set([...(Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds.filter((id): id is string => typeof id === "string") : []), ...Object.keys(states)])];
-  const agentStates: CodexAgentInfo[] = ids.map((id) => ({
-    id, status: states[id]?.status === undefined ? agents.get(id)?.input.agents.find((agent) => agent.id === id)?.status ?? "unknown" : codexAgentStatus(states[id]?.status),
-    ...(typeof states[id]?.message === "string" ? { message: states[id].message as string } : {}),
-  }));
+  const agentStates: CodexAgentInfo[] = ids.map((id) => {
+    const previous = agents.get(id)?.input.agents.find((agent) => agent.id === id);
+    let status = states[id]?.status === undefined ? previous?.status ?? "unknown" : codexAgentStatus(states[id]?.status);
+    // Closing a thread does not change the outcome of the work it already finished.
+    if (status === "shutdown" && previous) {
+      status = ["completed", "errored", "interrupted", "notFound"].includes(previous.status) ? previous.status : "interrupted";
+    }
+    const message = typeof states[id]?.message === "string" ? states[id].message as string : previous?.message;
+    return { id, status, ...(message !== undefined ? { message } : {}) };
+  });
   const operation = str(item.tool);
   const input: CodexAgentInput = {
     codexAgent: true, operation,
@@ -306,26 +318,23 @@ function agentItem(item: Item, ts: number, ctx: AppServerTurnContext, completed:
     agents: agentStates,
   };
   const entry = { id: item.id, input };
-  for (const agent of agentStates) {
-    const parent = agents.get(agent.id);
-    if (operation === "spawnAgent" || !parent) agents.set(agent.id, entry);
+  if (operation === "spawnAgent") {
+    for (const agent of agentStates) agents.set(agent.id, entry);
   }
-  const events: ChatEvent[] = [{ type: "tool_use", ts, toolUseId: item.id, name: "Agent", input }];
+  const events: ChatEvent[] = operation === "spawnAgent" || agentStates.some((agent) => agents.get(agent.id)?.id === item.id) ? agentProgress(item.id, input, ts) : [];
   // wait/send/close가 알려 준 최신 상태도 최초 호출 카드에 반영한다.
   const updated = new Set<string>();
   for (const agent of agentStates) {
-    const parent = agents.get(agent.id)!;
-    if (parent.id === item.id) continue;
+    const parent = agents.get(agent.id);
+    if (!parent || parent.id === item.id) continue;
     parent.input = { ...parent.input, agents: parent.input.agents.map((a) => a.id === agent.id ? agent : a) };
-    if (!updated.has(parent.id)) {
-      updated.add(parent.id);
-      events.push({ type: "tool_use", ts, toolUseId: parent.id, name: "Agent", input: parent.input });
-    } else {
-      const event = events.find((e) => e.type === "tool_use" && e.toolUseId === parent.id);
-      if (event?.type === "tool_use") event.input = parent.input;
-    }
+    updated.add(parent.id);
   }
-  if (completed) events.push({ type: "tool_result", ts, toolUseId: item.id, output: JSON.stringify({ agentsStates: states }), isError: item.status === "failed" || item.status === "interrupted" });
+  for (const id of updated) {
+    const parent = [...agents.values()].find((entry) => entry.id === id)!;
+    events.push(...agentProgress(parent.id, parent.input, ts));
+  }
+  if (completed && (item.status === "failed" || item.status === "interrupted") && events.some((event) => event.type === "tool_use" && event.toolUseId === item.id)) events.push({ type: "tool_result", ts, toolUseId: item.id, output: JSON.stringify({ agentsStates: states }), isError: true });
   return events;
 }
 
@@ -339,12 +348,15 @@ export function mapCodexChildNotification(method: string, params: Json, ts: numb
     if (method === "turn/completed" && !turn?.status) return [];
     const status = method === "turn/started" ? "running" : turn?.status === "completed" ? "completed" : turn?.status === "interrupted" ? "interrupted" : "errored";
     parent.input = { ...parent.input, agents: parent.input.agents.map((agent) => agent.id === params.threadId ? { ...agent, status } : agent) };
-    return [{ type: "tool_use", ts, toolUseId: parent.id, name: "Agent", input: parent.input }];
+    return agentProgress(parent.id, parent.input, ts);
   }
   if (!item) return [];
   if (method === "item/completed" && item.type === "agentMessage") {
-    const text = str(item.text).trim().split("\n").filter(Boolean).pop()?.slice(0, 160);
-    return text ? [{ type: "subagent_activity", ts, parentToolUseId: parent.id, text }] : [];
+    const message = str(item.text).trim();
+    if (!message) return [];
+    parent.input = { ...parent.input, agents: parent.input.agents.map((agent) => agent.id === params.threadId ? { ...agent, message } : agent) };
+    const text = message.split("\n").filter(Boolean).pop()?.slice(0, 160);
+    return [...agentProgress(parent.id, parent.input, ts), { type: "subagent_activity", ts, parentToolUseId: parent.id, text }];
   }
   const events = method === "item/started" ? itemStarted(item, ts) : method === "item/completed" && item.type === "fileChange" ? itemCompleted(item, ts) : [];
   const event = events.find((e) => e.type === "tool_use");
