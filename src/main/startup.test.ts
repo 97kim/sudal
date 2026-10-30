@@ -80,7 +80,7 @@ function harness() {
   });
   const code = [
     variable("mainWindow"), variable("mainWindowReady"), variable("cliDefaultsReady"),
-    fn("refreshAvailableProviders"), fn("liveMainWindow"), fn("showMainWindow"),
+    fn("refreshAvailableProviders"), fn("liveMainWindow"), fn("showMainWindow"), fn("configureWindowsAppIdentity"),
     statement((s) => ts.isIfStatement(s) && s.expression.getText(source).includes("app.requestSingleInstanceLock()")),
     statement((s) => ts.isExpressionStatement(s) && s.getText(source).startsWith("app.whenReady().then(")),
     ipcHandler("tabCreate"),
@@ -95,6 +95,32 @@ function harness() {
     setFind: (next: typeof find) => { find = next; },
   };
 }
+
+test("Windows 알림 등록은 설치본과 개발 실행의 ID·이름을 분리하고 데이터 경로를 유지한다", () => {
+  const packagedId = /appId:\s*"([^"]+)"/.exec(readFileSync(new URL("../../electron-builder.config.cjs", import.meta.url), "utf8"))![1];
+  for (const platform of ["win32", "darwin", "linux"]) {
+    for (const isPackaged of [true, false]) {
+      let name = isPackaged ? "Sudal" : "Electron";
+      let id: string | null = null;
+      let pinnedPath: string | null = null;
+      const initialPath = `/test-data/${name}`;
+      const ctx = createContext({
+        process: { platform },
+        app: {
+          isPackaged,
+          getPath: () => pinnedPath ?? `/test-data/${name}`,
+          setPath: (key: string, value: string) => { assert.equal(key, "userData"); pinnedPath = value; },
+          setName: (value: string) => { name = value; },
+          setAppUserModelId: (value: string) => { id = value; },
+        },
+      });
+      runInContext(ts.transpileModule(`${fn("configureWindowsAppIdentity")}\nconfigureWindowsAppIdentity();`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, ctx);
+      assert.equal(id, platform === "win32" ? (isPackaged ? packagedId : `${packagedId}.dev`) : null);
+      assert.equal(name, platform === "win32" && !isPackaged ? "Sudal Dev" : isPackaged ? "Sudal" : "Electron");
+      assert.equal(ctx.app.getPath("userData"), initialPath);
+    }
+  }
+});
 
 test("느린 CLI 탐색은 첫 창을 막지 않고 새 탭 생성만 기다린다", async () => {
   const h = harness();

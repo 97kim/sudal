@@ -15,10 +15,11 @@ test("Codex 하위 에이전트: 생성 호출 완료는 작업 완료가 아니
   const c = ctx();
   const first = mapAppServerNotification("item/completed", { item: collab("spawn-a", "spawnAgent", { a: { status: "running" } }) }, 1, c);
   const second = mapAppServerNotification("item/completed", { item: collab("spawn-b", "spawnAgent", { b: { status: "running" } }) }, 2, c);
-  assert.equal(first[1].type === "tool_result" && first[1].isError, false);
+  assert.equal(first.some((event) => event.type === "tool_result"), false);
   assert.equal(first[0].type === "tool_use" && readCodexAgentInput(first[0].input)?.agents[0].status, "running");
   const waited = mapAppServerNotification("item/completed", { item: collab("wait", "wait", { a: { status: "completed", message: "검토 완료" }, b: { status: "errored", message: "실행 실패" } }) }, 3, c);
   const replay = replaySession([...first, ...second, ...waited]);
+  assert.equal(replay.blocks.filter((block) => block.kind === "tool").length, 2);
   const a = replay.blocks.find((block) => block.kind === "tool" && block.id === "spawn-a");
   const b = replay.blocks.find((block) => block.kind === "tool" && block.id === "spawn-b");
   assert.equal(a?.kind === "tool" && readCodexAgentInput(a.input)?.agents[0].status, "completed");
@@ -33,7 +34,7 @@ test("Codex 하위 에이전트: 여러 대상의 상태를 한 카드에 보존
   const next: AppServerTurnContext = { ...ctx(), codexAgents: c.codexAgents };
   mapAppServerNotification("item/completed", { item: collab("wait", "wait", { a: { status: "completed" }, b: { status: "running" } }) }, 2, next);
   const updated = mapAppServerNotification("item/completed", { item: { type: "subAgentActivity", id: "activity", agentThreadId: "b", agentPath: "/b", kind: "interrupted" } }, 3, next);
-  assert.equal(updated.length, 1);
+  assert.equal(updated.length, 2);
   assert.equal(updated[0].type === "tool_use" && updated[0].toolUseId, "spawn");
   assert.deepEqual(updated[0].type === "tool_use" && readCodexAgentInput(updated[0].input)?.agents.map((a) => a.status), ["completed", "interrupted"]);
 });
@@ -53,7 +54,7 @@ test("Codex 자식 알림: 도구·최종 응답만 원래 카드에 붙이고 �
   mapAppServerNotification("item/completed", { item: collab("spawn", "spawnAgent", { child: { status: "running" } }) }, 1, c);
   const events = mapCodexChildNotification("item/started", { threadId: "child", item: { id: "cmd", type: "commandExecution", command: "yarn test" } }, 2, c);
   assert.deepEqual(events, [{ type: "subagent_activity", ts: 2, parentToolUseId: "spawn", tool: "Bash", input: { command: "yarn test" } }]);
-  assert.deepEqual(mapCodexChildNotification("item/completed", { threadId: "child", item: { id: "reply", type: "agentMessage", text: "첫 줄\n완료했어요" } }, 3, c), [{ type: "subagent_activity", ts: 3, parentToolUseId: "spawn", text: "완료했어요" }]);
+  assert.deepEqual(mapCodexChildNotification("item/completed", { threadId: "child", item: { id: "reply", type: "agentMessage", text: "첫 줄\n완료했어요" } }, 3, c).filter((event) => event.type === "subagent_activity"), [{ type: "subagent_activity", ts: 3, parentToolUseId: "spawn", text: "완료했어요" }]);
   for (const method of ["thread/tokenUsage/updated", "turn/completed", "item/reasoning/textDelta"]) assert.deepEqual(mapCodexChildNotification(method, { threadId: "child" }, 4, c), []);
   assert.deepEqual(mapCodexChildNotification("item/started", { threadId: "unrelated", item: { id: "cmd", type: "commandExecution", command: "x" } }, 5, c), []);
 });
@@ -160,4 +161,57 @@ test("sudalEnvArgs: 앱이 넘기는 변수를 Codex 셸의 set 표로 — 사�
     "-c",
     'shell_environment_policy.set.SUDAL_TAB_ID="t-1"',
   ]);
+});
+
+
+test("Codex wait reuses the original card across completion and resume", () => {
+  const c = ctx();
+  const events: ChatEvent[] = [];
+  const send = (id: string, operation: string, status: string) => {
+    const next = mapAppServerNotification("item/completed", { item: collab(id, operation, { child: { status } }) }, events.length + 1, c);
+    events.push(...next);
+    return replaySession(events).blocks.filter((block) => block.kind === "tool");
+  };
+  assert.equal(send("orphan-wait", "wait", "running").length, 0);
+  assert.equal(send("spawn", "spawnAgent", "running")[0].result, undefined);
+  assert.equal(send("wait-timeout", "wait", "running")[0].result, undefined);
+  assert.equal(send("wait-done", "wait", "completed")[0].result?.isError, false);
+  const resumed = send("resume", "resumeAgent", "running");
+  assert.equal(resumed.length, 1);
+  assert.equal(resumed[0].result, undefined);
+  assert.equal(send("wait-error", "wait", "errored")[0].result?.isError, true);
+});
+
+
+test("Closing an agent preserves the completed answer", () => {
+  const c = ctx();
+  const events: ChatEvent[] = [];
+  for (const [id, operation, state] of [
+    ["spawn", "spawnAgent", { status: "running" }],
+    ["wait", "wait", { status: "completed", message: "review result" }],
+    ["close", "closeAgent", { status: "shutdown" }],
+  ] as const) events.push(...mapAppServerNotification("item/completed", { item: collab(id, operation, { child: state }) }, 1, c));
+  const card = replaySession(events).blocks.find((block) => block.kind === "tool");
+  assert.equal(card?.kind === "tool" && card.result?.output, "review result");
+});
+
+test("Child final response is retained when later status notifications have no message", () => {
+  const c = ctx();
+  const events = mapAppServerNotification("item/completed", { item: collab("spawn", "spawnAgent", { child: { status: "running" } }) }, 1, c);
+  events.push(...mapCodexChildNotification("item/completed", { threadId: "child", item: { type: "agentMessage", text: "full response" } }, 2, c));
+  events.push(...mapCodexChildNotification("turn/completed", { threadId: "child", turn: { status: "completed" } }, 3, c));
+  const card = replaySession(events).blocks.find((block) => block.kind === "tool");
+  assert.equal(card?.kind === "tool" && card.result?.output, "full response");
+});
+
+
+test("Closing an agent preserves failure and treats unfinished work as interrupted", () => {
+  for (const status of ["errored", "interrupted", "notFound", "running", "pendingInit"] as const) {
+    const c = ctx();
+    const events = mapAppServerNotification("item/completed", { item: collab("spawn", "spawnAgent", { child: { status, message: "work result" } }) }, 1, c);
+    events.push(...mapAppServerNotification("item/completed", { item: collab("close", "closeAgent", { child: { status: "shutdown" } }) }, 2, c));
+    const card = replaySession(events).blocks.find((block) => block.kind === "tool");
+    assert.equal(card?.kind === "tool" && card.result?.isError, true, status);
+    assert.equal(card?.kind === "tool" && card.result?.output, "work result", status);
+  }
 });

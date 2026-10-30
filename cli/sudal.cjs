@@ -60,7 +60,7 @@ const MESSAGES = {
   sudal ws list
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
-  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|auto_review|full]
+  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex|antigravity] [--policy ask|auto_edit|auto_review|full]
                   [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # --ws 생략 = 이 명령을 부른 탭(self)의 워크스페이스, 탭 밖이면 화면에서 보고 있는 탭의 워크스페이스
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
@@ -85,7 +85,7 @@ const MESSAGES = {
   sudal browser console [--level warn|error] [--limit N] [--tab <sel>]   지금 페이지의 콘솔
   sudal browser network [--tab <sel>]                  실패한 요청(통신 오류·4xx·5xx)
   sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # 오케스트레이션 Run (코디네이터 = 사람 또는 탭)
-  sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
+  sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex|antigravity] [--model <id>]
                             [--policy ask|auto_edit|auto_review|full] [--cwd /abs] [--worktree] [--request-id <id>]
   sudal orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
   sudal orch reply --run <id> [--key <k>] --id <question> --body <text>
@@ -128,7 +128,7 @@ const MESSAGES = {
   sudal ws list
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
-  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex] [--policy ask|auto_edit|auto_review|full]
+  sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex|antigravity] [--policy ask|auto_edit|auto_review|full]
                   [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # no --ws = the workspace of the tab running this command (self); outside a tab, the tab shown in the app
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
@@ -153,7 +153,7 @@ const MESSAGES = {
   sudal browser console [--level warn|error] [--limit N] [--tab <sel>]   console of the current page
   sudal browser network [--tab <sel>]                  failed requests (network errors, 4xx, 5xx)
   sudal orch run-create --objective <text> [--coordinator self|active|<tab>]   # orchestration Run (the coordinator is a person or a tab)
-  sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex] [--model <id>]
+  sudal orch worker-start --run <id> [--key <k>] (--spec <text> | --task <id>) [--agent claude|codex|antigravity] [--model <id>]
                             [--policy ask|auto_edit|auto_review|full] [--cwd /abs] [--worktree] [--request-id <id>]
   sudal orch check --run <id> [--key <k>] [--wait] [--types worker_done,question,escalation,note] [--ack <delivery>] [--peek] [--timeout-ms N]
   sudal orch reply --run <id> [--key <k>] --id <question> --body <text>

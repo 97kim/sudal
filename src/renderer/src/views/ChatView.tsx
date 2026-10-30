@@ -1039,7 +1039,7 @@ export function ChatView({
               </div>
             )}
 
-            <BackgroundJobsBar tabId={tabId} sessionId={config?.sessionId ?? null} />
+            <BackgroundJobsBar tabId={tabId} sessionId={state.sessionId ?? config?.sessionId ?? null} />
 
             <Composer
               disabled={!cwd || terminalControlled}

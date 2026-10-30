@@ -167,7 +167,7 @@ test("ControlServer: 선택자·목록·읽기·보내고 기다리기·화면 �
   assert.ok(calls.includes('configure t4 {"cwd":"/tmp/dev/sub","provider":"codex","policy":"auto_edit"}'));
   assert.ok(calls.includes("send t4 시작"));
   const before = calls.filter((c) => c.startsWith("createTab")).length;
-  await assert.rejects(d("tab.new", { provider: "gemini" }), /claude 또는 codex/);
+  await assert.rejects(d("tab.new", { provider: "gemini" }), /antigravity/);
   assert.equal(calls.filter((c) => c.startsWith("createTab")).length, before, "잘못된 인자로는 탭을 만들지 않는다");
   // 보내고 기다리기 → 답
   const sent = await d("tab.send", { tab: "auth 버그", text: "테스트 추가", wait: true, timeoutMs: 5000 });
@@ -368,6 +368,8 @@ test("tab.fanout: providers 로 시작하고 --wait 면 변형별 결과를 돌�
   assert.equal(r.result.status, "done");
   assert.deepEqual(r.result.variants.map((v) => [v.label, v.status, v.files]), [["A", "done", 1], ["B", "done", 1]]);
   assert.ok(calls.includes("fanout t1 claude,codex full"));
+  await server.dispatch("tab.fanout", { tab: "t1", prompt: "hello", providers: ["antigravity", { provider: "antigravity", model: "argon" }] });
+  assert.ok(calls.some((call) => call.startsWith("fanout t1 agy,agy ")));
   await assert.rejects(server.dispatch("tab.fanout", { tab: "t1", prompt: "x" }), /providers/);
 });
 
@@ -424,4 +426,15 @@ test("에이전트 브라우저 조작: 화면에 알리고, 사람이 멈춰 �
   await assert.rejects(d("browser.read", { tab: "t1" }), (e: Error & { code?: string }) => e.code === "paused");
   assert.deepEqual(seen, []);
   await d("browser.open", { tab: "t1", url: "https://example.com" });
+});
+
+
+test("ControlServer: Antigravity CLI provider and alias configure the same adapter", async () => {
+  const { deps, calls } = fakeDeps();
+  const server = new ControlServer(deps, join(mkdtempSync(join(tmpdir(), "wb-agy-")), "c.sock"));
+  for (const provider of ["antigravity", "agy"]) {
+    const created = await server.dispatch("tab.new", { workspace: "dev", provider, model: "argon", prompt: "hello" }) as { tab: { id: string } };
+    assert.ok(calls.includes(`configure ${created.tab.id} {"provider":"agy","model":"argon"}`));
+    assert.ok(calls.includes(`send ${created.tab.id} hello`));
+  }
 });

@@ -51,7 +51,7 @@ import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
-import { forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { currentCodexBackgroundJobs, onCodexBackgroundJobsChanged, forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
 import { setAgySessionIdleMs, type AgyRuntime } from "./agy-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
 import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
@@ -342,15 +342,17 @@ let jobWatcher: BackgroundJobWatcher | null = null;
 /** Claude Code 가 백그라운드로 돌리는 일(명령·하위 에이전트). SDK 가 살아 있는 전체 집합을 준다. */
 const bgTasks = new BackgroundTaskRegistry();
 
-/** 사용자에게 "아직 도는 일" 은 한 종류다 — 플러그인 작업과 백그라운드 명령을 합쳐 한 목록으로 보낸다. */
+/** 플러그인·Claude 작업·Codex 하위 에이전트를 같은 백그라운드 작업 줄에 표시한다. */
 function allBackgroundJobs(): BackgroundJobDto[] {
-  return [...(jobWatcher?.current() ?? []), ...bgTasks.current()];
+  return [...(jobWatcher?.current() ?? []), ...bgTasks.current(), ...currentCodexBackgroundJobs()];
 }
 
 function sendBackgroundJobs() {
   const jobs = allBackgroundJobs();
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.backgroundJobsChanged, jobs);
 }
+
+onCodexBackgroundJobsChanged(sendBackgroundJobs);
 
 function onBackgroundJobFinished(job: BackgroundJobDto) {
   const tabId = sessions.tabForSessionId(job.sessionId);
@@ -1988,6 +1990,7 @@ function bootstrap() {
   usage = new UsageScanner({
     claudeDir: join(app.getPath("home"), ".claude", "projects"),
     codexDir: join(app.getPath("home"), ".codex", "sessions"),
+    sudalThreadsDir: join(app.getPath("userData"), "threads"),
     cachePath: join(app.getPath("userData"), "usage-cache.json"),
     onChange() {
       sendAll(IPC.usageChanged, null);
@@ -3460,9 +3463,23 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindowReady) showMainWindow();
   });
 }
+function configureWindowsAppIdentity() {
+  if (process.platform !== "win32") return;
+  if (app.isPackaged) {
+    // 설치 프로그램이 만든 Sudal 바로가기의 appId 와 일치해야 한다.
+    app.setAppUserModelId("io.github.97kim.sudal");
+  } else {
+    // Electron 이 알림용 바로가기를 자동 생성한다. 개발 실행이 설치본의 앱 ID 를
+    // 사용하면 Windows 가 설치본 알림도 Electron 이름·실행 파일에 연결할 수 있다.
+    // 이름 변경은 알림용이며, 이미 사용 중인 데이터 경로(테스트의 지정 경로 포함)는 유지한다.
+    app.setPath("userData", app.getPath("userData"));
+    app.setName("Sudal Dev");
+    app.setAppUserModelId("io.github.97kim.sudal.dev");
+  }
+}
+
 app.whenReady().then(async () => {
-  // Windows 알림·작업 표시줄이 이 앱을 알아보는 이름. electron-builder 의 appId 와 같아야 설치본의 바로가기와 묶인다.
-  if (process.platform === "win32") app.setAppUserModelId("io.github.97kim.sudal");
+  configureWindowsAppIdentity();
   bootstrap();
   registerIpc();
   // 창과 기존 세션은 탐색을 기다리지 않는다. 새 세션을 만드는 진입점만 기다린다.

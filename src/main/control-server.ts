@@ -399,7 +399,7 @@ export class ControlServer {
         // --policy 를 안 주면 비워 두고 저장하는 쪽이 설정의 "새 탭 기본 권한" 으로 채운다(화면과 같게).
         const policy = params.policy !== undefined ? this.requireString(params, "policy") : undefined;
         if (policy !== undefined && !isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.policyInvalid"));
-        const provider = params.provider !== undefined ? this.requireString(params, "provider") : "claude";
+        const provider = params.provider !== undefined ? cliProvider(this.requireString(params, "provider")) : "claude";
         if (provider !== "claude" && provider !== "codex" && provider !== "agy") throw new ControlError(mt("cli.control.providerInvalid"));
         // --cwd 를 안 주면 워크스페이스 기본 경로로 돈다. 이름만으로 만든 워크스페이스에는 그 값이 없어
         // 저장이 막히므로, 그때는 --cwd 로 직접 준다(화면의 "폴더 고르기" 와 같은 값이다).
@@ -488,7 +488,7 @@ export class ControlServer {
         if (cwd && !isAbsolute(cwd)) throw new ControlError(mt("cli.control.cwdAbsolute"));
         const patch: Parameters<ControlDeps["configure"]>[1] = {};
         if (cwd) patch.cwd = cwd;
-        const provider = params.provider !== undefined ? this.requireString(params, "provider") : undefined;
+        const provider = params.provider !== undefined ? cliProvider(this.requireString(params, "provider")) : undefined;
         if (provider) {
           if (provider !== "claude" && provider !== "codex" && provider !== "agy") throw new ControlError(mt("cli.control.providerInvalid"));
           patch.provider = provider;
@@ -589,7 +589,7 @@ export class ControlServer {
         const providers = Array.isArray(params.providers) ? params.providers : Array.isArray(params.variants) ? params.variants : undefined;
         if (!providers) throw new ControlError(mt("cli.control.providersRequired"));
         const since = this.deps.events(tab.id).length;
-        const r = await this.deps.fanout(tab.id, { prompt, variants: providers.map((p) => (typeof p === "string" ? { provider: p as Provider } : (p as { provider: Provider; model?: string }))), ...(params.policy !== undefined ? { policy: params.policy as PermissionPolicy } : {}) });
+        const r = await this.deps.fanout(tab.id, { prompt, variants: providers.map((p) => (typeof p === "string" ? { provider: cliProvider(p) as Provider } : { ...(p as { provider: Provider; model?: string }), provider: cliProvider((p as { provider: string }).provider) as Provider })), ...(params.policy !== undefined ? { policy: params.policy as PermissionPolicy } : {}) });
         if (!r.ok) throw new ControlError(r.error, "fanout_failed");
         if (params.wait === true) {
           const w = await this.waitFanout(tab.id, r.fanoutId, since, num(params.timeoutMs) ?? 1_800_000);
@@ -766,7 +766,7 @@ export class ControlServer {
       case "worker-cleanup":
         return { worker: await orch.workerCleanup({ runId: needRun(), actor: coordActor, key, dispatchId: this.requireString(p, "dispatch") }) };
       case "worker-start": {
-        const provider = str(p.agent) ?? str(p.provider) ?? "claude";
+        const provider = cliProvider(str(p.agent) ?? str(p.provider) ?? "claude");
         if (provider !== "claude" && provider !== "codex" && provider !== "agy") throw new ControlError(mt("cli.control.agentInvalid"));
         const policy = str(p.policy);
         if (policy !== undefined && !isPermissionPolicy(policy)) throw new ControlError(mt("cli.control.agentPolicyInvalid"));
@@ -1006,4 +1006,9 @@ export class ControlServer {
       .join("\n\n")
       .trim();
   }
+}
+
+/** Public CLI name and the internal provider ID refer to the same adapter. */
+function cliProvider(value: string): string {
+  return value === "antigravity" ? "agy" : value;
 }

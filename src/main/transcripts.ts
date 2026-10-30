@@ -188,6 +188,39 @@ export function codexRateLimitFromAppServer(resp: unknown, observedAt: number): 
   return splitCodexWindows([win(snap.primary), win(snap.secondary)], observedAt);
 }
 
+/** Sudal already stores normalized per-turn usage for Antigravity. Other providers
+ * use their native transcripts, so ignore them here to avoid double counting. */
+export function parseSudalAgyLines(lines: Iterable<string>): ParseResult {
+  let provider: unknown = null;
+  let sessionId = "";
+  let cwd = "";
+  let model = "";
+  const records: UsageRecord[] = [];
+  for (const line of lines) {
+    const event = safeJson(line);
+    if (!event) continue;
+    if (event.type === "session") {
+      provider = event.provider;
+      sessionId = typeof event.sessionId === "string" ? event.sessionId : "";
+      cwd = typeof event.cwd === "string" ? event.cwd : "";
+      model = typeof event.model === "string" ? event.model : "";
+    }
+    if (event.type !== "turn_result" || provider !== "agy" || !sessionId || !num(event.ts)) continue;
+    const entries = event.modelUsage && typeof event.modelUsage === "object" ? Object.entries(event.modelUsage) : [];
+    const usages = entries.length ? entries : [[model || "unknown", event.usage]];
+    for (const [modelId, raw] of usages) {
+      if (!raw || typeof raw !== "object") continue;
+      const usage = raw as Record<string, unknown>;
+      const input = num(usage.input), output = num(usage.output), cacheRead = num(usage.cacheRead), cacheWrite = num(usage.cacheWrite);
+      if (input + output + cacheRead + cacheWrite === 0) continue;
+      // Antigravity input includes cache hits; UsageRecord.input excludes them.
+      records.push({ ts: num(event.ts), provider: "agy", sessionId, cwd, model: String(modelId),
+        input: Math.max(0, input - cacheRead), output, cacheRead, cacheWrite, requests: Math.max(1, num(event.numTurns)) });
+    }
+  }
+  return { records: compactRecords(records) };
+}
+
 // ===== 스캐너 =====
 
 interface FileCache {
@@ -198,7 +231,7 @@ interface FileCache {
 }
 
 interface CacheFile {
-  version: 4;
+  version: 5;
   files: Record<string, FileCache>;
 }
 
@@ -215,12 +248,13 @@ export interface ScanStatus {
 export interface ScannerOptions {
   claudeDir: string;
   codexDir: string;
+  sudalThreadsDir?: string;
   cachePath: string;
   onChange?: () => void;
 }
 
 export class UsageScanner {
-  private cache: CacheFile = { version: 4, files: {} };
+  private cache: CacheFile = { version: 5, files: {} };
   private status: ScanStatus;
   private watchers: fs.FSWatcher[] = [];
   private debounce: ReturnType<typeof setTimeout> | null = null;
@@ -267,6 +301,7 @@ export class UsageScanner {
     const targets: { file: string; kind: Provider }[] = [];
     for (const f of listFiles(this.opts.claudeDir, ".jsonl")) targets.push({ file: f, kind: "claude" });
     for (const f of listFiles(this.opts.codexDir, ".jsonl")) targets.push({ file: f, kind: "codex" });
+    if (this.opts.sudalThreadsDir) for (const f of listFiles(this.opts.sudalThreadsDir, ".jsonl")) targets.push({ file: f, kind: "agy" });
 
     for (const { file, kind } of targets) {
       seen.add(file);
@@ -279,7 +314,7 @@ export class UsageScanner {
       const cached = this.cache.files[file];
       if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) continue;
       try {
-        const result = kind === "claude" ? await parseFile(file, parseClaudeLines) : await parseFile(file, parseCodexLines);
+        const result = kind === "claude" ? await parseFile(file, parseClaudeLines) : kind === "codex" ? await parseFile(file, parseCodexLines) : await parseFile(file, parseSudalAgyLines);
         this.cache.files[file] = { mtimeMs: st.mtimeMs, size: st.size, records: result.records, rateLimit: result.rateLimit };
         changed = true;
       } catch (e) {
@@ -312,12 +347,15 @@ export class UsageScanner {
     this.opts.onChange?.();
   }
 
-  /** 두 루트를 재귀 감시. 변경 후 2초 정지하면 재스캔. */
+  /** 기록 루트를 재귀 감시. 변경 후 2초 정지하면 재스캔. */
   watch(): void {
     this.unwatch();
-    for (const dir of [this.opts.claudeDir, this.opts.codexDir]) {
-      if (!fs.existsSync(dir)) continue;
+    for (const dir of [this.opts.claudeDir, this.opts.codexDir, this.opts.sudalThreadsDir]) {
+      if (!dir) continue;
       try {
+        // 첫 대화 전에도 앱 소유 기록 폴더를 감시해야 첫 사용량부터 반영된다.
+        if (dir === this.opts.sudalThreadsDir) fs.mkdirSync(dir, { recursive: true });
+        if (!fs.existsSync(dir)) continue;
         const w = fs.watch(dir, { recursive: true }, () => this.schedule());
         w.on("error", (e) => console.warn("[usage] watch error:", e));
         this.watchers.push(w);
@@ -346,7 +384,7 @@ export class UsageScanner {
     try {
       if (!fs.existsSync(this.opts.cachePath)) return;
       const parsed = JSON.parse(fs.readFileSync(this.opts.cachePath, "utf8")) as CacheFile;
-      if (parsed?.version === 4 && parsed.files) this.cache = parsed;
+      if (parsed?.version === 5 && parsed.files) this.cache = parsed;
     } catch (e) {
       console.warn("[usage] cache 로드 실패, 새로 스캔:", e);
     }

@@ -471,3 +471,13 @@ test("notice: 턴은 계속되고, 같은 key 면 한 줄을 갱신한다", () =
   assert.deepEqual(notices.map((n) => n.message), ["진행 2/3", "요금 한도에 가까워요"]);
   assert.equal(s.status, "running");
 });
+
+
+test("Background agent stays running after the parent turn ends", () => {
+  const state = replaySession([
+    ev("tool_use", { toolUseId: "spawn", name: "Agent", input: { codexAgent: true, operation: "spawnAgent", description: "review", agents: [{ id: "child", status: "running" }] } }),
+    ev("turn_result", { usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: 0, durationMs: 10, numTurns: 1, modelUsage: {}, isError: false }),
+  ]);
+  const card = state.blocks.find((block) => block.kind === "tool");
+  assert.equal(card?.kind === "tool" && card.result, undefined);
+});

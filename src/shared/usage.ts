@@ -70,7 +70,9 @@ export const DEFAULT_PRICING: PricingEntry[] = [
   { match: "codex", label: "GPT-5 Codex", input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0, estimated: true },
   { match: "gpt-5", label: "GPT-5", input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0, estimated: true },
   { match: "o4-mini", label: "o4-mini", input: 1.1, output: 4.4, cacheRead: 0.275, cacheWrite: 0, estimated: true },
-  { match: "gemini-4-argon", label: "Gemini 4 Argon", input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0, estimated: true },
+  // https://aistudio.google.com/docs/pricing#gemini-4-argon (2026-10-30): Standard through 2026-11-30.
+  // From 2026-12-01: $4 input / $20 output / $0.20 cache read per MTok.
+  { match: "gemini-4-argon", label: "Gemini 4 Argon", input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 },
   { match: "gemini-3.8-flash", label: "Gemini 3.8 Flash", input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0, estimated: true },
 ];
 

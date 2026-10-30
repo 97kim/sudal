@@ -18,6 +18,8 @@ import { isOffLanguage } from "@shared/language-drift";
 import { withTimeout } from "./claude-control";
 import { codexMentionsFrom, findCodexMentions, type CodexMention } from "@shared/codex-mentions";
 import type { Locale } from "@shared/i18n";
+import type { BackgroundJobDto } from "@shared/background-jobs";
+import { readCodexAgentInput } from "@shared/codex-agents";
 
 
 type ThreadOptions = import("@openai/codex-sdk").ThreadOptions;
@@ -93,6 +95,7 @@ interface LiveCodex {
   ready: Promise<void>;
   threadId: string | null;
   codexAgents: NonNullable<AppServerTurnContext["codexAgents"]>;
+  agentStartedAt: Map<string, number>;
   onAmbientEvent?: CodexTurnRequest["onAmbientEvent"];
   /** app-server 가 thread/start·resume 응답으로 알려 준 실제 모델. 고른 모델이 없을 때(기본값) 헤더·사용량에 쓴다. */
   model: string | null;
@@ -120,19 +123,79 @@ const REMIND_EVERY_TOOLS = 6;
 const TOOL_ITEMS = new Set(["commandExecution", "fileChange", "mcpToolCall", "webSearch"]);
 
 const live = new Map<string, LiveCodex>();
+const backgroundJobsListeners = new Set<() => void>();
+let backgroundJobsSignature = "[]";
+
+/** 살아 있는 app-server가 보고한 작업만 반환한다. 지난 대화의 실행 중 기록은 복원하지 않는다. */
+export function currentCodexBackgroundJobs(): BackgroundJobDto[] {
+  const jobs: BackgroundJobDto[] = [];
+  for (const session of live.values()) {
+    if (session.dead || !session.threadId) continue;
+    for (const [agentId, entry] of session.codexAgents) {
+      const agent = entry.input.agents.find((candidate) => candidate.id === agentId);
+      if (!agent || (agent.status !== "running" && agent.status !== "pendingInit")) {
+        session.agentStartedAt.delete(agentId);
+        continue;
+      }
+      const startedAt = session.agentStartedAt.get(agentId) ?? Date.now();
+      session.agentStartedAt.set(agentId, startedAt);
+      jobs.push({
+        id: `codex:${session.key}:${agentId}`, sessionId: session.threadId,
+        label: "Codex", title: mt("session.bgTask.subagent"),
+        summary: entry.input.description, status: agent.status === "pendingInit" ? "queued" : "running",
+        startedAt, completedAt: null, root: session.cwd, toolUseId: entry.id,
+      });
+    }
+  }
+  return jobs.sort((a, b) => a.startedAt - b.startedAt);
+}
+
+export function onCodexBackgroundJobsChanged(listener: () => void): () => void {
+  backgroundJobsListeners.add(listener);
+  return () => { backgroundJobsListeners.delete(listener); };
+}
+
+function publishCodexBackgroundJobs() {
+  const signature = JSON.stringify(currentCodexBackgroundJobs());
+  if (signature === backgroundJobsSignature) return;
+  backgroundJobsSignature = signature;
+  for (const listener of backgroundJobsListeners) listener();
+}
+
+function emitAgentEvents(events: ChatEvent[], emit?: (event: ChatEvent) => void) {
+  for (const event of events) emit?.(event);
+  if (events.some((event) => event.type === "tool_use" && readCodexAgentInput(event.input))) publishCodexBackgroundJobs();
+}
 const opening = new Map<string, Promise<LiveCodex>>();
 /** app-server 를 한 번 못 띄웠으면(옛 CLI) 이 실행 동안은 exec 로만 간다. */
 let appServerUnavailable: string | null = null;
 
+function hasRunningAgents(s: LiveCodex): boolean {
+  return [...s.codexAgents.values()].some((entry) => entry.input.agents.some((agent) => agent.status === "running" || agent.status === "pendingInit"));
+}
+
+function finishRunningAgents(s: LiveCodex): void {
+  const entries = new Set(s.codexAgents.values());
+  const emit = s.onAmbientEvent ?? s.turn?.req.onEvent;
+  for (const entry of entries) {
+    if (!entry.input.agents.some((agent) => agent.status === "running" || agent.status === "pendingInit")) continue;
+    entry.input = { ...entry.input, agents: entry.input.agents.map((agent) => agent.status === "running" || agent.status === "pendingInit" ? { ...agent, status: "interrupted" as const } : agent) };
+    emit?.({ type: "tool_use", ts: Date.now(), toolUseId: entry.id, name: "Agent", input: entry.input });
+    emit?.({ type: "tool_result", ts: Date.now(), toolUseId: entry.id, output: mt("session.msg.sessionEnded"), outputMsg: { key: "session.msg.sessionEnded" }, isError: true });
+  }
+}
+
 export function closeCodexSession(key: string): void {
   const s = live.get(key);
   if (!s) return;
+  finishRunningAgents(s);
   live.delete(key);
   s.dead = true;
   if (s.idleTimer) clearTimeout(s.idleTimer);
   s.server.close();
   s.turn?.reject(new MsgError("session.msg.sessionEnded"));
   s.turn = null;
+  publishCodexBackgroundJobs();
 }
 
 export function closeAllCodexSessions(): void {
@@ -141,8 +204,10 @@ export function closeAllCodexSessions(): void {
 
 function armIdle(s: LiveCodex) {
   if (s.idleTimer) clearTimeout(s.idleTimer);
+  s.idleTimer = null;
+  if (hasRunningAgents(s)) return;
   s.idleTimer = setTimeout(() => {
-    if (live.get(s.key) === s && !s.turn) {
+    if (live.get(s.key) === s && !s.turn && !hasRunningAgents(s)) {
       s.log?.(`[codex ${s.key}] idle ${sessionIdleMs}ms — 프로세스 종료`);
       closeCodexSession(s.key);
     }
@@ -161,17 +226,19 @@ function openSession(runtime: CodexRuntime, key: string, cwd: string, log?: (lin
 }
 
 async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, log?: (line: string) => void): Promise<LiveCodex> {
-  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, codexAgents: new Map(), model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
+  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, codexAgents: new Map(), agentStartedAt: new Map(), model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
   const server = new CodexAppServer({
     log,
     onNotification: (method, params) => handleNotification(s, method, params),
     onServerRequest: (method, params) => handleServerRequest(s, method, params),
     onExit: (code, error) => {
+      finishRunningAgents(s);
       if (live.get(key) === s) live.delete(key);
       s.dead = true;
       if (s.idleTimer) clearTimeout(s.idleTimer);
       s.turn?.reject(error ? new Error(error) : new MsgError("session.msg.codexExited", { code: code ?? "?" }));
       s.turn = null;
+      publishCodexBackgroundJobs();
     },
   });
   s.server = server;
@@ -193,12 +260,14 @@ function handleNotification(s: LiveCodex, method: string, params: Record<string,
   const ctx = t?.ctx ?? { startedAt: 0, lastUsage: null, codexAgents: s.codexAgents };
   if (typeof params.threadId === "string" && params.threadId !== s.threadId) {
     const emit = s.onAmbientEvent ?? t?.req.onEvent;
-    for (const event of mapCodexChildNotification(method, params, Date.now(), ctx)) emit?.(event);
+    emitAgentEvents(mapCodexChildNotification(method, params, Date.now(), ctx), emit);
+    if (!s.turn) armIdle(s);
     return;
   }
   if ((method === "item/started" || method === "item/completed") && (params.item as { type?: string } | undefined)?.type === "subAgentActivity") {
     const emit = s.onAmbientEvent ?? t?.req.onEvent;
-    for (const event of mapAppServerNotification(method, params, Date.now(), ctx)) emit?.(event);
+    emitAgentEvents(mapAppServerNotification(method, params, Date.now(), ctx), emit);
+    if (!s.turn) armIdle(s);
     return;
   }
   if (!t) return;
@@ -207,7 +276,7 @@ function handleNotification(s: LiveCodex, method: string, params: Record<string,
   if (t.turnId && params.turnId && params.turnId !== t.turnId) return;
   trackFileChanges(s, method, params);
   trackLanguage(s, method, params);
-  for (const e of mapAppServerNotification(method, params, Date.now(), t.ctx)) t.req.onEvent(e);
+  emitAgentEvents(mapAppServerNotification(method, params, Date.now(), t.ctx), t.req.onEvent);
   if (method === "turn/completed") {
     s.turn = null;
     t.resolve();

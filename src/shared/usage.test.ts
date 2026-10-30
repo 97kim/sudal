@@ -133,3 +133,14 @@ test("가격표: 공식 가격표와 같고, 버전이 겹치는 id 는 더 구�
   assert.deepEqual([p("claude-sonnet-5")?.input, p("claude-sonnet-5")?.output], [2, 10], "Sonnet 5 는 $2/$10 이 정가로 굳었다");
   assert.deepEqual([p("claude-opus-4-8")?.input, p("claude-opus-4-5")?.input, p("claude-opus-4-1")?.input], [5, 5, 15], "Opus 4.5 부터 $5");
 });
+
+
+test("Argon uses official Standard API conversion rates including cached input", () => {
+  for (const model of ["gemini-4-argon", "gemini-4-argon-medium", "gemini-4-argon-high"]) {
+    const price = resolvePrice(model)!;
+    assert.deepEqual([price.input, price.output, price.cacheRead, price.cacheWrite], [2, 10, 0.1, 0]);
+    assert.notEqual(price.estimated, true);
+    const cost = costOf({ input: 600_000, output: 100_000, cacheRead: 400_000, cacheWrite: 0 }, price);
+    assert.ok(Math.abs(cost - 2.24) < 1e-9);
+  }
+});

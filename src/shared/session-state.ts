@@ -243,6 +243,7 @@ function finalizeRunningTools(blocks: Block[], note: keyof typeof ko.session.msg
   if (!blocks.some((b) => b.kind === "tool" && !b.result)) return blocks;
   return blocks.map((b) => {
     if (b.kind !== "tool" || b.result) return b;
+    if (note === "turnEnded" && readCodexAgentInput(b.input)?.agents.some((agent) => agent.status === "running" || agent.status === "pendingInit")) return b;
     const key = b.partial ? "partialInput" : note;
     // output 은 원본(한국어) 문장 — 인계·내보내기처럼 번역 없이 읽는 곳이 쓴다
     return { ...b, result: { output: ko.session.msg.tool[key], outputMsg: { key: `session.msg.tool.${key}` }, isError: true } };
@@ -332,7 +333,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
     case "tool_use": {
       // 하위 에이전트 상태가 바뀌어도 부모의 응답 스트림·생각 표시는 계속 유지한다.
       if (readCodexAgentInput(event.input) && state.blocks.some((block) => block.kind === "tool" && block.id === event.toolUseId)) {
-        return { ...state, blocks: state.blocks.map((block) => block.kind === "tool" && block.id === event.toolUseId ? { ...block, input: event.input } : block) };
+        return { ...state, blocks: state.blocks.map((block) => block.kind === "tool" && block.id === event.toolUseId ? { ...block, input: event.input, ...(readCodexAgentInput(event.input)?.agents.some((agent) => agent.status === "running" || agent.status === "pendingInit") ? { result: undefined } : {}) } : block) };
       }
       return {
         ...state,
