@@ -45,7 +45,9 @@ export function VirtualRows({ rows, container, following, api, render }: {
     const nextOrigin = origin();
     if (el && !following.current && old !== layouts && old.length) {
       const top = Math.max(0, el.scrollTop - previousOrigin.current);
-      const anchor = old.find((row) => row.start >= top) ?? old.at(-1);
+      // Anchor the row intersecting the reading position, even if it is taller
+      // than the viewport. A row below it moves when an image below the reader loads.
+      const anchor = old.find((row) => row.start + row.height > top) ?? old.at(-1);
       const next = anchor && layouts.find((row) => row.key === anchor.key);
       if (anchor && next) el.scrollTop += next.start - anchor.start + nextOrigin - previousOrigin.current;
     }

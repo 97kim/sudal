@@ -137,6 +137,8 @@ interface Session {
   /** null 이면 아직 디스크에서 읽지 않았다 (lazy). */
   events: ChatEvent[] | null;
   historyRestored: boolean;
+  hasUser: boolean;
+  agentToolIds: Set<string>;
   /** 이미 기록한 이벤트의 색인. events 를 읽을 때 같이 만든다. */
   dedupe: DedupeIndex | null;
   /** provider 전환 시 다음 프롬프트 앞에 붙일 요약. 한 번 쓰고 비운다. */
@@ -365,6 +367,8 @@ export class SessionManager {
         pendingReqs: new Map(),
         events: null,
         historyRestored: false,
+        hasUser: false,
+        agentToolIds: new Set(),
         dedupe: null,
         // 전환·압축 때 만든 인계서. 다음 메시지에 실려 나가기 전에 앱이 꺼졌으면 디스크에서 되살린다.
         handoffPrefix: this.deps.store?.loadHandoffPrefix?.(tabId) ?? null,
@@ -1019,7 +1023,7 @@ export class SessionManager {
     const onEvents = (events: ChatEvent[]) => {
       const cur = this.sessions.get(tabId);
       if (!cur || cur.controller !== "terminal") return;
-      const hadUser = this.events(tabId).some((e) => e.type === "user_message");
+      const hadUser = this.hasUserMessage(cur);
       for (const e of events) {
         this.record(cur, e);
         if (!hadUser && e.type === "user_message" && e.text.trim())
@@ -1346,7 +1350,7 @@ export class SessionManager {
     s.limitAttempts = 0;
 
     // 첫 사용자 메시지가 탭 제목이 된다.
-    const hadUser = this.events(tabId).some((e) => e.type === "user_message");
+    const hadUser = this.hasUserMessage(s);
     this.record(s, userEvent);
     if (
       !hadUser &&
@@ -1659,6 +1663,7 @@ export class SessionManager {
   private ambientEvent(tabId: string, e: ChatEvent): void {
     const s = this.sessions.get(tabId);
     if (!s) return;
+    this.restoreHistory(s);
     if (e.type === "turn_result") {
       this.record(s, e);
       s.turnStartedAt = null;
@@ -1694,7 +1699,7 @@ export class SessionManager {
     }
     // 백그라운드 하위 에이전트가 일하는 소식은 메인 턴이 끝난 뒤에도 계속 온다. 그건 메인이 다시 도는 게 아니라서
     // "도는 중" 으로 올리지 않는다 — 올리면 하위 에이전트가 일하는 내내 탭이 바빠 보이고, 보낸 말이 대기열로 간다.
-    if (e.type === "subagent_activity" || (e.type === "tool_use" && readCodexAgentInput(e.input)) || (e.type === "tool_result" && this.events(tabId).some((event) => event.type === "tool_use" && event.toolUseId === e.toolUseId && readCodexAgentInput(event.input)))) {
+    if (e.type === "subagent_activity" || (e.type === "tool_use" && readCodexAgentInput(e.input)) || (e.type === "tool_result" && s.agentToolIds.has(e.toolUseId))) {
       this.record(s, e);
       return;
     }
@@ -1771,7 +1776,9 @@ export class SessionManager {
     if (s.controller === "terminal") this.detachTerminal(tabId);
     if (this.isBusy(tabId)) this.abort(tabId);
     closeProviderSessions(tabId);
-    s.events = [];
+    s.events = this.deps.store ? null : [];
+    s.hasUser = false;
+    s.agentToolIds.clear();
     s.dedupe = buildDedupeIndex([]);
     s.sessionId = null;
     this.setHandoffPrefix(s, null);
@@ -1850,10 +1857,23 @@ export class SessionManager {
     if (s.historyRestored) return;
     s.historyRestored = true;
     const events = this.deps.store?.iterateEvents?.(s.tabId) ?? this.deps.store?.readEvents(s.tabId) ?? s.events ?? [];
-    for (const event of staleRunEvents(mt, events)) {
+    const tracked = (function* (manager: SessionManager) {
+      for (const event of events) { manager.rememberEvent(s, event); yield event; }
+    })(this);
+    for (const event of staleRunEvents(mt, tracked)) {
       if (this.deps.store) this.deps.store.appendEvent(s.tabId, event);
       else (s.events ??= []).push(event);
     }
+  }
+
+  private hasUserMessage(s: Session): boolean {
+    this.restoreHistory(s);
+    return s.hasUser;
+  }
+
+  private rememberEvent(s: Session, event: ChatEvent): void {
+    if (event.type === "user_message") s.hasUser = true;
+    if (event.type === "tool_use" && readCodexAgentInput(event.input)) s.agentToolIds.add(event.toolUseId);
   }
 
   private record(s: Session, e: ChatEvent) {
@@ -1863,6 +1883,7 @@ export class SessionManager {
       this.deps.emit(s.tabId, e);
       return;
     }
+    this.rememberEvent(s, e);
     if (!this.deps.store) this.loadEvents(s).push(e);
     else s.events?.push(e);
     // 여기서 거르지는 않는다(길목에서 버리면 정당한 재전송까지 막힌다). 색인만 따라가게 해서,

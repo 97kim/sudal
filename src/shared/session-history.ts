@@ -7,6 +7,8 @@ export const HISTORY_PAGE_BYTES = 4 * 1024 * 1024;
 
 export interface SessionHistoryPage {
   state: SessionState;
+  /** Lightweight identities/state for older blocks, never rendered as messages. */
+  prefix: Block[];
   /** ID of the first block; request blocks before it to load older history. */
   before: string | null;
   hasMore: boolean;
@@ -18,7 +20,33 @@ export function historyPage(state: SessionState, before?: string, size = HISTORY
   const end = found < 0 ? state.blocks.length : found;
   const start = Math.max(0, end - Math.max(1, Math.min(HISTORY_PAGE_SIZE, Math.floor(size) || HISTORY_PAGE_SIZE)));
   const blocks = state.blocks.slice(start, end);
-  return { state: { ...state, blocks }, before: blocks[0]?.id ?? null, hasMore: start > 0 };
+  return { state: { ...state, blocks }, prefix: state.blocks.slice(0, start).map(slimHistoryBlock), before: blocks[0]?.id ?? null, hasMore: start > 0 };
+}
+
+export interface HistoryState { state: SessionState; prefix: Block[] }
+
+export function initialHistoryState(): HistoryState {
+  return { state: initialSessionState(), prefix: [] };
+}
+
+/** Keep updates to unloaded cards at their original positions, without their bodies. */
+export function reduceHistoryEvent(history: HistoryState, event: ChatEvent): HistoryState {
+  const { state, prefix } = history;
+  if (!prefix.length) return { state: reduceSession(state, event), prefix };
+  const next = reduceSession({ ...state, blocks: [...prefix, ...state.blocks] }, event);
+  return {
+    state: { ...next, blocks: next.blocks.slice(prefix.length) },
+    prefix: next.blocks.slice(0, prefix.length).map((block, index) => block === prefix[index] ? block : slimHistoryBlock(block)),
+  };
+}
+
+/** Replay pushes after the page's snapshot before merging it with the live tail. */
+export function mergeHistoryPage(current: HistoryState, page: SessionHistoryPage, older: boolean, events: ChatEvent[]): HistoryState {
+  let fetched: HistoryState = { state: page.state, prefix: page.prefix };
+  for (const event of events) fetched = reduceHistoryEvent(fetched, event);
+  return older
+    ? { state: { ...current.state, blocks: prependHistory(fetched.state.blocks, current.state.blocks) }, prefix: fetched.prefix }
+    : fetched;
 }
 
 /** Older pages may overlap live updates. Preserve the current version of a block. */
@@ -71,7 +99,7 @@ export function createHistoryReplay(before?: string) {
   return { push, finish(): SessionHistoryPage {
     const stop = end ?? state.blocks.length;
     const blocks = state.blocks.slice(start, stop);
-    return { state: { ...state, blocks }, before: blocks[0]?.id ?? null, hasMore: start > 0 };
+    return { state: { ...state, blocks }, prefix: state.blocks.slice(0, start), before: blocks[0]?.id ?? null, hasMore: start > 0 };
   } };
 }
 

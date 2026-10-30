@@ -42,6 +42,36 @@ test("history yields to live work and cancels cleanly when its tab closes", asyn
   assert.equal(closed, 2, "both restoration and cancelled history iterators release their resources");
 });
 
+test("sending uses the user-message index without loading all persisted events, including after clear", async () => {
+  const events: ChatEvent[] = [{ type: "user_message", id: "existing", ts: 0, text: "existing" }];
+  let scans = 0;
+  const titles: string[] = [];
+  const manager = new SessionManager({
+    emit() {}, resolveConfig: () => ({ provider: "codex", cwd: tmpdir(), policy: "ask" }),
+    onMeta(_tab, patch) { if (patch.title !== undefined) titles.push(patch.title); },
+    claudeRuntime: async () => { throw new Error("test runtime"); }, codexRuntime: async () => { throw new Error("test runtime"); },
+    store: {
+      appendEvent(_tab, event) { events.push(event); }, resetThread() { events.length = 0; },
+      readEvents() { throw new Error("bulk history read is forbidden"); },
+      *iterateEvents() { scans++; yield* events; },
+    },
+  });
+  try {
+    await manager.history("tab");
+    const scanned = scans;
+    for (let i = 0; i < 3; i++) {
+      assert.equal((await manager.send("tab", `prompt ${i}`, [], { type: "user_message", id: `new-${i}`, ts: i + 1, text: `prompt ${i}` })).ok, true);
+      await wait(10);
+    }
+    assert.equal(scans, scanned, "repeated sends do not rescan the history");
+    assert.deepEqual(titles, [], "existing conversations keep their title");
+    manager.clear("tab");
+    await manager.send("tab", "first after clear", [], { type: "user_message", id: "first", ts: 9, text: "first after clear" });
+    await wait(10);
+    assert.deepEqual(titles.filter(Boolean), ["first after clear"]);
+  } finally { manager.shutdown(); }
+});
+
 test("Antigravity 미지원 입력·터미널 전환은 대화 ID와 제어권을 바꾸지 않는다", async () => {
   let spawned = false;
   const sessionId = "11111111-2222-3333-4444-555555555555";

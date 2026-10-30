@@ -24,8 +24,11 @@ const { _electron } = require("playwright-core");
   const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 };
   for (let i = 0; i < 400; i++) {
     events.push({ type: "user_message", id: `user-${i}`, ts: now + i * 10, text: `question-${i}` });
-    events.push({ type: "assistant_text", blockId: `answer-${i}`, ts: now + i * 10 + 1,
-      text: `answer-${i}\n\n${"본문 내용입니다. ".repeat(i % 5 * 12 + 1)}\n\n![preview](pixel.png)` });
+    events.push(i === 300
+      ? { type: "tool_use", toolUseId: "answer-300", ts: now + i * 10 + 1, name: "Bash", input: { command: "long-running-command" } }
+      : { type: "assistant_text", blockId: `answer-${i}`, ts: now + i * 10 + 1,
+        text: `answer-${i}\n\n${"본문 내용입니다. ".repeat(i % 5 * 12 + 1)}\n\n![preview](pixel.png)` });
+    if (i === 300) events.push({ type: "tool_result", ts: now + i * 10 + 1, toolUseId: "answer-300", output: "initial-background-result", isError: false });
     events.push({ type: "turn_result", ts: now + i * 10 + 2, usage, modelUsage: {}, costUsd: 0, durationMs: 1, numTurns: 1, isError: false });
   }
   fs.writeFileSync(path.join(profile, "threads", `${tabId}.jsonl`), events.map(JSON.stringify).join("\n") + "\n");
@@ -34,11 +37,13 @@ const { _electron } = require("playwright-core");
   // so the bundled application can resolve its own dependencies.
   fs.writeFileSync(bootstrap, `
     import { app, ipcMain, BrowserWindow } from 'electron';
+    import { appendFileSync } from 'node:fs';
     app.setPath('userData', ${JSON.stringify(profile)});
     app.setPath('home', ${JSON.stringify(home)});
     globalThis.__imageReads = 0;
     const handle = ipcMain.handle.bind(ipcMain);
     let injected = false;
+    let injectedOlder = false;
     ipcMain.handle = (channel, fn) => handle(channel, channel === 'file:read' ? (...args) => { globalThis.__imageReads++; return fn(...args); } : channel === 'chat:history' ? (...args) => {
       const result = fn(...args);
       if (!injected) {
@@ -46,6 +51,12 @@ const { _electron } = require("playwright-core");
         const contents = BrowserWindow.getAllWindows()[0].webContents;
         contents.send('chat:event', { tabId: '${tabId}', sequence: 0, event: { type: 'text_delta', ts: Date.now(), blockId: 'answer-399', text: 'DUPLICATE-SHOULD-BE-SKIPPED' } });
         contents.send('chat:event', { tabId: '${tabId}', sequence: 1, event: { type: 'text_delta', ts: Date.now(), blockId: 'answer-399', text: ' live-tail' } });
+      }
+      if (args[2] && !injectedOlder) {
+        injectedOlder = true;
+        const event = { type: 'tool_result', ts: Date.now(), toolUseId: 'answer-300', output: 'late-background-result', isError: false };
+        appendFileSync(${JSON.stringify(path.join(profile, "threads", `${tabId}.jsonl`))}, JSON.stringify(event) + '\\n');
+        BrowserWindow.getAllWindows()[0].webContents.send('chat:event', { tabId: '${tabId}', sequence: 2, event });
       }
       return result;
     } : fn);
@@ -73,9 +84,27 @@ const { _electron } = require("playwright-core");
     const imageReads = await app.evaluate(() => globalThis.__imageReads);
     assert.ok(imageReads < 30, `only nearby images should load; got ${imageReads}`);
     const allCount = await page.evaluate(async (id) => (await window.sudal.chat.events(id)).length, tabId);
-    assert.equal(allCount, 1200, "history is preserved on disk");
+    assert.equal(allCount, events.length, "history is preserved on disk");
 
     const list = page.locator("[data-message-list]");
+    // The reading position can be inside a row taller than the viewport. Size
+    // changes below that position (such as a decoded image) must not move it.
+    const tallRow = page.locator('[data-virtual-row="text:answer-399"]');
+    await tallRow.evaluate((el) => el.style.minHeight = "2000px");
+    await page.waitForTimeout(350);
+    await list.hover();
+    await page.mouse.wheel(0, -1000);
+    await page.waitForTimeout(350);
+    const tallReadingTop = await list.evaluate((el) => el.scrollTop);
+    await tallRow.evaluate((el) => el.style.minHeight = "3000px");
+    await page.waitForTimeout(350);
+    const tallRowDelta = await list.evaluate((el) => el.scrollTop) - tallReadingTop;
+    assert.ok(Math.abs(tallRowDelta) < 8, `growing a tall row moved the reader ${tallRowDelta}px`);
+    await tallRow.evaluate((el) => el.style.minHeight = "");
+    await page.waitForTimeout(350);
+    // Shrinking the row may already put the viewport at the bottom and remove the pill.
+    await page.evaluate(() => document.querySelector("[data-scroll-bottom]")?.click());
+    await page.waitForTimeout(350);
     await list.hover();
     await page.mouse.wheel(0, -1200);
     await page.waitForTimeout(350);
@@ -90,6 +119,15 @@ const { _electron } = require("playwright-core");
     await page.waitForTimeout(350);
     const after = await page.locator(`[data-virtual-row="${anchor.key}"]`).boundingBox();
     assert.ok(after && Math.abs(after.y - anchor.top) < 8, `prepend anchor moved ${after ? after.y - anchor.top : 'offscreen'}`);
+
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:shortcut", "search"));
+    await page.locator("[data-search-palette] input").fill("question-300");
+    await page.locator("[data-search-hit]").first().click();
+    const oldTool = page.locator('[data-block-id="answer-300"] [data-tool-card="Bash"]');
+    await oldTool.waitFor();
+    assert.ok((await oldTool.innerText()).includes("long-running-command"), "hydrated tool keeps its original input");
+    if (await oldTool.getAttribute("data-tool-open") !== "true") await oldTool.locator("[data-tool-toggle]").click();
+    assert.ok((await oldTool.innerText()).includes("late-background-result"), "push during older-page loading updates the hydrated card");
 
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:shortcut", "search"));
     await page.locator("[data-search-palette] input").fill("question-0");
@@ -118,11 +156,14 @@ const { _electron } = require("playwright-core");
     assert.ok(Math.abs(await list.evaluate((el) => el.scrollTop) - parkedTop) < 8, "reading position survives streaming below the viewport");
     await page.screenshot({ path: path.join(repo, ".sudal/history-e2e.png") });
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true }));
+    console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, tallRowDeltaPx: tallRowDelta, lateToolResult: true, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true }));
+  } catch (error) {
+    console.error("History E2E failed:", error);
+    throw error;
   } finally {
     await app?.close();
     const target = path.resolve(profile);
     if (!target.startsWith(path.resolve(os.tmpdir()) + path.sep + "sudal-history-e2e-")) throw new Error("Unexpected cleanup path");
-    fs.rmSync(target, { recursive: true, force: true });
+    await fs.promises.rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
