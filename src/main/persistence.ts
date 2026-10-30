@@ -2,6 +2,7 @@
 // SQLite 는 Phase 4 에서 node:sqlite 로 갈지 결정 — better-sqlite3 는 쓰지 않는다 (PLAN 참조).
 
 import fs from "node:fs";
+import { readJsonl } from "./jsonl-reader";
 import path from "node:path";
 import { isInsideRel } from "./path-within";
 import type { ChatEvent } from "@shared/chat-events";
@@ -220,20 +221,22 @@ export class Store {
   }
 
   readEvents(tabId: string): ChatEvent[] {
+    return [...this.iterateEvents(tabId)];
+  }
+
+  *iterateEvents(tabId: string): Generator<ChatEvent> {
     // 아직 디스크에 안 내려간 버퍼가 있으면 먼저 내린다.
     if (this.buffers.has(tabId)) this.flush();
     const p = this.threadPath(tabId);
-    if (!fs.existsSync(p)) return [];
-    const out: ChatEvent[] = [];
-    for (const line of fs.readFileSync(p, "utf8").split("\n")) {
+    if (!fs.existsSync(p)) return;
+    for (const { line } of readJsonl(p)) {
       if (!line.trim()) continue;
       try {
-        out.push(JSON.parse(line) as ChatEvent);
+        yield JSON.parse(line) as ChatEvent;
       } catch {
         // 마지막 줄이 잘렸을 수 있다(강제 종료). 그 줄만 버린다.
       }
     }
-    return out;
   }
 
   /** 비운 대화의 보관본. 파일명으로만 찾으므로 살아 있는 스레드(`<tabId>.jsonl`)와 섞이지 않는다. */

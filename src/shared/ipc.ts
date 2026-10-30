@@ -7,6 +7,7 @@ import type {
   SessionStatus,
 } from "./chat-events";
 import { PERMISSION_POLICIES } from "./chat-events";
+import type { SessionHistoryPage } from "./session-history";
 import type { BackgroundJobDto } from "./background-jobs";
 import type { OtterMood, OtterMotion } from "./otter";
 import type { Run, Schedule } from "./schedules";
@@ -252,6 +253,7 @@ export const IPC = {
   chatConfigure: "chat:configure",
   chatSnapshot: "chat:snapshot",
   chatEvents: "chat:events",
+  chatHistory: "chat:history",
   chatClear: "chat:clear",
   chatCompact: "chat:compact",
   browserRegister: "browser:register",
@@ -830,6 +832,7 @@ export interface ScheduleListDto {
 }
 
 export interface ChatEventEnvelope {
+  sequence?: number;
   tabId: string;
   event: ChatEvent;
 }
@@ -930,6 +933,7 @@ export interface SudalApi {
     fanoutCleanup(tabId: string, fanoutId: string): Promise<{ ok: true } | { ok: false; error: string }>;
     /** 지금까지의 이벤트 로그 (화면 재구성용). */
     events(tabId: string): Promise<ChatEvent[]>;
+    history(tabId: string, before?: string): Promise<SessionHistoryPage>;
     clear(tabId: string): Promise<SessionSnapshotDto>;
     /**
      * 컨텍스트를 줄인다. Claude 는 provider 에게 맡기고(`/compact`) 세션이 그대로 이어진다 —

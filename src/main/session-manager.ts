@@ -24,6 +24,8 @@ import { applyClaudePolicy, closeAllClaudeSessions, closeClaudeSession, interrup
 import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, runCodexTurn, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
 import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
+import { readJsonl } from "./jsonl-reader";
+import { createHistoryReplay, type SessionHistoryPage } from "@shared/session-history";
 import {
   isUsageLimitText,
   USAGE_LIMIT_MAX_RETRIES,
@@ -134,6 +136,9 @@ interface Session {
   pendingReqs: Map<string, PermissionRequestEvent>;
   /** null 이면 아직 디스크에서 읽지 않았다 (lazy). */
   events: ChatEvent[] | null;
+  historyRestored: boolean;
+  hasUser: boolean;
+  agentToolIds: Set<string>;
   /** 이미 기록한 이벤트의 색인. events 를 읽을 때 같이 만든다. */
   dedupe: DedupeIndex | null;
   /** provider 전환 시 다음 프롬프트 앞에 붙일 요약. 한 번 쓰고 비운다. */
@@ -175,6 +180,7 @@ function closeProviderSessions(tabId: string) {
 export interface SessionStore {
   appendEvent(tabId: string, event: ChatEvent): void;
   readEvents(tabId: string): ChatEvent[];
+  iterateEvents?(tabId: string): Iterable<ChatEvent>;
   resetThread(tabId: string): void;
   /** 프롬프트 큐 영속화(선택). 없으면 큐는 메모리에만 산다. */
   savePromptQueue?(tabId: string, items: PendingPrompt[]): void;
@@ -360,6 +366,9 @@ export class SessionManager {
         pending: new Map(),
         pendingReqs: new Map(),
         events: null,
+        historyRestored: false,
+        hasUser: false,
+        agentToolIds: new Set(),
         dedupe: null,
         // 전환·압축 때 만든 인계서. 다음 메시지에 실려 나가기 전에 앱이 꺼졌으면 디스크에서 되살린다.
         handoffPrefix: this.deps.store?.loadHandoffPrefix?.(tabId) ?? null,
@@ -888,21 +897,19 @@ export class SessionManager {
 
   /** 기록 파일 전체를 채팅 이벤트로 바꾼다. bytes 는 읽은 길이 — 미러가 그 뒤부터 잇게. */
   private readTranscript(file: string, provider: Provider): { events: ChatEvent[]; bytes: number } {
-    let buf: Buffer;
-    try {
-      buf = fs.readFileSync(file);
-    } catch {
-      return { events: [], bytes: 0 };
-    }
-    const text = buf.toString("utf8");
-    const lastNl = text.lastIndexOf("\n");
-    // 줄 경계까지만 — 쓰다 만 마지막 줄은 미러가 마저 읽는다
-    const whole = lastNl === -1 ? "" : text.slice(0, lastNl + 1);
     const state = newMirrorState();
     const map = provider === "codex" ? mapCodexRolloutLine : mapClaudeTranscriptLine;
     const events: ChatEvent[] = [];
-    for (const line of whole.split("\n")) if (line.trim()) events.push(...map(line, state));
-    return { events, bytes: Buffer.byteLength(whole, "utf8") };
+    let bytes = 0;
+    try {
+      for (const entry of readJsonl(file, false)) {
+        bytes = entry.end;
+        if (entry.line.trim()) events.push(...map(entry.line, state));
+      }
+    } catch {
+      // Keep the successfully read prefix; a watcher can retry the remaining bytes.
+    }
+    return { events, bytes };
   }
 
   /** 미러된 tool_result 가 대기 중인 툴의 것인지 — 기록의 tool_use 이름으로 대조한다. */
@@ -1016,7 +1023,7 @@ export class SessionManager {
     const onEvents = (events: ChatEvent[]) => {
       const cur = this.sessions.get(tabId);
       if (!cur || cur.controller !== "terminal") return;
-      const hadUser = this.events(tabId).some((e) => e.type === "user_message");
+      const hadUser = this.hasUserMessage(cur);
       for (const e of events) {
         this.record(cur, e);
         if (!hadUser && e.type === "user_message" && e.text.trim())
@@ -1075,7 +1082,7 @@ export class SessionManager {
     if (s.controller !== "app") return { ok: false, error: mt("session.error.forkTerminal") };
     if (this.isBusy(tabId)) return { ok: false, error: mt("session.error.forkBusy") };
     if (!s.cwd) return { ok: false, error: mt("session.error.noCwd") };
-    const events = this.loadEvents(s);
+    const events = this.events(tabId);
     const idx = events.findIndex((e) => e.type === "turn_result" && e.forkPoint?.pointId === pointId);
     const point = idx >= 0 ? (events[idx] as TurnResultEvent).forkPoint! : null;
     if (!point) return { ok: false, error: mt("session.error.forkPointMissing") };
@@ -1119,7 +1126,36 @@ export class SessionManager {
 
   events(tabId: string): ChatEvent[] {
     const s = this.ensure(tabId);
-    return this.loadEvents(s);
+    const events = this.loadEvents(s);
+    // Persisted raw events need not remain resident alongside the rendered history.
+    if (this.deps.store) s.events = null;
+    return events;
+  }
+
+  private historyReads = new Map<string, symbol>();
+
+  async history(tabId: string, before?: string): Promise<SessionHistoryPage> {
+    const s = this.ensure(tabId);
+    this.restoreHistory(s);
+    const token = Symbol();
+    this.historyReads.set(tabId, token);
+    const events = this.deps.store?.iterateEvents?.(tabId) ?? this.events(tabId);
+    const replay = createHistoryReplay(before);
+    let count = 0;
+    try {
+      for (const event of events) {
+        replay.push(event);
+        if (++count % 128 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          if (this.sessions.get(tabId) !== s || this.historyReads.get(tabId) !== token) throw new MsgError("session.msg.sessionEnded");
+        }
+      }
+      const page = replay.finish();
+      page.state.status = s.status;
+      return page;
+    } finally {
+      if (this.historyReads.get(tabId) === token) this.historyReads.delete(tabId);
+    }
   }
 
   configure(tabId: string, patch: Partial<SessionConfig>): SessionSnapshot {
@@ -1314,7 +1350,7 @@ export class SessionManager {
     s.limitAttempts = 0;
 
     // 첫 사용자 메시지가 탭 제목이 된다.
-    const hadUser = this.events(tabId).some((e) => e.type === "user_message");
+    const hadUser = this.hasUserMessage(s);
     this.record(s, userEvent);
     if (
       !hadUser &&
@@ -1627,6 +1663,7 @@ export class SessionManager {
   private ambientEvent(tabId: string, e: ChatEvent): void {
     const s = this.sessions.get(tabId);
     if (!s) return;
+    this.restoreHistory(s);
     if (e.type === "turn_result") {
       this.record(s, e);
       s.turnStartedAt = null;
@@ -1662,7 +1699,7 @@ export class SessionManager {
     }
     // 백그라운드 하위 에이전트가 일하는 소식은 메인 턴이 끝난 뒤에도 계속 온다. 그건 메인이 다시 도는 게 아니라서
     // "도는 중" 으로 올리지 않는다 — 올리면 하위 에이전트가 일하는 내내 탭이 바빠 보이고, 보낸 말이 대기열로 간다.
-    if (e.type === "subagent_activity" || (e.type === "tool_use" && readCodexAgentInput(e.input)) || (e.type === "tool_result" && this.events(tabId).some((event) => event.type === "tool_use" && event.toolUseId === e.toolUseId && readCodexAgentInput(event.input)))) {
+    if (e.type === "subagent_activity" || (e.type === "tool_use" && readCodexAgentInput(e.input)) || (e.type === "tool_result" && s.agentToolIds.has(e.toolUseId))) {
       this.record(s, e);
       return;
     }
@@ -1734,11 +1771,14 @@ export class SessionManager {
 
   clear(tabId: string): SessionSnapshot {
     const s = this.ensure(tabId);
+    this.historyReads.delete(tabId);
     this.externalCliExited(tabId);
     if (s.controller === "terminal") this.detachTerminal(tabId);
     if (this.isBusy(tabId)) this.abort(tabId);
     closeProviderSessions(tabId);
-    s.events = [];
+    s.events = this.deps.store ? null : [];
+    s.hasUser = false;
+    s.agentToolIds.clear();
     s.dedupe = buildDedupeIndex([]);
     s.sessionId = null;
     this.setHandoffPrefix(s, null);
@@ -1802,32 +1842,53 @@ export class SessionManager {
    */
   /** 이 탭이 이미 가진 것들의 색인. 기록을 통째로 불러올 때 대조한다. */
   private dedupeIndex(s: Session): DedupeIndex {
-    this.loadEvents(s);
-    return (s.dedupe ??= buildDedupeIndex(s.events ?? []));
+    return (s.dedupe ??= buildDedupeIndex(this.events(s.tabId)));
   }
 
   private loadEvents(s: Session): ChatEvent[] {
+    this.restoreHistory(s);
     if (s.events) return s.events;
     const events = this.deps.store?.readEvents(s.tabId) ?? [];
-    for (const e of staleRunEvents(mt, events)) {
-      events.push(e);
-      this.deps.store?.appendEvent(s.tabId, e);
-    }
     s.events = events;
-    s.dedupe = buildDedupeIndex(events);
     return events;
   }
 
+  private restoreHistory(s: Session): void {
+    if (s.historyRestored) return;
+    s.historyRestored = true;
+    const events = this.deps.store?.iterateEvents?.(s.tabId) ?? this.deps.store?.readEvents(s.tabId) ?? s.events ?? [];
+    const tracked = (function* (manager: SessionManager) {
+      for (const event of events) { manager.rememberEvent(s, event); yield event; }
+    })(this);
+    for (const event of staleRunEvents(mt, tracked)) {
+      if (this.deps.store) this.deps.store.appendEvent(s.tabId, event);
+      else (s.events ??= []).push(event);
+    }
+  }
+
+  private hasUserMessage(s: Session): boolean {
+    this.restoreHistory(s);
+    return s.hasUser;
+  }
+
+  private rememberEvent(s: Session, event: ChatEvent): void {
+    if (event.type === "user_message") s.hasUser = true;
+    if (event.type === "tool_use" && readCodexAgentInput(event.input)) s.agentToolIds.add(event.toolUseId);
+  }
+
   private record(s: Session, e: ChatEvent) {
+    this.restoreHistory(s);
     // 생각 조각은 화면에만 흘리고 기록·메모리엔 남기지 않는다(양이 크고 다시 볼 일이 없다).
     if (e.type === "thinking_delta" || e.type === "subagent_activity" || (e.type === "tool_use" && e.preview) || (e.type === "verify" && e.partial)) {
       this.deps.emit(s.tabId, e);
       return;
     }
-    this.loadEvents(s).push(e);
+    this.rememberEvent(s, e);
+    if (!this.deps.store) this.loadEvents(s).push(e);
+    else s.events?.push(e);
     // 여기서 거르지는 않는다(길목에서 버리면 정당한 재전송까지 막힌다). 색인만 따라가게 해서,
     // 나중에 기록을 통째로 불러올 때 "이미 가진 것" 에 실시간으로 받은 것도 포함되게 한다.
-    indexEvent(this.dedupeIndex(s), e);
+    if (s.dedupe) indexEvent(s.dedupe, e);
     this.deps.store?.appendEvent(s.tabId, e);
     this.deps.emit(s.tabId, e);
   }

@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { codexRateLimitFromAppServer, compactRecords, parseSudalAgyLines, UsageScanner, parseClaudeLines, parseCodexLines } from "./transcripts";
 
 const claudeLine = (o: { id: string; model?: string; ts: string; usage: Record<string, number>; cwd?: string; sessionId?: string }) =>
@@ -155,6 +157,65 @@ test("UsageScanner includes persisted Antigravity history and does not duplicate
     assert.equal(scanner.records().length, 1);
     assert.equal(scanner.records()[0].input, 100);
     assert.equal(scanner.records()[0].provider, "agy");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner streams all providers with a heap smaller than the transcript", { timeout: 60_000 }, async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-stream-usage-"));
+  try {
+    const transcript = path.join(dir, "source.jsonl");
+    const fd = fs.openSync(transcript, "w");
+    try {
+      // CRLF, Korean paths, state separated by many stream chunks, and an EOF
+      // without a newline must preserve each provider's accounting rules.
+      const head = [
+        claudeLine({ id: "message", ts: "2026-09-04T01:00:00Z", cwd: "/한글", usage: { input_tokens: 10, output_tokens: 2 } }),
+        JSON.stringify({ type: "session_meta", payload: { id: "codex-session", cwd: "/한글" } }),
+        JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.5" } }),
+        codexTc("2026-09-04T01:00:00Z", { input_tokens: 100, cached_input_tokens: 20, output_tokens: 10 }, 3),
+        JSON.stringify({ type: "session", provider: "agy", sessionId: "agy-session", cwd: "/한글", model: "argon" }),
+      ];
+      fs.writeSync(fd, head.join("\r\n") + "\r\n");
+      const padding = JSON.stringify({ type: "user", content: "가".repeat(22_000) }) + "\r\n";
+      const chunk = Buffer.from(padding);
+      // 96 MB of history cannot fit in the child's 64 MB V8 heap. Streaming
+      // keeps only the current line and usage state, even for the JSON parser.
+      for (let bytes = 0; bytes < 96 * 1024 * 1024; bytes += chunk.length) fs.writeSync(fd, chunk);
+      fs.writeSync(fd, [
+        "{broken json",
+        claudeLine({ id: "message", ts: "2026-09-04T01:00:01Z", cwd: "/한글", usage: { input_tokens: 10, output_tokens: 8 } }),
+        claudeLine({ id: "message", ts: "2026-09-04T01:00:02Z", cwd: "/한글", usage: { input_tokens: 1, output_tokens: 1 } }),
+        codexTc("2026-09-04T01:00:01Z", { input_tokens: 150, cached_input_tokens: 30, output_tokens: 15 }, 4),
+        codexTc("2026-09-04T01:00:02Z", { input_tokens: 150, cached_input_tokens: 30, output_tokens: 15 }, 5),
+        JSON.stringify({ type: "turn_result", ts: Date.parse("2026-09-04T01:00:02Z"), numTurns: 2, usage: { input: 100, output: 20, cacheRead: 40 }, modelUsage: {} }),
+      ].join("\r\n"));
+    } finally { fs.closeSync(fd); }
+    for (const root of ["claude", "codex", "threads"]) {
+      fs.mkdirSync(path.join(dir, root));
+      fs.linkSync(transcript, path.join(dir, root, "history.jsonl"));
+    }
+    const script = `
+      import { UsageScanner } from ${JSON.stringify(new URL("./transcripts.ts", import.meta.url).href)};
+      import path from 'node:path';
+      const dir = process.argv[1];
+      const scanner = new UsageScanner({ claudeDir: path.join(dir, 'claude'), codexDir: path.join(dir, 'codex'), sudalThreadsDir: path.join(dir, 'threads'), cachePath: path.join(dir, 'cache.json') });
+      await scanner.scan();
+      await scanner.scan();
+      console.log(JSON.stringify({ records: scanner.records(), rateLimit: scanner.getStatus().codexRateLimit }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath,
+      ["--max-old-space-size=64", "--import", "tsx", "--input-type=module", "--eval", script, dir],
+      { timeout: 55_000, maxBuffer: 64 * 1024 });
+    const { records, rateLimit } = JSON.parse(stdout);
+    assert.equal(records.length, 3);
+    const usage = (provider: string) => records.find((r: { provider: string }) => r.provider === provider);
+    assert.deepEqual(usage("claude"), { ts: Date.parse("2026-09-04T01:00:00Z"), provider: "claude", model: "claude-opus-5", cwd: "/한글", sessionId: "sess-1", input: 10, output: 8, cacheRead: 0, cacheWrite: 0, requests: 1 });
+    assert.deepEqual(usage("codex"), { ts: Date.parse("2026-09-04T01:00:00Z"), provider: "codex", model: "gpt-5.5", cwd: "/한글", sessionId: "codex-session", input: 120, output: 15, cacheRead: 30, cacheWrite: 0, requests: 2 });
+    assert.deepEqual(usage("agy"), { ts: Date.parse("2026-09-04T01:00:00Z"), provider: "agy", model: "argon", cwd: "/한글", sessionId: "agy-session", input: 60, output: 20, cacheRead: 40, cacheWrite: 0, requests: 2 });
+    assert.equal(rateLimit.session.usedPercent, 5, "반복 token_count 도 최신 한도는 갱신한다");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

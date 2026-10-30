@@ -1,5 +1,6 @@
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useHistoryRowState } from "../hooks/useHistoryRowState";
 import type { TFunction } from "i18next";
 import { msgText } from "@shared/i18n/msg";
 import type { ToolBlock } from "@shared/session-state";
@@ -120,7 +121,7 @@ function isExpandedByDefault(name: string): boolean {
 }
 
 export function ToolCard({ block }: { block: ToolBlock }) {
-  const [open, setOpen] = useState(() => isExpandedByDefault(block.name));
+  const [open, setOpen] = useHistoryRowState("tool-open", () => isExpandedByDefault(block.name));
   const input = asInput(block.input);
   const openFile = useOpenFile();
   const runInTerminal = useContext(RunInTerminalContext);
@@ -344,7 +345,7 @@ function ToolBody({ name, input }: { name: string; input: Input }) {
 
 function ToolOutput({ output, isError }: { output: string; isError: boolean }) {
   const { t } = useTranslation();
-  const [full, setFull] = useState(false);
+  const [full, setFull] = useHistoryRowState("tool-full", false);
   const lines = output.split("\n");
   const truncated = !full && lines.length > OUTPUT_PREVIEW_LINES;
   const text = truncated ? lines.slice(0, OUTPUT_PREVIEW_LINES).join("\n") : output;
