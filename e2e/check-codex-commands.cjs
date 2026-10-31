@@ -51,6 +51,7 @@ const { _electron } = require("playwright-core");
         if(command==='fast'){
           if(!['on','off'].includes(arg)){const error=new Error('/fast on 또는 /fast off로 입력해 주세요.');error.name='MsgError';throw error;}
           if(arg==='off' && failFastOff){failFastOff=false;const error=new Error('fixture fast unavailable');error.name='MsgError';throw error;}
+          if(globalThis.__holdFast)await new Promise(resolve=>{globalThis.__releaseFast=resolve;});
           return {data:{fast:arg==='on'}};
         }
         if(command==='memories'){
@@ -95,6 +96,24 @@ const { _electron } = require("playwright-core");
     await page.screenshot({path:path.join(repo,'.sudal/codex-slash-audit/command-sources-ui.png')});
     await input.press('Escape');
     const submit=async text=>{await input.fill(text);await input.press('Escape');await input.press('Enter');};
+    const neutralDialog=async name=>{
+      const dialog=page.getByRole('dialog',{name:'/'+name,exact:true});
+      await page.waitForFunction(label=>document.activeElement===document.querySelector('[role="dialog"][aria-label="'+label+'"]'),'/'+name);
+      assert.equal(await dialog.evaluate(element=>getComputedStyle(element).outlineStyle),'none');
+      const callsBefore=await app.evaluate(()=>JSON.stringify(globalThis.__calls));
+      const draftBefore=await input.inputValue();
+      await page.keyboard.press('Enter'); await page.keyboard.press('Space'); await page.keyboard.type('x');
+      assert.ok(await dialog.isVisible(),'neutral Enter must not close the dialog');
+      assert.equal(await input.inputValue(),draftBefore,'keys must not reach the background composer');
+      assert.equal(await app.evaluate(()=>JSON.stringify(globalThis.__calls)),callsBefore,'neutral keys must not execute a setting');
+      await page.keyboard.press('Tab');
+      assert.ok(await dialog.getByRole('button').first().evaluate(element=>document.activeElement===element));
+      await page.keyboard.press('Shift+Tab');
+      assert.ok(await dialog.getByRole('button').last().evaluate(element=>document.activeElement===element));
+      await page.keyboard.press('Tab');
+      assert.ok(await dialog.getByRole('button').first().evaluate(element=>document.activeElement===element));
+      return dialog;
+    };
     await submit('/plan'); await page.locator('[data-codex-mode="plan"]').waitFor();
     assert.ok(await page.locator('[data-codex-mode]').innerText().then(t=>t.includes('플랜 모드 켜짐')));
     await submit('/plan off'); await page.locator('[data-codex-mode="default"]').waitFor();
@@ -115,6 +134,10 @@ const { _electron } = require("playwright-core");
     await page.getByRole('button',{name:'닫기',exact:true}).click();
     await submit('/permissions auto_edit');
     await page.getByText('fixture permission update rejected',{exact:true}).waitFor();
+    await submit('/permissions');
+    await neutralDialog('permissions');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(()=>document.activeElement===document.querySelector('[data-composer] textarea'));
     await submit('/permissions');
     const permissions=page.getByRole('dialog',{name:'/permissions',exact:true});
     await permissions.getByRole('button',{name:/작업 경로 내 파일 편집 허용/}).click();
@@ -161,10 +184,19 @@ const { _electron } = require("playwright-core");
     await page.locator('[data-memory-summary]').getByText(/Fixture memory summary/).waitFor();
     await page.getByRole('button',{name:'닫기',exact:true}).click();
     await submit('/fast');
+    await neutralDialog('fast');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(()=>document.activeElement===document.querySelector('[data-composer] textarea'));
+    await submit('/fast');
     const fast=page.locator('[data-codex-fast-settings]');
     await fast.waitFor();
     assert.equal((await app.evaluate(()=>globalThis.__calls)).filter(call=>call[0]==='fast').length,0,'opening the picker must not change fast processing');
+    await app.evaluate(()=>{globalThis.__holdFast=true;});
     await fast.getByRole('button',{name:'빠른 처리 켜기',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('[data-codex-fast-settings]')?.getAttribute('aria-busy')==='true');
+    await page.keyboard.press('Tab');
+    assert.ok(await page.getByRole('dialog',{name:'/fast',exact:true}).evaluate(element=>element.contains(document.activeElement)),'disabled settings must not let Tab escape the dialog');
+    await app.evaluate(()=>{globalThis.__holdFast=false;globalThis.__releaseFast();});
     await fast.getByText('이 세션의 빠른 처리를 켰습니다.',{exact:true}).waitFor();
     await fast.getByRole('button',{name:'빠른 처리 끄기',exact:true}).click();
     await fast.getByRole('alert').getByText('fixture fast unavailable',{exact:true}).waitFor();
