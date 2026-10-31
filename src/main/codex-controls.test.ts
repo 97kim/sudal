@@ -124,12 +124,14 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     assert.equal(manager.snapshot("tab").codexMode, "plan");
     assert.equal(persisted.codexMode, "plan");
     await manager.codexControl("tab", "goal", "Finish tests");
+    assert.deepEqual(manager.events("tab").filter(e=>e.type==='user_message').map(e=>e.text),['/goal Finish tests'],'목표 작업도 사용자 메시지로 남긴다');
     await manager.codexControl("tab", "goal", "pause");
     await manager.codexControl("tab", "goal", "budget 40000");
     assert.equal(manager.snapshot("tab").codexGoal?.objective, "Finish tests");
     assert.equal(manager.snapshot("tab").codexGoal?.tokensUsed, 7);
     await assert.rejects(manager.codexControl("tab", "goal", "FAIL"));
     assert.equal(manager.snapshot("tab").codexGoal?.objective, "Finish tests");
+    assert.equal(manager.events("tab").filter(e=>e.type==='user_message').length,1,'목표 관리와 실패한 요청은 작업 메시지를 추가하지 않는다');
     assert.equal(requests().filter(r=>r.method==='turn/start').length,0);
     await manager.send("tab", "fixture prompt", [], {type:"user_message",ts:Date.now(),id:"u",text:"fixture prompt"});
     await idle();
@@ -155,7 +157,11 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     await idle();
     assert.equal(manager.snapshot('tab').codexGoal?.status,'complete');
     assert.ok(manager.events('tab').some(e=>e.type==='assistant_text' && e.text==='fixture goal completed'));
-    assert.equal(manager.events('tab').filter(e=>e.type==='user_message').length,usersBeforeGoal,'자동 goal에 중복 프롬프트를 보내지 않는다');
+    assert.equal(manager.events('tab').filter(e=>e.type==='user_message').length,usersBeforeGoal+1,'자동 목표의 사용자 요청을 한 번만 기록한다');
+    const goalEvents=manager.events('tab');
+    const goalUserIndex=goalEvents.findIndex(e=>e.type==='user_message' && e.text==='/goal Auto fixture');
+    assert.ok(goalUserIndex>=0 && goalUserIndex<goalEvents.findIndex(e=>e.type==='permission_request' && e.tool==='AskUserQuestion'),'목표 작업이 질문·응답보다 먼저 보인다');
+    assert.equal(requests().filter(r=>r.method==='turn/start').length,1,'기록을 추가해도 목표를 일반 모델 프롬프트로 중복 전송하지 않는다');
     await manager.codexControl('tab','goal','Auto wait');
     await new Promise(r=>setTimeout(r,20));
     assert.equal(manager.isBusy('tab'),true);
