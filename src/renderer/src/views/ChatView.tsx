@@ -45,8 +45,10 @@ import { HeaderMenu } from "../components/HeaderMenu";
 import { hasModalDialog, Modal } from "../components/Modal";
 import { CodexGoalModal } from "../components/CodexGoalModal";
 import { CodexCommandResult } from "../components/CodexCommandResult";
+import { CodexFastSettings } from "../components/CodexFastSettings";
 import { ResultEmpty } from "../components/CodexInfoResult";
 import { isFormattedCodexCommand, type FormattedCodexCommand } from "@shared/codex-command-results";
+import { userErrorMessage } from "@shared/error-message";
 import { CrossReviewModal } from "../components/CrossReviewModal";
 import { ProviderSwitchModal } from "../components/ProviderSwitchModal";
 import { ModelPickerModal } from "../components/ModelPickerModal";
@@ -467,6 +469,9 @@ export function ChatView({
             if (!(PERMISSION_POLICIES as readonly string[]).includes(arg)) throw new Error(t("session.msg.codexControl.permissionsUsage"));
             setConfig(await window.sudal.chat.configure(tabId, { policy: arg as PermissionPolicy }));
           } else setCommandPanel({ name });
+          return;
+        } else if (name === "fast" && !arg) {
+          setCommandPanel({ name });
           return;
         } else if (name === "fork") {
           const point = [...state.blocks].reverse().find((b) => b.kind === "turn" && b.forkPoint);
@@ -1097,7 +1102,7 @@ export function ChatView({
                   className="shrink-0"
                 />
                 <span className="min-w-0 flex-1 truncate">
-                  {attachError ??
+                  {(attachError === null ? null : userErrorMessage(attachError)) ??
                     (attention ? (
                       <>
                         {t("chat.terminalBanner.attention")}{" "}
@@ -1211,7 +1216,8 @@ export function ChatView({
         {commandPanel && <Modal variant="pane" onClose={() => setCommandPanel(null)} className="max-h-[80%] w-[min(620px,95%)] overflow-auto p-5">
           <div role="dialog" aria-modal="true" aria-label={`/${commandPanel.name}`}>
             <div className="mb-4 flex justify-between"><h2 className="font-semibold">/{commandPanel.name}</h2><button autoFocus onClick={() => setCommandPanel(null)}>{t("session.codexUi.close")}</button></div>
-            {isFormattedCodexCommand(commandPanel.name) ? <CodexCommandResult key={commandPanel.name} command={commandPanel.name} argument={commandPanel.argument} initialData={commandPanel.data} onRefresh={async () => (await runCodexControl(commandPanel.name as FormattedCodexCommand)).data} />
+            {commandPanel.name === "fast" && !commandPanel.argument ? <CodexFastSettings onApply={mode => runCodexControl("fast", mode)} />
+            : isFormattedCodexCommand(commandPanel.name) ? <CodexCommandResult key={commandPanel.name} command={commandPanel.name} argument={commandPanel.argument} initialData={commandPanel.data} onRefresh={async () => (await runCodexControl(commandPanel.name as FormattedCodexCommand)).data} />
             : commandPanel.name === "permissions" ? <div className="space-y-2">{PERMISSION_POLICIES.map((policy) => <button key={policy} onClick={() => void window.sudal.chat.configure(tabId, { policy }).then((snapshot) => { setConfig(snapshot); setCommandPanel(null); }).catch((e) => setAttachError(String(e)))} className="block w-full rounded border border-line p-3 text-left hover:bg-panel-2">{t(`panel.context.policy.${policy}.codexLabel`)}<span className="mt-1 block text-xs text-muted">{t(`panel.context.policy.${policy}.codexHelp`)}</span></button>)}</div>
             : commandPanel.name === "resume" ? <div className="space-y-2"><p className="text-sm text-muted">{t("session.codexUi.resumeHelp")}</p>{!resumableCodexTabs.length && <ResultEmpty text={t("session.codexResult.noSavedChats")} />}{resumableCodexTabs.map((item) => <button className="block w-full rounded border border-line p-2 text-left" key={item.id} onClick={() => void window.sudal.workspaces.reopenTab(item.id).then(() => { onActivateTab(item.id); setCommandPanel(null); }).catch((e) => setAttachError(String(e)))}>{tabTitle(item, t("shared.untitledTab"))}</button>)}</div>
             : commandPanel.name === "diff" ? !(commandPanel.data as import("@shared/ipc").GitChangeDto[]).length ? <ResultEmpty text={t("session.codexResult.noChanges")} /> : <div className="space-y-1">{(commandPanel.data as import("@shared/ipc").GitChangeDto[]).map((file) => <button key={file.path} className="block w-full rounded p-2 text-left hover:bg-panel-2" onClick={() => { openFile(file.path); setCommandPanel(null); }}>{file.path}<span className="ml-3 text-ok">+{file.added}</span><span className="ml-2 text-err">−{file.deleted}</span></button>)}</div>

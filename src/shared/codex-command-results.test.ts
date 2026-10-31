@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { codexHooks, codexMcpServers, codexMemory, codexPlugins, codexResultErrorMessage, codexSessionInfo, codexTerminals, codexUsageGroups } from "./codex-command-results";
+import { codexHooks, codexMcpServers, codexMemory, codexPlugins, codexSessionInfo, codexTerminals, codexUsageGroups } from "./codex-command-results";
 
 test("세션 표시는 로컬 상태와 중첩된 native 스레드 정보를 함께 읽는다", () => {
   const info = codexSessionInfo({ session: { sessionId: "live", model: "chosen", status: "running", policy: "ask", pendingPrompts: [] }, thread: { thread: { id: "stored", model: "old", cwd: "C:/repo", gitInfo: { branch: "main" } } } });
@@ -39,11 +39,6 @@ test("메모리 요약이 없다는 이유만으로 메모리가 꺼졌다고 �
   assert.deepEqual(codexMemory({ summary: null }), { available: true, summary: null, mode: null });
   assert.equal(codexMemory({}).available, false);
   assert.equal(codexMemory({ mode: "disabled" }).mode, "disabled");
-});
-
-test("조회 실패는 내부 IPC 경로 대신 실제 오류 내용을 표시한다", () => {
-  assert.equal(codexResultErrorMessage(new Error("Error invoking remote method 'chat:codex-control': Error: Request timed out")), "Request timed out");
-  assert.equal(codexResultErrorMessage(new Error("Authentication required")), "Authentication required");
 });
 
 test("usage는 최신 복수 한도를 사용하고 중복된 구형 스냅샷을 표시하지 않는다", () => {

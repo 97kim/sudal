@@ -69,7 +69,9 @@ saves a goal and starts working on it. `/goal pause`, `resume`, `clear`, and `bu
 Server-initiated goal turns appear in chat and support approvals and cancellation. Plan and goal controls themselves are not sent as chat messages.
 
 `/compact` compacts the same Codex thread; `/review [instructions]` starts a native Codex review.
-`/mcp`, `/status`, `/usage`, `/ps`, `/stop`, `/hooks`, `/plugins`, `/memories [on|off]`, `/fast on|off`, and `/debug-config`
+Bare `/fast` opens a picker to enable or disable fast processing. `/fast on` and `/fast off` apply the setting directly.
+
+`/mcp`, `/status`, `/usage`, `/ps`, `/stop`, `/hooks`, `/plugins`, `/memories [on|off]`, `/fast [on|off]`, and `/debug-config`
 use Codex status and settings APIs. Hooks and plugins currently support inspection only. `/permissions` opens Sudal's permission selector.
 `/usage` displays usage windows, reset times, and credits as cards. `/mcp` shows server connection and authentication states with expandable tool catalogs and server/tool search. Both views support refresh and retain the last successful result if a refresh fails.
 `/status` shows session details; `/ps` lists commands, CPU, and memory; `/hooks` and `/plugins` provide searchable configuration lists. `/memories` shows the summary text, while memory toggles, `/fast`, and `/stop` show completion messages without a refresh button that repeats the operation. `/debug-config` offers folded, copyable diagnostics with sensitive values hidden. `/diff` and `/resume` also explain empty results.

@@ -3,6 +3,7 @@ import { usePaneFocusRef } from "../pane-focus";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Provider } from "@shared/ipc";
+import { userErrorMessage } from "@shared/error-message";
 import { modelOptions, useModels } from "../models";
 import { Icon } from "./Icon";
 import { Modal } from "./Modal";
@@ -53,7 +54,7 @@ export function ModelPickerModal({
       await onPick(model);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(userErrorMessage(e));
     } finally {
       setBusy(false);
     }

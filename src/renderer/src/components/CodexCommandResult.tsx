@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { codexMcpServers, codexResultErrorMessage, codexUsageGroups, type CodexMcpServer, type CodexUsageWindow, type FormattedCodexCommand } from "@shared/codex-command-results";
+import { codexMcpServers, codexUsageGroups, type CodexMcpServer, type CodexUsageWindow, type FormattedCodexCommand } from "@shared/codex-command-results";
+import { userErrorMessage } from "@shared/error-message";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
 import { Icon } from "./Icon";
 import { CodexInfoResult } from "./CodexInfoResult";
@@ -19,7 +20,7 @@ export function CodexCommandResult({ command, argument = "", initialData, onRefr
     const id = ++request.current;
     setLoading(true); setError(null);
     try { const next = await onRefresh(); if (request.current === id) setData(next); }
-    catch (e) { if (request.current === id) setError(codexResultErrorMessage(e)); }
+    catch (e) { if (request.current === id) setError(userErrorMessage(e)); }
     finally { if (request.current === id) setLoading(false); }
   };
   return <section data-codex-result={command} aria-busy={loading}>

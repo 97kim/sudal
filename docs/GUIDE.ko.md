@@ -71,7 +71,9 @@ Codex는 기본 App Server 연결에서 다음 명령을 지원한다. `/plan`�
 `/plan`과 `/goal` 제어 명령 자체는 대화 메시지로 전송하지 않는다.
 
 `/compact`는 같은 Codex 스레드에서 압축하고, `/review [검토 지시]`는 Codex의 리뷰 API를 사용한다.
-`/mcp`, `/status`, `/usage`, `/ps`, `/stop`, `/hooks`, `/plugins`, `/memories [on|off]`, `/fast on|off`, `/debug-config`는
+`/fast`만 입력하면 빠른 처리 켜기·끄기 선택창을 연다. `/fast on`과 `/fast off`는 선택창 없이 바로 적용한다.
+
+`/mcp`, `/status`, `/usage`, `/ps`, `/stop`, `/hooks`, `/plugins`, `/memories [on|off]`, `/fast [on|off]`, `/debug-config`는
 Codex의 상태 조회·설정 기능에 연결한다. 훅·플러그인은 조회만 지원한다. `/permissions`는 Sudal의 실행 권한 선택창을 연다.
 `/usage`는 구간별 사용률·초기화 시각·크레딧을 카드로 표시한다. `/mcp`는 서버 연결·인증 상태와 펼쳐 보는 도구 목록을 제공하며 서버·도구를 검색할 수 있다. 두 화면에서 새로고침할 수 있고, 조회에 실패하면 이전 결과를 유지하며 오류를 표시한다.
 `/status`는 세션 정보, `/ps`는 명령·CPU·메모리 목록, `/hooks`와 `/plugins`는 검색 가능한 설정 목록을 제공한다. `/memories`는 요약 본문을 표시하고, 메모리 켜기/끄기·`/fast`·`/stop`은 변경 완료를 안내한다. 변경 결과에는 같은 작업을 반복하는 새로고침 버튼을 두지 않는다. `/debug-config`는 민감 값을 가린 진단 데이터를 접어서 표시하며 복사할 수 있다. `/diff`와 `/resume`은 목록이 비었을 때도 안내한다.

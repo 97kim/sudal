@@ -66,11 +66,6 @@ export function codexMemory(value: unknown) {
   return { available: "summary" in raw, summary: string(raw.summary), mode: raw.mode === "enabled" || raw.mode === "disabled" ? raw.mode : null };
 }
 
-/** Electron 통신 경로 대신 사용자가 판단할 수 있는 실제 오류 내용만 표시한다. */
-export function codexResultErrorMessage(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+':\s*/, "").replace(/^Error:\s*/, "");
-}
-
 export interface CodexUsageWindow {
   kind: "primary" | "secondary";
   usedPercent: number;
