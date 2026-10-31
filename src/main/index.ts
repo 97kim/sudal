@@ -1,5 +1,8 @@
+import { HarnessService } from "./harness";
+import type { HarnessAction } from "@shared/harness";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { isWithin } from "./path-within";
+import { sameCwdOrNull } from "@shared/any-path";
 import { existsSync, rmSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync } from "node:fs";
 import { createConnection } from "node:net";
 import { execFile } from "node:child_process";
@@ -73,12 +76,16 @@ import { BackgroundJobWatcher } from "./background-jobs";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import { BackgroundTaskRegistry } from "./bg-tasks";
 import { VerifyRunner, suggestForCwd } from "./verify";
+import { VerificationFeedbackRunner } from "./verification-feedback";
+import { VerificationFeedbackStore } from "./verification-feedback-store";
+import { verificationRevision } from "./verification-revision";
+import type { FeedbackStartOptions } from "@shared/verification-feedback";
 import { invalidateModels, listModels } from "./models";
 import { OrchError, Orchestrator, workerSnapshotFrom } from "./orchestration";
 import { runSettled, runSummary } from "@shared/orchestration";
 import { parseVerifyCommands } from "@shared/verify";
 import { FANOUT_PROMPT_EXCERPT, FANOUT_SUMMARY_EXCERPT, allSettled, changeStats, excerpt, fanoutTabTitle, validateFanoutRequest, variantLabel } from "@shared/fanout";
-import type { FanoutEvent, FanoutVariant } from "@shared/chat-events";
+import type { FanoutEvent, FanoutVariant, VerifyEvent } from "@shared/chat-events";
 import { ControlServer, controlPipeName } from "./control-server";
 import { writeFileView, listDirectory, locateFiles, readFileView, createPath, renamePath, resolveDeletable, repoRoot } from "./files";
 import { gitChanges, gitCommit, gitDiffFor, gitInfo, gitRevert } from "./git";
@@ -904,6 +911,8 @@ const pausedBrowserAgents = new Set<string>();
 const previewServer = new PreviewServer();
 /** 검증 실행기 — 결과는 verify 이벤트로 탭 기록에 남는다(sessions 가 준비된 뒤 note 로 이어진다). */
 const verifyRunner = new VerifyRunner((tabId, event) => sessions?.note(tabId, event));
+let feedbackRunner: VerificationFeedbackRunner | undefined;
+let harness: HarnessService | undefined;
 /** 오케스트레이션(Run/Task/Dispatch). registerIpc 에서 세션·워크스페이스가 준비된 뒤 만든다. */
 let orchestrator: Orchestrator | null = null;
 /** 완료 알림을 이미 보낸 Run. */
@@ -954,9 +963,9 @@ async function startControlServer() {
       },
       events: (tabId) => sessions.events(tabId),
       send: (tabId, text) => handleChatSend(tabId, { text }),
-      abort: (tabId) => void sessions.abort(tabId),
+      abort: (tabId) => { if (feedbackRunner?.active(tabId)) void feedbackRunner.stop(tabId); else sessions.abort(tabId); },
       verify: (tabId, commands) => startVerify(tabId, commands),
-      verifyAbort: (tabId) => verifyRunner.abort(tabId),
+      verifyAbort: (tabId) => { if (feedbackRunner?.active(tabId)) { void feedbackRunner.stop(tabId); return true; } return verifyRunner.abort(tabId); },
       fanout: (tabId, req) => startFanout(tabId, req),
       orchestrator: () => orchestrator!,
       approveRoot: (path) => approveRoot(path),
@@ -1106,10 +1115,12 @@ async function startVerify(tabId: string, commands?: string[]): Promise<VerifySt
   const cwd = sessions.snapshot(tabId).cwd;
   if (!cwd) return { ok: false, error: mt("main.error.cwdRequired") };
   if (!existsSync(cwd)) return { ok: false, error: mt("main.verify.cwdMissing", { cwd }) };
+  if (feedbackRunner?.activeCwd(cwd)) return { ok: false, error: mt("chat.feedback.errors.busy") };
   const ws = workspaces.state().model.workspaces.find((w) => w.id === tab.workspaceId);
   const list = commands && commands.length > 0 ? commands : (ws?.verifyCommands ?? []);
   if (list.length === 0) return { ok: false, error: mt("main.verify.noCommands") };
   const env = await cliDiscovery().buildEnv();
+  if (feedbackRunner?.activeCwd(cwd)) return { ok: false, error: mt("chat.feedback.errors.busy") };
   return verifyRunner.start({ tabId, cwd, commands: list, env });
 }
 
@@ -1745,9 +1756,10 @@ function bootstrap() {
   mobilePairing = new MobilePairing(join(app.getPath("userData"), "mobile-devices.json"));
   initFolderTrust(join(app.getPath("userData"), "trusted-folders.json"));
   adoptLegacyInstall();
-  workspaces = new WorkspaceService(store, (state: WorkspaceStateDto) =>
-    sendAll(IPC.wsChanged, state),
-  );
+  workspaces = new WorkspaceService(store, (state: WorkspaceStateDto) => {
+    sendAll(IPC.wsChanged, state);
+    feedbackRunner?.reconcile();
+  });
   slashCommands = new SlashCommandCache(
     join(app.getPath("userData"), "slash-commands.json"),
     (cwd) => sendAll(IPC.chatCommandsChanged, cwd),
@@ -1808,8 +1820,23 @@ function bootstrap() {
     viewed: (tabId) => attention.viewed(tabId),
     forget: (tabId) => attention.forget(tabId),
   };
+  harness = new HarnessService(join(app.getPath("userData"), "harness"), (tabId, project) => {
+    const cwd = workspaces.resolveConfig(tabId)?.cwd;
+    if (!workspaces.tab(tabId)?.open || !cwd) return false;
+    try { return harness!.project(cwd) === project; } catch { return false; }
+  });
   sessions = new SessionManager({
+    taskContext: (tabId, cwd) => harness?.context(cwd, tabId) ?? "",
     emit(tabId, event) {
+      feedbackRunner?.onEvent(tabId, event);
+      const harnessCwd = sessions.snapshot(tabId).cwd;
+      if (harnessCwd && harness) {
+        try { harness.proposal(harnessCwd, tabId, event); } catch { /* diagnostics must not break a provider stream */ }
+        if (event.type === "verify" && event.status !== "running" && !event.partial)
+          void harness.record(event.runId, "command", event.status === "passed" ? "passed" : event.status === "failed" ? "failed" : "unconfirmed", event.runId).catch(() => {});
+        if (event.type === "review" && event.status !== "requested")
+          void harness.record(event.reviewTabId, "review", event.status === "failed" ? "failed" : "unconfirmed", event.reviewTabId).catch(() => {});
+      }
       const sequence = (chatSequences.get(tabId) ?? 0) + 1;
       chatSequences.set(tabId, sequence);
       sendAll(IPC.chatEvent, { tabId, event, sequence } satisfies ChatEventEnvelope);
@@ -2154,6 +2181,9 @@ async function handleChatSend(
   tabId: string,
   payload: ChatSendDto,
 ): Promise<ChatSendResult> {
+  await feedbackRunner?.stop(tabId);
+  const feedbackCwd = workspaces.tab(tabId) ? sessions.snapshot(tabId).cwd : null;
+  if (feedbackCwd) await feedbackRunner?.stopForCwd(feedbackCwd);
   const text = (payload?.text ?? "").trim();
   if (sessions.snapshot(tabId).provider === "codex" && isCodexSlashCommand(text)) return { ok: false, error: mt("session.msg.codexControl.unsupported", { command: text.split(/\s/)[0] }) };
   if (sessions.snapshot(tabId).provider === "agy" && payload?.images?.length)
@@ -2205,6 +2235,45 @@ async function pickDirectoryRaw(
 }
 
 function registerIpc() {
+  ipcMain.handle(IPC.harness, async (_event, tabId: string, action: HarnessAction) => {
+    if (typeof tabId !== "string" || !workspaces.tab(tabId)?.open || !action || typeof action !== "object") throw new Error("Invalid harness request");
+    const cwd = sessions.snapshot(tabId).cwd;
+    if (!cwd || !harness) throw new Error("Project directory is required");
+    if (action.type === "snapshot") return harness.snapshot(cwd, tabId);
+    if (!await isFolderTrusted(cwd)) throw new Error("Project must be trusted before changing harness settings");
+    if (sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+    if (action.type === "enable" && !action.enabled) {
+      for (const other of workspaces.state().model.tabs) {
+        const path = workspaces.resolveConfig(other.id)?.cwd;
+        if (path && sameCwdOrNull(path, cwd) && harness.ownsRepair(other.id)) await feedbackRunner?.stop(other.id);
+      }
+    }
+    if (action.type === "status" && action.status !== "active" && harness.ownsRepair(tabId)) await feedbackRunner?.stop(tabId);
+    if (action.type === "verify" || action.type === "review") {
+      // Bind before dispatch; the runner can emit a final event before its start promise resolves.
+      const key = `harness-pending-${randomUUID()}`;
+      await harness.bind(cwd, tabId, action.taskId, action.criterionIds, key);
+      if (sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+      if (action.type === "verify" && action.autoRepair) {
+        if (!feedbackRunner) throw new Error("Verification is unavailable");
+        if (feedbackRunner.active(tabId)) { harness.discard(key); throw new Error(mt("chat.feedback.errors.busy")); }
+        harness.ownRepair(tabId, true);
+        const result = await feedbackRunner.start(tabId, { commands: action.commands, maxAttempts: 2 });
+        if (!result.ok) { harness.ownRepair(tabId, false); harness.discard(key); throw new Error(result.error); }
+        await harness.rekey(key, result.id);
+      } else if (action.type === "verify") {
+        const result = await startVerify(tabId, action.commands);
+        if (!result.ok) { harness.discard(key); throw new Error(result.error); }
+        await harness.rekey(key, result.runId);
+      } else {
+        const result = await startCrossReview(tabId);
+        if (!result.ok) { harness.discard(key); throw new Error(result.error); }
+        await harness.rekey(key, result.reviewTabId);
+      }
+      return harness.snapshot(cwd, tabId);
+    }
+    return harness.mutate(cwd, tabId, action);
+  });
   ipcMain.on(IPC.controlOpenReady, (event) => {
     const win = liveMainWindow();
     if (!win || event.sender !== win.webContents) return;
@@ -2473,6 +2542,70 @@ function registerIpc() {
   ipcMain.handle(IPC.chatSend, (_e, tabId: string, payload: ChatSendDto) =>
     handleChatSend(tabId, payload),
   );
+  const feedbackStore = new VerificationFeedbackStore(join(app.getPath("userData"), "verification-feedback"));
+  feedbackRunner = new VerificationFeedbackRunner({
+    context(tabId) {
+      const tab = workspaces.tab(tabId);
+      if (!tab?.open) return { cwd: "", provider: "", busy: false, available: false };
+      const snapshot = sessions.snapshot(tabId);
+      const cwd = snapshot.cwd ?? "";
+      const ownBusy = sessions.hasActiveWork(tabId);
+      const othersBusy = workspaces.state().model.tabs.some(other => other.open && other.id !== tabId && sessions.hasActiveWork(other.id) && sameCwdOrNull(workspaces.resolveConfig(other.id)?.cwd ?? null, cwd));
+      return { cwd, provider: snapshot.provider,
+        available: snapshot.controller === "app" && !!cwd,
+        ownBusy, busy: ownBusy || othersBusy || (!!cwd && verifyRunner.runningIn(cwd)),
+      };
+    },
+    async revision(cwd, signal) {
+      try { return await verificationRevision(cwd, signal); }
+      catch (error) { throw new Error(`${mt("chat.feedback.errors.revision")}\n${error instanceof Error ? error.message : String(error)}`); }
+    },
+    async verify(tabId, cwd, commands, signal) {
+      let finish!: (event: VerifyEvent) => void;
+      const done = new Promise<VerifyEvent>(resolve => { finish = resolve; });
+      const runner = new VerifyRunner((id, event) => {
+        if (workspaces.tab(id)?.open) sessions.note(id, event);
+        if (!event.partial && event.status !== "running") finish(event);
+      });
+      const abort = () => { runner.abort(tabId); };
+      signal.addEventListener("abort", abort);
+      try {
+        const env = await cliDiscovery().buildEnv();
+        if (signal.aborted) throw new Error(mt("chat.feedback.reasons.interrupted"));
+        const started = await runner.start({ tabId, cwd, commands, env });
+        if (!started.ok) throw new Error(started.error);
+        if (signal.aborted) abort();
+        return await done;
+      } finally { signal.removeEventListener("abort", abort); runner.dispose(); }
+    },
+    async send(tabId, prompt, signal) {
+      if (signal.aborted || !workspaces.tab(tabId)?.open) return { ok: false, error: mt("main.error.tabNotFound") };
+      const cwd = sessions.snapshot(tabId).cwd;
+      if (!cwd || !await isFolderTrusted(cwd) || signal.aborted || !workspaces.tab(tabId)?.open || sessions.snapshot(tabId).cwd !== cwd) return { ok: false, error: mt("chat.feedback.errors.context") };
+      if (sessions.hasActiveWork(tabId)) return { ok: false, error: mt("chat.feedback.errors.busy") };
+      return sessions.send(tabId, prompt, [], { type: "notice", ts: Date.now(), key: `verification-feedback-${feedbackRunner?.snapshot(tabId)?.id}`, level: "notice", ...appMsg("chat.msg.verificationFeedbackSent") });
+    },
+    abortFix: tabId => sessions.abort(tabId),
+    emit: state => {
+      sendAll(IPC.feedbackChanged, state);
+      if (harness?.ownsRepair(state.tabId) && ["passed", "failed", "stopped", "stale"].includes(state.phase)) {
+        harness.ownRepair(state.tabId, false);
+        void harness.record(state.id, "command", state.phase === "passed" ? "passed" : state.phase === "failed" ? "failed" : "unconfirmed", state.verification?.runId ?? state.id, state.revision).catch(() => {});
+      }
+    },
+    load: tabId => feedbackStore.load(tabId),
+    save: state => feedbackStore.save(state),
+    error: key => mt(({ busy: "chat.feedback.errors.busy", options: "chat.feedback.errors.options", context: "chat.feedback.errors.context" } as const)[key]),
+  });
+  ipcMain.handle(IPC.feedbackStart, async (_e, tabId: unknown, options: FeedbackStartOptions) => {
+    if (typeof tabId !== "string") return { ok: false, error: mt("main.error.badArgs") };
+    if (!workspaces.tab(tabId)?.open) return { ok: false, error: mt("main.error.tabNotFound") };
+    const cwd = sessions.snapshot(tabId).cwd;
+    if (!cwd || !await isFolderTrusted(cwd) || !workspaces.tab(tabId)?.open || sessions.snapshot(tabId).cwd !== cwd) return { ok: false, error: mt("chat.feedback.errors.context") };
+    return feedbackRunner!.start(tabId, options);
+  });
+  ipcMain.handle(IPC.feedbackStop, (_e, tabId: unknown) => typeof tabId === "string" ? feedbackRunner!.stop(tabId) : undefined);
+  ipcMain.handle(IPC.feedbackSnapshot, (_e, tabId: unknown) => typeof tabId === "string" ? feedbackRunner!.refresh(tabId) : null);
   ipcMain.handle(IPC.chatVerify, (_e, tabId: string, opts?: { commands?: unknown }) => {
     if (typeof tabId !== "string") return { ok: false, error: mt("main.error.tabIdMissing") } satisfies VerifyStartResult;
     // commands 를 줬는데 모양이 틀리면(문자열·빈 배열·잘못된 원소) 저장된 명령으로 대체하지 않고 거절한다
@@ -2484,7 +2617,11 @@ function registerIpc() {
     }
     return startVerify(tabId);
   });
-  ipcMain.handle(IPC.chatVerifyAbort, (_e, tabId: string) => (typeof tabId === "string" ? verifyRunner.abort(tabId) : false));
+  ipcMain.handle(IPC.chatVerifyAbort, async (_e, tabId: string) => {
+    if (typeof tabId !== "string") return false;
+    if (feedbackRunner?.active(tabId)) { await feedbackRunner.stop(tabId); return true; }
+    return verifyRunner.abort(tabId);
+  });
   ipcMain.handle(IPC.chatVerifySuggest, (_e, tabId: string) => (typeof tabId === "string" ? verifySuggestions(tabId) : []));
   orchestrator = new Orchestrator({
     dir: join(app.getPath("userData"), "orchestration"),
@@ -2634,13 +2771,14 @@ function registerIpc() {
     if (typeof tabId !== "string") throw new Error(mt("main.error.badArgs"));
     return startCrossReview(tabId, opts);
   });
-  ipcMain.handle(IPC.chatAttachTerminal, (_e, tabId: string) =>
-    sessions.attachTerminal(tabId),
-  );
+  ipcMain.handle(IPC.chatAttachTerminal, async (_e, tabId: string) => {
+    await feedbackRunner?.stop(tabId);
+    return sessions.attachTerminal(tabId);
+  });
   ipcMain.handle(IPC.chatDetachTerminal, (_e, tabId: string) =>
     sessions.detachTerminal(tabId),
   );
-  ipcMain.handle(IPC.chatAbort, (_e, tabId: string) => sessions.abort(tabId));
+  ipcMain.handle(IPC.chatAbort, async (_e, tabId: string) => { const owned = feedbackRunner?.active(tabId) ?? false; await feedbackRunner?.stop(tabId); return sessions.abort(tabId) || owned; });
   ipcMain.handle(IPC.chatLimitRetry, (_e, tabId: string) => sessions.limitRetryNow(tabId));
   ipcMain.handle(IPC.chatLimitCancel, (_e, tabId: string) => sessions.limitCancel(tabId));
   ipcMain.handle(IPC.chatQueueRemove, (_e, tabId: string, id: string) => {
@@ -2667,8 +2805,9 @@ function registerIpc() {
   );
   ipcMain.handle(
     IPC.chatConfigure,
-    (_e, tabId: string, patch: Partial<SessionConfigDto>) => {
+    async (_e, tabId: string, patch: Partial<SessionConfigDto>) => {
       if (typeof tabId !== "string" || !patch || typeof patch !== "object") throw new Error(mt("main.error.badArgs"));
+      await feedbackRunner?.stop(tabId);
       const clean: Partial<SessionConfigDto> = {};
       if ("cwd" in patch) {
         // 탭 cwd 는 파일 조작·git·언어 서버의 경계가 된다 — 사용자가 디렉토리 선택 창으로 고른 루트 안만 받는다.
@@ -2702,9 +2841,15 @@ function registerIpc() {
     const sequence = chatSequences.get(tabId) ?? 0;
     return { ...await sessions.history(tabId, before), sequence };
   });
-  ipcMain.handle(IPC.chatClear, (_e, tabId: string) => sessions.clear(tabId));
+  ipcMain.handle(IPC.chatClear, async (_e, tabId: string) => { await feedbackRunner?.stop(tabId); return sessions.clear(tabId); });
   ipcMain.handle(IPC.chatCodexControl, async (event, tabId: unknown, command: unknown, arg: unknown) => {
     if (typeof tabId !== "string" || !workspaces.state().model.tabs.some((tab) => tab.id === tabId) || typeof command !== "string" || !(CODEX_CONTROL_COMMANDS as readonly string[]).includes(command) || typeof arg !== "string" || arg.length > 20_000) throw new Error(mt("main.error.badArgs"));
+    const readOnly = ["status", "usage", "ps", "mcp", "hooks", "plugins", "debug-config"].includes(command) || (command === "goal" && (!arg.trim() || arg.trim() === "status")) || (command === "memories" && !arg.trim());
+    if (!readOnly) {
+      await feedbackRunner?.stop(tabId);
+      const cwd = sessions.snapshot(tabId).cwd;
+      if (cwd) await feedbackRunner?.stopForCwd(cwd);
+    }
     if (command === "cd") {
       const snapshot = sessions.snapshot(tabId);
       if (snapshot.provider !== "codex" || snapshot.controller !== "app" || sessions.isBusy(tabId)) throw new Error(mt("session.msg.codexControl.busy"));
@@ -3092,7 +3237,8 @@ function registerIpc() {
     await cliDefaultsReady;
     return workspaces.createTab(workspaceId);
   });
-  ipcMain.handle(IPC.tabClose, (_e, tabId: string) => {
+  ipcMain.handle(IPC.tabClose, async (_e, tabId: string) => {
+    await feedbackRunner?.stop(tabId);
     terminals.closePrefix(`${tabId}:`);
     return workspaces.closeTab(tabId);
   });
@@ -3168,6 +3314,7 @@ function registerIpc() {
 
   ipcMain.handle(IPC.tabDelete, async (_e, tabId: string) => {
     if (typeof tabId !== "string") return { ok: false, error: mt("main.error.badTabId") };
+    await feedbackRunner?.stop(tabId);
     // 격리 세션 탭: 먼저 턴과 터미널을 멈춘 뒤 worktree 를 정리한다(실행 중인 CLI 발밑에서 디렉토리가 사라지지 않게).
     // 커밋되지 않은 변경이 있으면 worktree 와 탭을 그대로 두고 알린다(데이터 보호).
     const wt = workspaces.tab(tabId)?.worktree;
@@ -3183,6 +3330,9 @@ function registerIpc() {
     }
     terminals.closePrefix(`${tabId}:`);
     workspaces.deleteTab(tabId);
+    feedbackRunner?.forget(tabId);
+    harness?.detach(tabId);
+    feedbackStore.remove(tabId);
     return { ok: true };
   });
   ipcMain.on(IPC.tabSetVisible, (_e, tabIds: unknown) => {
@@ -3603,6 +3753,7 @@ app.on("before-quit", (e) => {
     return;
   }
   agyQuotaRefresh.dispose();
+  feedbackRunner?.dispose();
   orchestrator?.stop();
   verifyRunner.dispose();
   previewServer.close();

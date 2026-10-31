@@ -1,3 +1,4 @@
+import { HarnessPanel } from "../components/HarnessPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
@@ -55,6 +56,9 @@ import { ProviderSwitchModal } from "../components/ProviderSwitchModal";
 import { ModelPickerModal } from "../components/ModelPickerModal";
 import { headerModelLabel } from "@shared/models";
 import { VerifyPopover } from "../components/VerifyPopover";
+import { VerificationFeedbackPanel } from "../components/VerificationFeedbackPanel";
+import { feedbackActive, type VerificationFeedback } from "@shared/verification-feedback";
+import { kvGet, kvSet } from "../kv-store";
 import { FanoutModal } from "../components/FanoutModal";
 import { FanoutCompare } from "../components/FanoutCompare";
 import { OrchestrationPanel } from "../components/OrchestrationPanel";
@@ -246,12 +250,46 @@ export function ChatView({
   };
   // 검증: 워크스페이스에 저장한 명령을 이 탭의 cwd 에서 돌리고 결과 카드를 이 탭에 남긴다(main 의 VerifyRunner)
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [feedback, setFeedback] = useState<VerificationFeedback | null>(null);
+  const [feedbackOptions, setFeedbackOptions] = useState(() => {
+    try { const saved = JSON.parse(kvGet(`feedback.options.${workspace.id}`) ?? "{}"); return { enabled: saved.enabled === true, maxAttempts: [1, 2, 3].includes(saved.maxAttempts) ? saved.maxAttempts as number : 2 }; }
+    catch { return { enabled: false, maxAttempts: 2 }; }
+  });
+  const changeFeedbackOptions = (enabled: boolean, maxAttempts: number) => {
+    setFeedbackOptions({ enabled, maxAttempts });
+    kvSet(`feedback.options.${workspace.id}`, JSON.stringify({ enabled, maxAttempts }));
+  };
+  useEffect(() => {
+    let alive = true, changed = false;
+    setFeedback(null);
+    const off = window.sudal.chat.onFeedback(next => {
+      if (next.tabId === tabId && alive) { changed = true; setFeedback(next); }
+    });
+    void window.sudal.chat.feedbackSnapshot(tabId).then(next => { if (alive && !changed) setFeedback(next); }).catch(() => {});
+    return () => { alive = false; off(); };
+  }, [tabId]);
+  useEffect(() => {
+    if (feedback?.phase !== "passed" || !focused) return;
+    let alive = true, pending = false;
+    const timer = setInterval(() => {
+      if (pending || document.visibilityState !== "visible" || !document.hasFocus()) return;
+      pending = true;
+      void window.sudal.chat.feedbackSnapshot(tabId).then(next => {
+        if (alive && next) setFeedback(previous => previous?.id === next.id && previous.updatedAt <= next.updatedAt ? next : previous);
+      }).catch(() => {}).finally(() => { pending = false; });
+    }, 10000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [tabId, focused, feedback?.phase]);
+  const stopFeedback = () => { void window.sudal.chat.feedbackStop(tabId).catch(error => setAttachError(userErrorMessage(error))); };
+  const feedbackRunning = feedbackActive(feedback);
   const verifyRunning = state.blocks.some((b) => b.kind === "verify" && b.status === "running");
   const savedVerify = workspace.verifyCommands ?? [];
   const runVerify = async (commands?: string[]) => {
     setAttachError(null);
     try {
-      const r = await window.sudal.chat.verify(tabId, commands ? { commands } : undefined);
+      const r = feedbackOptions.enabled
+        ? await window.sudal.chat.feedbackStart(tabId, { commands: commands ?? savedVerify, maxAttempts: feedbackOptions.maxAttempts })
+        : await window.sudal.chat.verify(tabId, commands ? { commands } : undefined);
       if (!r.ok) setAttachError(r.error);
     } catch (e) {
       setAttachError(e instanceof Error ? e.message : String(e));
@@ -259,7 +297,7 @@ export function ChatView({
   };
   const saveVerify = (commands: string[]) => void window.sudal.workspaces.update(workspace.id, { verifyCommands: commands });
   const onVerifyClick = () => {
-    if (verifyRunning) return;
+    if (verifyRunning || feedbackRunning) return;
     if (savedVerify.length > 0) void runVerify();
     else setVerifyOpen(true);
   };
@@ -777,7 +815,7 @@ export function ChatView({
           <div className="relative flex shrink-0 items-stretch" ref={verifyAnchor}>
             <button
               onClick={onVerifyClick}
-              disabled={!cwd || verifyRunning}
+              disabled={!cwd || verifyRunning || feedbackRunning}
               className={`no-drag flex min-h-[31px] items-center gap-2 rounded-l-md border border-line bg-panel py-1.5 hover:bg-panel-2 disabled:opacity-40 px-2 @min-[800px]/chathead:px-3`}
               title={savedVerify.length > 0 ? t("chat.header.runVerifyHint", { commands: savedVerify.join(" → ") }) : t("chat.header.setVerifyHint")}
               data-verify={verifyRunning ? "running" : savedVerify.length > 0 ? "ready" : "empty"}
@@ -795,7 +833,7 @@ export function ChatView({
             >
               <Icon name="edit" size={10} />
             </button>
-            {verifyOpen && <VerifyPopover tabId={tabId} anchor={verifyAnchor.current} toggle={verifyToggle.current} saved={savedVerify} onSave={saveVerify} onRun={(cmds) => void runVerify(cmds)} onClose={closeVerify} />}
+            {verifyOpen && <VerifyPopover tabId={tabId} anchor={verifyAnchor.current} toggle={verifyToggle.current} saved={savedVerify} onSave={saveVerify} onRun={(cmds) => void runVerify(cmds)} onClose={closeVerify} feedback={{ ...feedbackOptions, onChange: changeFeedbackOptions }} />}
           </div>
           <div className="relative flex shrink-0" ref={terminalAnchor}>
           <button
@@ -957,6 +995,8 @@ export function ChatView({
               }
             />}
 
+            <HarnessPanel key={`${tabId}:${config?.cwd ?? ""}`} tabId={tabId} cwd={config?.cwd ?? ""} />
+            {feedback && <VerificationFeedbackPanel state={feedback} onStop={stopFeedback} />}
             <div className="min-h-0 flex-1">
               <MessageList
                 tabId={tabId}

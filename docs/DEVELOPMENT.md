@@ -149,6 +149,11 @@ CLI 를 붙일 때는 그 값을 준다(`SUDAL_USERDATA=$PWD/userdata`). 스크�
 
 ## 고치기 전에 알아 둘 것
 
+자동 검증 피드백의 실행·중단·반복 제한은 `src/main/verification-feedback.ts`, Git 변경본 지문은 `verification-revision.ts`에 있다.
+`e2e/check-verification-feedback.cjs`는 별도 userData·Git 프로젝트와 모의 Codex App Server로 실제 명령 실패 → 진단 전달 → 수정 →
+재검증·중단 버튼까지 검사한다. `yarn build` 후 `node e2e/check-verification-feedback.cjs`로 실행하며 실계정 모델을 호출하지 않는다.
+추가 CLI는 테스트 인스턴스에서 비활성화하고, 스크린샷은 `.sudal/verification-feedback-ui.png`에 남긴다.
+
 여기서 실제로 데인 것들이다. 겉보기에 멀쩡한 코드를 건드릴 때 이유를 모르면 되돌리기 쉬운 자리라 적어 둔다.
 
 - **저장소는 ESM 이고 preload 만 CJS 다.** 두 SDK 가 ESM 전용이라 `package.json` 에 `"type": "module"` 을 두고 main 을 ESM 으로 번들한다.
@@ -182,3 +187,10 @@ src/main/       Electron main. cli-discovery / claude-adapter + claude-events / 
 src/preload/    contextBridge → window.sudal
 src/renderer/   React + Tailwind. views/ChatView, views/SettingsView, components/*
 ```
+# Harness implementation
+
+`src/main/harness.ts` owns project configuration, local tasks, suggestions and evidence associations. Shared task criteria keep completion separate from verification. The session manager appends the current task context at execution time, preserving user history and skipping native/slash commands. Queued-turn retries reuse the original prompt before applying fresh context.
+
+Project configuration uses `sudal.harness.json` with schema version 1. The IPC harness endpoint derives the directory from the real tab, requires project trust for mutation, and never accepts a renderer-supplied path. Suggestions use optional `sudal-task` and `sudal-harness` fenced JSON; malformed output is ignored without altering chat history. Valid suggestions require explicit acceptance.
+
+`e2e/check-harness.cjs` runs a separate Electron profile, real Git project and verification command with a fake Codex App Server. Run after `yarn build`; it checks UI task creation, evidence ownership, context injection, unchanged user history, stale revisions and restored task history without accessing a real account.

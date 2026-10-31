@@ -150,6 +150,7 @@ const api: SudalApi = {
     },
   },
   chat: {
+    harness: (tabId, action) => ipcRenderer.invoke(IPC.harness, tabId, action),
     send: (tabId: string, payload: ChatSendDto) =>
       ipcRenderer.invoke(IPC.chatSend, tabId, payload),
     abort: (tabId: string) => ipcRenderer.invoke(IPC.chatAbort, tabId),
@@ -165,6 +166,14 @@ const api: SudalApi = {
     verify: (tabId: string, opts?: { commands?: string[] }) => ipcRenderer.invoke(IPC.chatVerify, tabId, opts),
     verifyAbort: (tabId: string) => ipcRenderer.invoke(IPC.chatVerifyAbort, tabId),
     verifySuggest: (tabId: string) => ipcRenderer.invoke(IPC.chatVerifySuggest, tabId),
+    feedbackStart: (tabId, options) => ipcRenderer.invoke(IPC.feedbackStart, tabId, options),
+    feedbackStop: (tabId) => ipcRenderer.invoke(IPC.feedbackStop, tabId),
+    feedbackSnapshot: (tabId) => ipcRenderer.invoke(IPC.feedbackSnapshot, tabId),
+    onFeedback: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import("@shared/verification-feedback").VerificationFeedback) => listener(state);
+      ipcRenderer.on(IPC.feedbackChanged, handler);
+      return () => { ipcRenderer.removeListener(IPC.feedbackChanged, handler); };
+    },
     fanout: (tabId: string, req: FanoutStartDto) => ipcRenderer.invoke(IPC.chatFanout, tabId, req),
     fanoutCompare: (tabId: string, fanoutId: string) => ipcRenderer.invoke(IPC.chatFanoutCompare, tabId, fanoutId),
     fanoutAdopt: (tabId: string, fanoutId: string, variantTabId: string) => ipcRenderer.invoke(IPC.chatFanoutAdopt, tabId, fanoutId, variantTabId),

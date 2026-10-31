@@ -1,3 +1,4 @@
+import type { HarnessAction, HarnessSnapshot } from "./harness";
 // renderer ↔ main 계약. 양쪽 모두 이 파일만 import 한다 (node/electron 의존성 없음).
 
 import type {
@@ -8,6 +9,7 @@ import type {
 } from "./chat-events";
 import { PERMISSION_POLICIES } from "./chat-events";
 import type { SessionHistoryPage } from "./session-history";
+import type { FeedbackStartOptions, FeedbackStartResult, VerificationFeedback } from "./verification-feedback";
 import type { BackgroundJobDto } from "./background-jobs";
 import type { OtterMood, OtterMotion } from "./otter";
 import type { Run, Schedule } from "./schedules";
@@ -253,6 +255,7 @@ export const IPC = {
   cliCandidates: "cli:candidates",
   cliSetOverride: "cli:set-override",
   cliRefresh: "cli:refresh",
+  harness: "chat:harness",
   chatSend: "chat:send",
   chatAbort: "chat:abort",
   chatPermission: "chat:permission",
@@ -329,6 +332,10 @@ export const IPC = {
   controlInstallStatus: "control:install-status",
   chatCrossReview: "chat:cross-review",
   chatVerify: "chat:verify",
+  feedbackStart: "chat:feedback-start",
+  feedbackStop: "chat:feedback-stop",
+  feedbackSnapshot: "chat:feedback-snapshot",
+  feedbackChanged: "chat:feedback-changed",
   chatVerifyAbort: "chat:verify-abort",
   chatVerifySuggest: "chat:verify-suggest",
   chatFanout: "chat:fanout",
@@ -914,6 +921,7 @@ export interface SudalApi {
     diagnostics(): Promise<CliDiagnosticsDto>;
   };
   chat: {
+    harness(tabId: string, action: HarnessAction): Promise<HarnessSnapshot>;
     send(tabId: string, payload: ChatSendDto): Promise<ChatSendResult>;
     abort(tabId: string): Promise<boolean>;
     answerPermission(
@@ -933,6 +941,10 @@ export interface SudalApi {
     verifyAbort(tabId: string): Promise<boolean>;
     /** 저장한 명령이 없을 때 cwd 의 매니페스트에서 추천하는 명령. */
     verifySuggest(tabId: string): Promise<string[]>;
+    feedbackStart(tabId: string, options: FeedbackStartOptions): Promise<FeedbackStartResult>;
+    feedbackStop(tabId: string): Promise<void>;
+    feedbackSnapshot(tabId: string): Promise<VerificationFeedback | null>;
+    onFeedback(listener: (state: VerificationFeedback) => void): () => void;
     /** 팬아웃: 지시 하나를 격리 세션 N개에 보내고 이 탭에 카드로 남긴다. */
     fanout(tabId: string, req: FanoutStartDto): Promise<FanoutStartResult>;
     fanoutCompare(tabId: string, fanoutId: string): Promise<FanoutCompareDto>;

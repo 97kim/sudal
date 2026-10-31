@@ -46,7 +46,7 @@ test("VerifyRunner: abort 하면 진행 중 명령이 aborted 로 끝나고 나�
   const events: VerifyEvent[] = [];
   const runner = new VerifyRunner((_tab, e) => events.push(e));
   const cwd = mkdtempSync(join(tmpdir(), "verify-"));
-  const r = await runner.start({ tabId: "t1", cwd, commands: ["sleep 30", "echo after"], env: { ...process.env } });
+  const r = await runner.start({ tabId: "t1", cwd, commands: ['node -e "setTimeout(() => {}, 30000)"', "echo after"], env: { ...process.env } });
   assert.ok(r.ok);
   if (!r.ok) return;
   const dup = await runner.start({ tabId: "t1", cwd, commands: ["echo x"], env: { ...process.env } });
