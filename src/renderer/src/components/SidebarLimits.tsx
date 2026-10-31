@@ -130,9 +130,12 @@ export function SidebarLimits({ onOpen }: { onOpen: () => void }) {
           {!!r.limit.groups?.length && (
             <div className="flex flex-col gap-2 pt-0.5">
               {r.limit.groups.map((group) => (
-                <div key={group.label} className="flex flex-col gap-1.5" data-limits-group={group.label}>
-                  <span className="truncate pl-1 text-[10px] font-medium leading-snug text-fg" title={group.label}>{group.label}</span>
-                  <div className="ml-1 flex flex-col gap-1 border-l-2 border-line pl-1">
+                <div key={group.label} className="ml-1 flex flex-col gap-1.5" data-limits-group={group.label}>
+                  <span className="flex min-w-0 items-baseline gap-1 text-[10px] font-normal leading-snug text-fg/95" title={group.label}>
+                    <span className="w-2 shrink-0 text-center text-muted" aria-hidden="true">·</span>
+                    <span className="min-w-0 truncate">{group.label}</span>
+                  </span>
+                  <div className="ml-3 flex flex-col gap-1">
                     {group.windows.map((w) => <MiniBar key={w.windowMinutes} w={w} />)}
                   </div>
                 </div>

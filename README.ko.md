@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong>에이전트가 다른 에이전트에게 일을 맡기고, 결과를 받아 와요.</strong><br/>
-  Claude Code와 Codex를 워크스페이스의 탭으로 띄우는 macOS·Windows 앱이에요.
+  Claude Code·Codex·Antigravity를 워크스페이스의 탭으로 띄우는 macOS·Windows 앱이에요.
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
   <sub>Claude에게 "고친 다음, 수량이 없을 때 처리와 그 테스트는 Codex에게 맡겨 줘"라고만 했어요. Claude가 직접 Codex 탭을 열어 일을 넘기고, 끝나면 결과를 받아 테스트하고 정리해요. (기다리는 구간은 빠르게 감았어요)</sub>
 </p>
 
-Sudal 전용 계정은 필요 없어요. 로그인해 둔 `claude`·`codex` CLI를 앱이 찾아서 쓰니, `CLAUDE.md`·스킬·MCP 서버 같은 설정이 터미널에서 쓸 때와 똑같이 적용돼요.
+Sudal 전용 계정은 필요 없어요. 로그인해 둔 `claude`·`codex`·`agy`(Antigravity) CLI를 앱이 찾아서 기존 로그인과 설정을 사용해요.
 
 ## 에이전트가 직접 일을 맡겨요
 
@@ -80,7 +80,7 @@ sudal tab read --tab 리뷰 --last 3
 
 ### 무엇을 하려는지 먼저 보여 줘요
 
-파일을 바꾸거나 명령을 실행하기 전에 권한 카드로 물어봐요. 읽은 파일, 실행한 명령, 바꾼 코드는 툴 카드로 쌓여서 터미널 출력을 쫓지 않아도 돼요.
+Claude Code·Codex는 파일을 바꾸거나 명령을 실행하기 전에 권한 카드로 물어봐요. 읽은 파일, 실행한 명령, 바꾼 코드는 툴 카드로 쌓여서 터미널 출력을 쫓지 않아도 돼요.
 
 </td>
 <td width="58%"><img src="docs/images/hero.png" alt="Claude가 테스트를 돌리기 전에 명령 실행 권한을 묻는 화면" width="100%" /></td>
@@ -163,13 +163,17 @@ sudal tab read --tab 리뷰 --last 3
 |---|---|
 | Claude Code | 로그인을 마친 `claude` CLI |
 | Codex | 로그인을 마친 `codex` CLI |
+| Antigravity | 로그인을 마친 `agy` CLI |
 
-둘 중 하나만 있어도 쓸 수 있어요. 대화 도중에 에이전트를 바꾸면 지금까지의 대화를 요약해서 넘겨줘요.
+셋 중 하나만 있어도 쓸 수 있어요. 대화 도중에 에이전트를 바꾸면 지금까지의 대화를 요약해서 넘겨줘요.
+
+Antigravity는 채팅·모델 선택과 모델 그룹별 구독 한도·초기화 시각 표시를 지원해요. 이미지 첨부와 같은 대화를 터미널에서 이어가는 기능은 아직 지원하지 않아요. 채팅은 CLI 권한 설정을 따르며, 채팅에서 도구 실행을 승인할 수 없어 추가 승인이 필요한 작업은 자동 거절돼요.
 
 ## 설치
 
-**필요한 것**: Apple Silicon Mac(macOS 13 이상) 또는 64비트 Windows 10·11, 그리고 로그인을 마친 `claude`와 `codex` CLI 중 하나 이상.
+**필요한 것**: Apple Silicon Mac(macOS 13 이상) 또는 64비트 Windows 10·11, 그리고 로그인을 마친 `claude`·`codex`·`agy` CLI 중 하나 이상.
 아직 없다면 [Claude Code 설치](https://code.claude.com/docs/en/setup)나 [Codex CLI 설치](https://developers.openai.com/codex/cli) 안내를 따라 설치하고 로그인해 두세요.
+Antigravity를 쓰려면 `agy` CLI를 설치하고 로그인한 뒤 Sudal을 여세요.
 Windows에서 Claude Code를 쓰려면 [Git for Windows](https://git-scm.com/downloads/win)(Git Bash)도 있어야 해요.
 
 ### macOS
@@ -213,10 +217,10 @@ Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/sudal/relea
 
 1. 사이드바의 **워크스페이스 +** 를 눌러 업무 이름으로 워크스페이스를 만들어요.
 2. 화면 위쪽의 **작업 경로 선택…** 을 눌러 작업할 저장소 폴더를 골라요.
-3. 오른쪽 위에서 **Claude Code** 나 **Codex** 를 골라요.
+3. 오른쪽 위에서 **Claude Code**·**Codex**·**Antigravity** 중 하나를 골라요.
 4. 입력창에 요청을 쓰고 보내요. 예: "테스트가 실패해요. 원인을 찾아서 고쳐 주세요."
 
-처음에는 권한이 "변경 전 물어보기"로 되어 있어서, 파일을 바꾸거나 명령을 실행하기 전에 무엇을 하려는지 보여 주고 물어봐요.
+처음에는 권한이 "변경 전 물어보기"로 되어 있어요. Claude Code·Codex는 파일을 바꾸거나 명령을 실행하기 전에 무엇을 하려는지 보여 주고 물어봐요. Antigravity의 권한 제한은 [지원하는 에이전트](#지원하는-에이전트)를 참고하세요.
 
 ## 그 밖에
 
@@ -228,7 +232,7 @@ Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/sudal/relea
 - **알림**: 권한을 기다리거나 끝난 세션을 사이드바·Dock(Windows는 작업 표시줄) 배지·시스템 알림으로 알려 주고, ⌘⇧↓로 바로 찾아가요.
 - **대화 검색과 내보내기**: ⌘F로 닫은 세션까지 찾고, 대화를 마크다운으로 내보내요.
 - **worktree 정리**: 설정에서 남아 있는 worktree를 크기·커밋 안 한 변경 수와 함께 보고 지워요.
-- **사용량**: 모델·워크스페이스별 사용량과 API 요금 기준 추정 비용, Claude·Codex 구독 한도를 보여 줘요.
+- **사용량**: 모델·워크스페이스별 사용량과 API 요금 기준 추정 비용, Claude·Codex·Antigravity 구독 한도를 보여 줘요. Antigravity는 모델 그룹별 한도와 초기화 시각을 표시해요.
 - **컨텍스트와 한도**: 컨텍스트 윈도가 차기 전에 알려 주고, Claude 사용 한도에 걸리면 풀리는 시각에 다시 시도해요.
 - 다크 모드, 이미지 붙여넣기, 턴이 끝난 뒤에도 도는 백그라운드 작업 표시.
 - **언어**: 화면·메뉴·알림을 한국어와 영어로 쓸 수 있어요. 설정 → 일반 → 언어에서 고르고, 기본은 시스템 언어를 따라가요.
@@ -239,12 +243,12 @@ Homebrew 없이 설치하려면 [릴리즈](https://github.com/97kim/sudal/relea
 
 ### 계정이나 API 키가 필요한가요?
 
-Sudal용 별도 계정은 필요 없어요. 각자 로그인해 둔 `claude`·`codex` CLI를 그대로 쓰고, 요금도 각 서비스의 구독이나 API 요금 그대로예요.
+Sudal용 별도 계정은 필요 없어요. 각자 로그인해 둔 `claude`·`codex`·`agy` CLI를 그대로 쓰고, 요금도 각 서비스의 구독이나 API 요금 그대로예요.
 Sudal은 직접 설치하고 로그인한 CLI를 실행할 뿐이에요. 인증 정보를 수집하거나 저장하거나 중개하지 않고, 각 서비스의 이용 조건·요금·한도가 그대로 적용돼요.
 
 ### 내 코드가 어디로 가나요?
 
-Sudal 자체는 아무 데도 보내지 않아요. 모델과의 통신은 Claude Code·Codex CLI가 평소처럼 해요.
+Sudal 자체는 아무 데도 보내지 않아요. 모델과의 통신은 Claude Code·Codex·Antigravity CLI가 평소처럼 해요.
 
 ### 데이터는 어디에 저장되나요?
 
