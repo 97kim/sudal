@@ -195,6 +195,7 @@ export const chat: DeepPartial<typeof ko> = {
     cancelRetry: "Cancel retry",
   },
   composer: {
+    commandSource: "Provided by {{source}}",
     imageLimit: "You can attach up to {{count}} images.",
     loadingCommands: "Loading command list…",
     loadingMentions: "Loading skills and apps…",
@@ -241,6 +242,7 @@ export const chat: DeepPartial<typeof ko> = {
       tools: "· {{count}} tool calls",
     },
     compacted: "Compacted · {{tokens}} · the conversation above was replaced by a summary",
+    compactedTokensUnknown: "Token count unavailable",
     compactedAuto: "Auto-compacted · {{tokens}} · the conversation above was replaced by a summary",
     loading: "Loading conversation…",
     loadOlder: "Load earlier messages",

@@ -185,13 +185,13 @@ export interface SessionResetEvent extends Base {
 
 /**
  * provider 가 대화를 압축했다(세션은 그대로 이어진다 — session_reset 과 다르다).
- * SDK 의 compact_boundary 를 그대로 옮긴 것이라 압축 전후 토큰 수를 알 수 있다.
+ * SDK의 compact_boundary나 App Server의 contextCompaction을 옮긴다. 제공된 토큰 수만 기록한다.
  */
 export interface CompactedEvent extends Base {
   type: "compacted";
   /** 사용자가 시킨 압축인지(manual), 한도가 차서 자동으로 일어난 것인지(auto). */
   trigger: "manual" | "auto";
-  preTokens: number;
+  preTokens?: number;
   postTokens?: number;
 }
 

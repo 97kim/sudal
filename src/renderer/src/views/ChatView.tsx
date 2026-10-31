@@ -6,7 +6,8 @@ import {
   contextUsage,
   contextWarnLevel,
 } from "@shared/session-state";
-import type { PermissionAnswer, PermissionPolicy } from "@shared/chat-events";
+import { PERMISSION_POLICIES, type PermissionAnswer, type PermissionPolicy } from "@shared/chat-events";
+import { CODEX_CONTROL_COMMANDS, parseGoalAction, type CodexControlCommand } from "@shared/codex-controls";
 import type {
   ChatImageDto,
   CrossReviewStartDto,
@@ -41,7 +42,11 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { MessageList } from "../components/MessageList";
 import { PermissionPrompt } from "../components/PermissionPrompt";
 import { HeaderMenu } from "../components/HeaderMenu";
-import { hasModalDialog } from "../components/Modal";
+import { hasModalDialog, Modal } from "../components/Modal";
+import { CodexGoalModal } from "../components/CodexGoalModal";
+import { CodexCommandResult } from "../components/CodexCommandResult";
+import { ResultEmpty } from "../components/CodexInfoResult";
+import { isFormattedCodexCommand, type FormattedCodexCommand } from "@shared/codex-command-results";
 import { CrossReviewModal } from "../components/CrossReviewModal";
 import { ProviderSwitchModal } from "../components/ProviderSwitchModal";
 import { ModelPickerModal } from "../components/ModelPickerModal";
@@ -50,7 +55,7 @@ import { VerifyPopover } from "../components/VerifyPopover";
 import { FanoutModal } from "../components/FanoutModal";
 import { FanoutCompare } from "../components/FanoutCompare";
 import { OrchestrationPanel } from "../components/OrchestrationPanel";
-import { agyCommands, codexCommands, modelFromArg, parseAgyAppCommand, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
+import { agyCommands, codexCommands, isCodexSlashCommand, modelFromArg, parseAgyAppCommand, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
 import type { CodexMention } from "@shared/codex-mentions";
 import { RightPanel } from "../components/RightPanel";
 import { TabBar } from "../components/TabBar";
@@ -116,6 +121,15 @@ export function ChatView({
   const tabId = tab.id;
   const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError } = useSession(tabId);
   const [switching, setSwitching] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [commandPanel, setCommandPanel] = useState<{ name: string; data?: unknown; argument?: string } | null>(null);
+  const resumableCodexTabs = useMemo(() => ws.model.tabs.filter(item => item.id !== tabId && item.provider === "codex").sort((a, b) => b.updatedAt - a.updatedAt), [ws.model.tabs, tabId]);
+  useEffect(() => {
+    if (!commandPanel) return;
+    const key = (e: KeyboardEvent) => { if (focused && e.key === "Escape") { e.stopPropagation(); setCommandPanel(null); } };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [commandPanel, focused]);
   // 에디터 패널(채팅 옆 분할). 변경 파일 목록·파일 트리·툴카드 경로 클릭으로 파일을 연다. 열린 파일은 탭마다 기억.
   const editorTabs = useEditorTabs(tabId);
   const openFile = useCallback<OpenFile>((path, at) => openEditorFile(tabId, path, at), [tabId]);
@@ -390,8 +404,11 @@ export function ChatView({
   const commitRename = useCallback(async () => {
     setEditingTitle(false);
     if (draftTitle.trim() === (tab.title ?? "").trim()) return;
-    await window.sudal.workspaces.renameTab(tabId, draftTitle);
-  }, [draftTitle, tab.title, tabId]);
+    try {
+      if ((config?.provider ?? tab.provider) === "codex" && draftTitle.trim()) await window.sudal.chat.codexControl(tabId, "rename", draftTitle);
+      await window.sudal.workspaces.renameTab(tabId, draftTitle);
+    } catch (e) { setAttachError(e instanceof Error ? e.message : String(e)); }
+  }, [draftTitle, tab.title, tab.provider, config?.provider, tabId]);
   const cwd = config?.cwd ?? workspace.path;
   const terminalRight = terminalDock === "right" && terminalMounted && terminalOpen && !!cwd;
   // 답변 속 파일 참조 → 실제 경로. Markdown 의 FileRef 가 부른다(결과 캐시는 FileRef 쪽).
@@ -420,9 +437,76 @@ export function ChatView({
   const paneLabel = [fileTabCount > 0 ? t("chat.header.codeCount", { count: fileTabCount }) : null, browserTabCount > 0 ? t("chat.header.browserCount", { count: browserTabCount }) : null].filter(Boolean).join(" · ");
   const provider = config?.provider ?? tab.provider;
 
+  const runCodexControl = async (command: CodexControlCommand, arg = "") => {
+    const result = await window.sudal.chat.codexControl(tabId, command, arg);
+    setConfig(await window.sudal.chat.snapshot(tabId));
+    return result;
+  };
+
   const onSend = useCallback(
     async (text: string, images: ChatImageDto[]) => {
-      // Codex 의 "/" 명령은 app-server 가 모르니 앱이 Sudal 기능으로 처리한다(나머지 글은 그대로 모델에게).
+      if (provider === "codex" && isCodexSlashCommand(text)) {
+        const command = parseCodexCommand(text);
+        if (!command) throw new Error(t("session.msg.codexControl.unsupported", { command: text.trim().split(/\s/)[0] }));
+        const { name, arg } = command;
+        const inlinePlan = name === "plan" && arg && !["on", "off", "default"].includes(arg);
+        if (images.length && !inlinePlan) throw new Error(t("session.msg.codexControl.images"));
+        if (name === "plan") {
+          await runCodexControl("plan", inlinePlan ? "on" : arg);
+          if (!inlinePlan) return;
+          const result = await window.sudal.chat.send(tabId, { text: arg, images });
+          if (!result.ok) throw new Error(result.error);
+          setConfig(await window.sudal.chat.snapshot(tabId));
+          return;
+        } else if (name === "goal") {
+          await runCodexControl("goal", arg);
+          if (!arg || arg === "status") setGoalOpen(true);
+          return;
+        } else if (name === "permissions") {
+          if (arg) {
+            if (!(PERMISSION_POLICIES as readonly string[]).includes(arg)) throw new Error(t("session.msg.codexControl.permissionsUsage"));
+            setConfig(await window.sudal.chat.configure(tabId, { policy: arg as PermissionPolicy }));
+          } else setCommandPanel({ name });
+          return;
+        } else if (name === "fork") {
+          const point = [...state.blocks].reverse().find((b) => b.kind === "turn" && b.forkPoint);
+          if (point?.kind !== "turn" || !point.forkPoint) throw new Error(t("session.error.forkPointMissing"));
+          const result = await window.sudal.chat.fork(tabId, point.forkPoint.pointId);
+          if (!result.ok) throw new Error(result.error);
+          return;
+        } else if (name === "copy") {
+          let end = state.blocks.length - 1;
+          while (end >= 0 && state.blocks[end].kind !== "turn") end--;
+          if (end < 0) throw new Error(t("session.msg.codexControl.noReply"));
+          let start = end - 1;
+          while (start >= 0 && !["turn", "user", "compacted"].includes(state.blocks[start].kind)) start--;
+          const reply = state.blocks.slice(start + 1, end).filter((b) => b.kind === "text" && !b.streaming).map((b) => b.kind === "text" ? b.text : "").join("\n\n");
+          if (!reply) throw new Error(t("session.msg.codexControl.noReply"));
+          await navigator.clipboard.writeText(reply);
+          return;
+        } else if (name === "export") { await window.sudal.chat.exportMarkdown(tabId); return; }
+        else if (name === "resume") { setCommandPanel({ name }); return; }
+        else if (name === "diff") { setCommandPanel({ name, data: await window.sudal.git.changes(cwd!) }); return; }
+        else if (name === "worktree") { onIsolate(); return; }
+        else if (name === "pwd" || name === "cwd") { setCommandPanel({ name, data: cwd }); return; }
+        else if (name === "cd") {
+          await runCodexControl("cd", arg);
+          return;
+        } else if (name === "rename" && !arg) { startRename(); return; }
+        else if (name === "rename" && arg) {
+          await runCodexControl("rename", arg);
+          await window.sudal.workspaces.renameTab(tabId, arg);
+          return;
+        } else if (name === "skills" || name === "apps" || name === "mention") {
+          // Composer가 입력 전환·파일 선택으로 처리한다. 다른 호출 경로에서는 프롬프트로 보내지 않는다.
+          throw new Error(t("session.msg.codexControl.composerOnly"));
+        } else if ((CODEX_CONTROL_COMMANDS as readonly string[]).includes(name)) {
+          const result = await runCodexControl(name as CodexControlCommand, arg);
+          if (name !== "compact" && name !== "review") setCommandPanel({ name, data: result.data, argument: arg });
+          return;
+        }
+      }
+      // 공통 앱 명령과 Antigravity 명령. Codex의 나머지 앱 명령도 여기서 처리한다.
       const codexCmd = images.length === 0 ? (provider === "codex" ? parseCodexCommand(text) : provider === "agy" ? parseAgyAppCommand(text) : null) : null;
       if (codexCmd) {
         if (codexCmd.name === "new" || codexCmd.name === "clear") return onClear();
@@ -447,7 +531,7 @@ export function ChatView({
       if (!r.ok) throw new Error(r.error);
       setConfig(await window.sudal.chat.snapshot(tabId));
     },
-    [tabId, provider, setConfig, onOpenMcp, onOpenSettings, setModel, startRename, t],
+    [tabId, provider, cwd, state.blocks, onIsolate, setConfig, onOpenMcp, onOpenSettings, setModel, startRename, t],
   );
 
   const snippets = useSnippets();
@@ -1051,6 +1135,11 @@ export function ChatView({
 
             <BackgroundJobsBar tabId={tabId} sessionId={state.sessionId ?? config?.sessionId ?? null} />
 
+            {provider === "codex" && <div className="flex items-center gap-2 px-6 pt-2 text-xs" data-codex-mode={config?.codexMode ?? "default"}>
+              <button className={`rounded-full border px-2 py-1 ${config?.codexMode === "plan" ? "border-accent/40 bg-accent-tint text-accent" : "border-line text-muted"}`} disabled={running || terminalControlled} onClick={() => void runCodexControl("plan").catch((e) => setAttachError(String(e)))}>{t(config?.codexMode === "plan" ? "session.codexUi.planOn" : "session.codexUi.planOff")}</button>
+              {config?.codexGoal && <button className="min-w-0 truncate text-muted hover:text-fg" onClick={() => setGoalOpen(true)}>{t(`session.codexUi.goalStatus.${config.codexGoal.status}`)} · {config.codexGoal.objective}</button>}
+            </div>}
+
             <Composer
               disabled={!cwd || terminalControlled}
               disabledText={
@@ -1066,7 +1155,7 @@ export function ChatView({
               commandsLoading={provider === "claude" && commands !== null && commands.length === 0}
               mentions={mentions}
               mentionsLoading={mentionsLoading}
-              isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null) || (provider === "agy" && parseAgyAppCommand(text) !== null)}
+              isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && isCodexSlashCommand(text)) || (provider === "agy" && parseAgyAppCommand(text) !== null)}
               snippets={snippets}
               workspaceId={tab.workspaceId}
               draftKey={tabId}
@@ -1118,6 +1207,17 @@ export function ChatView({
           </div>
         </div>
 
+        {goalOpen && <CodexGoalModal goal={config?.codexGoal ?? null} onRun={async (arg) => { await runCodexControl("goal", arg); const action = parseGoalAction(arg); if (action.action === "set" && (action.objective || action.status === "active")) setGoalOpen(false); }} onClose={() => setGoalOpen(false)} />}
+        {commandPanel && <Modal variant="pane" onClose={() => setCommandPanel(null)} className="max-h-[80%] w-[min(620px,95%)] overflow-auto p-5">
+          <div role="dialog" aria-modal="true" aria-label={`/${commandPanel.name}`}>
+            <div className="mb-4 flex justify-between"><h2 className="font-semibold">/{commandPanel.name}</h2><button autoFocus onClick={() => setCommandPanel(null)}>{t("session.codexUi.close")}</button></div>
+            {isFormattedCodexCommand(commandPanel.name) ? <CodexCommandResult key={commandPanel.name} command={commandPanel.name} argument={commandPanel.argument} initialData={commandPanel.data} onRefresh={async () => (await runCodexControl(commandPanel.name as FormattedCodexCommand)).data} />
+            : commandPanel.name === "permissions" ? <div className="space-y-2">{PERMISSION_POLICIES.map((policy) => <button key={policy} onClick={() => void window.sudal.chat.configure(tabId, { policy }).then((snapshot) => { setConfig(snapshot); setCommandPanel(null); }).catch((e) => setAttachError(String(e)))} className="block w-full rounded border border-line p-3 text-left hover:bg-panel-2">{t(`panel.context.policy.${policy}.codexLabel`)}<span className="mt-1 block text-xs text-muted">{t(`panel.context.policy.${policy}.codexHelp`)}</span></button>)}</div>
+            : commandPanel.name === "resume" ? <div className="space-y-2"><p className="text-sm text-muted">{t("session.codexUi.resumeHelp")}</p>{!resumableCodexTabs.length && <ResultEmpty text={t("session.codexResult.noSavedChats")} />}{resumableCodexTabs.map((item) => <button className="block w-full rounded border border-line p-2 text-left" key={item.id} onClick={() => void window.sudal.workspaces.reopenTab(item.id).then(() => { onActivateTab(item.id); setCommandPanel(null); }).catch((e) => setAttachError(String(e)))}>{tabTitle(item, t("shared.untitledTab"))}</button>)}</div>
+            : commandPanel.name === "diff" ? !(commandPanel.data as import("@shared/ipc").GitChangeDto[]).length ? <ResultEmpty text={t("session.codexResult.noChanges")} /> : <div className="space-y-1">{(commandPanel.data as import("@shared/ipc").GitChangeDto[]).map((file) => <button key={file.path} className="block w-full rounded p-2 text-left hover:bg-panel-2" onClick={() => { openFile(file.path); setCommandPanel(null); }}>{file.path}<span className="ml-3 text-ok">+{file.added}</span><span className="ml-2 text-err">−{file.deleted}</span></button>)}</div>
+            : <pre className="whitespace-pre-wrap break-all text-xs text-muted">{typeof commandPanel.data === "string" ? commandPanel.data : JSON.stringify(commandPanel.data ?? {}, null, 2)}</pre>}
+          </div>
+        </Modal>}
         {reviewOpen && <CrossReviewModal onStart={requestCrossReview} onClose={closeReview} />}
         {fanoutOpen && <FanoutModal initialPrompt={loadComposerDraft(tabId)} defaultProvider={provider} onStart={startFanout} onClose={closeFanout} />}
         {orchPanel && <OrchestrationPanel initialRunId={orchPanel.runId} onClose={closeOrch} />}

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { appMsg, mt } from "./i18n";
 import { launchSpec } from "./cli-launch";
 import { aiReviewNotice } from "./ai-review";
-import type { ChatEvent, ModelUsageEntry, TokenUsage } from "@shared/chat-events";
+import type { ChatEvent, CompactedEvent, ModelUsageEntry, TokenUsage } from "@shared/chat-events";
 import { codexAgentStatus, type CodexAgentInput, type CodexAgentInfo } from "@shared/codex-agents";
 
 type Json = Record<string, unknown>;
@@ -189,6 +189,8 @@ export interface AppServerTurnContext {
   startedAt: number;
   /** 마지막으로 받은 thread/tokenUsage/updated 의 last. turn/completed 때 사용량으로 쓴다. */
   lastUsage: TokenUsage | null;
+  manualCompaction?: boolean;
+  compaction?: CompactedEvent;
   /** 하위 에이전트의 활동을 최초 호출 카드에 반영한다. 세션 안에서 턴 간 공유한다. */
   codexAgents?: Map<string, { id: string; input: CodexAgentInput }>;
 }
@@ -225,7 +227,7 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
       return itemStarted(params.item as Item, ts);
     case "item/completed":
       if ((params.item as Item)?.type === "collabAgentToolCall" || (params.item as Item)?.type === "subAgentActivity") return agentItem(params.item as Item, ts, ctx, true);
-      return itemCompleted(params.item as Item, ts);
+      return itemCompleted(params.item as Item, ts, ctx);
     case "item/autoApprovalReview/started":
     case "item/autoApprovalReview/completed":
       return autoApprovalReview(params, ts);
@@ -258,6 +260,8 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
           // 정상으로 끝난 턴만 분기 지점이 된다(thread/fork lastTurnId)
           ...(turn.status === "completed" && turn.id && threadId ? { forkPoint: { provider: "codex" as const, sessionId: threadId, pointId: turn.id } } : {}),
         },
+        // 압축 턴 자체의 사용량을 집계한 뒤 게이지를 비운다. 다음 대화의 실제 사용량을 기다린다.
+        ...(ctx.compaction ? [{ ...ctx.compaction, ts }] : []),
       ];
     }
     case "error": {
@@ -434,8 +438,16 @@ function itemStarted(item: Item, ts: number): ChatEvent[] {
   }
 }
 
-function itemCompleted(item: Item, ts: number): ChatEvent[] {
+function itemCompleted(item: Item, ts: number, ctx?: AppServerTurnContext): ChatEvent[] {
   switch (item.type) {
+    case "exitedReviewMode":
+      return typeof item.review === "string" && item.review.trim() ? [{ type: "assistant_text", ts, blockId: item.id, text: item.review }] : [];
+    case "contextCompaction": {
+      const usage = ctx?.lastUsage;
+      const event: CompactedEvent = { type: "compacted", ts, trigger: ctx?.manualCompaction ? "manual" : "auto", ...(usage ? { preTokens: usage.input + usage.cacheRead + usage.cacheWrite } : {}) };
+      if (ctx?.manualCompaction) { ctx.compaction = event; return []; }
+      return [event];
+    }
     case "agentMessage":
       return [{ type: "assistant_text", ts, blockId: item.id, text: str(item.text) }];
     case "commandExecution": {

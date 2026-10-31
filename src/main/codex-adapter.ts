@@ -20,6 +20,8 @@ import { codexMentionsFrom, findCodexMentions, type CodexMention } from "@shared
 import type { Locale } from "@shared/i18n";
 import type { BackgroundJobDto } from "@shared/background-jobs";
 import { readCodexAgentInput } from "@shared/codex-agents";
+import type { CodexControlCommand, CodexControlResult, CodexGoal, CodexMode } from "@shared/codex-controls";
+import { codexCollaborationMode, codexControlError, executeCodexControl } from "./codex-controls";
 
 
 type ThreadOptions = import("@openai/codex-sdk").ThreadOptions;
@@ -40,6 +42,10 @@ export interface CodexTurnRequest {
   /** 지금 탭의 권한. 프로세스·스레드를 여는 동안 바꾼 권한이 첫 턴에도 먹게, 턴을 시작하는 순간에 다시 읽는다. */
   currentPolicy?(): PermissionPolicy;
   model?: string;
+  codexMode?: CodexMode;
+  nativeAction?: "compact" | "review";
+  onGoalChanged?(goal: CodexGoal | null): void;
+  requestAmbientPermission?(req: PermissionRequestEvent): Promise<PermissionAnswer>;
   abort: AbortController;
   onEvent(event: ChatEvent): void;
   /** 부모 턴이 끝난 뒤 도착하는 하위 에이전트의 화면 갱신. */
@@ -79,6 +85,7 @@ export function setCodexSessionIdleMs(ms: number): void {
 const INTERRUPT_GRACE_MS = 8000;
 
 interface TurnCtx {
+  ambient?: boolean;
   req: CodexTurnRequest;
   turnId: string | null;
   ctx: AppServerTurnContext;
@@ -88,6 +95,10 @@ interface TurnCtx {
 }
 
 interface LiveCodex {
+  onGoalChanged?: CodexTurnRequest["onGoalChanged"];
+  goal?: CodexGoal | null;
+  goalRevision?: number;
+  ambientRequest?: CodexTurnRequest;
   key: string;
   cwd: string;
   server: CodexAppServer;
@@ -110,6 +121,7 @@ interface LiveCodex {
   /** 진행 중인 fileChange 아이템의 변경 내용(itemId → changes). 승인 요청엔 diff 가 없어 item/started 에서 받아 둔 것을 카드에 보여 준다. */
   fileChanges: Map<string, FileChangeDto[]>;
   dead: boolean;
+  closedByApp?: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
   /** 이번 턴의 진행 설명이 앱 언어를 벗어났다. 다음 도구 결과 뒤에 언어 리마인더를 넣는다(codex-lang-hooks). */
   langDrift: boolean;
@@ -185,27 +197,45 @@ function finishRunningAgents(s: LiveCodex): void {
   }
 }
 
+/** 프로세스가 내려가면 메모리의 실행 예약도 끝낸다. 디스크의 목표 상태는 다음 연결에서 다시 읽는다. */
+function releaseActiveGoal(s: LiveCodex): void {
+  if (s.goal?.status !== "active") return;
+  s.goal = null;
+  s.goalRevision = (s.goalRevision ?? 0) + 1;
+  s.onGoalChanged?.(null);
+}
+
 export function closeCodexSession(key: string): void {
   const s = live.get(key);
-  if (!s) return;
+  if (!s) {
+    // initialize 중에는 아직 live에 없다. 열린 직후 닫아 이후 goal/set까지 진행하지 못하게 한다.
+    const pending = opening.get(key);
+    if (pending) void pending.then((opened) => {
+      if (live.get(key) === opened) closeCodexSession(key);
+    }).catch(() => {});
+    return;
+  }
   finishRunningAgents(s);
   live.delete(key);
+  s.closedByApp = true;
   s.dead = true;
   if (s.idleTimer) clearTimeout(s.idleTimer);
   s.server.close();
   s.turn?.reject(new MsgError("session.msg.sessionEnded"));
   s.turn = null;
+  releaseActiveGoal(s);
   publishCodexBackgroundJobs();
 }
 
 export function closeAllCodexSessions(): void {
-  for (const key of [...live.keys()]) closeCodexSession(key);
+  for (const key of new Set([...live.keys(), ...opening.keys()])) closeCodexSession(key);
 }
 
 function armIdle(s: LiveCodex) {
   if (s.idleTimer) clearTimeout(s.idleTimer);
   s.idleTimer = null;
-  if (hasRunningAgents(s)) return;
+  if (s.dead) return;
+  if (hasRunningAgents(s) || s.goal?.status === "active") return;
   s.idleTimer = setTimeout(() => {
     if (live.get(s.key) === s && !s.turn && !hasRunningAgents(s)) {
       s.log?.(`[codex ${s.key}] idle ${sessionIdleMs}ms — 프로세스 종료`);
@@ -236,21 +266,44 @@ async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, l
       if (live.get(key) === s) live.delete(key);
       s.dead = true;
       if (s.idleTimer) clearTimeout(s.idleTimer);
-      s.turn?.reject(error ? new Error(error) : new MsgError("session.msg.codexExited", { code: code ?? "?" }));
+      const failure = error ? new Error(error) : new MsgError("session.msg.codexExited", { code: code ?? "?" });
+      if (s.turn) s.turn.reject(failure);
+      else if (s.goal?.status === "active") {
+        // 자동 턴 사이에 종료돼도 실패다. 같은 탭의 대기 지시는 자동으로 재전송하지 않는다.
+        s.onAmbientEvent?.({ type: "error", ts: Date.now(), fatal: true, message: failure.message });
+        s.onAmbientEvent?.({ type: "status", ts: Date.now(), status: "error" });
+      }
       s.turn = null;
+      releaseActiveGoal(s);
       publishCodexBackgroundJobs();
     },
   });
   s.server = server;
   await server.start(runtime.codexPath, runtime.env, cwd, codexLangHookArgs());
   await trustCodexLangHooks(server, cwd, log);
+  if (s.dead || !server.alive) throw new MsgError("session.msg.sessionEnded");
   live.set(key, s);
   return s;
 }
 
 function handleNotification(s: LiveCodex, method: string, params: Record<string, unknown>) {
   if (s.dead) return;
+  if (params.threadId === s.threadId && (method === "thread/goal/updated" || method === "thread/goal/cleared")) {
+    s.goal = method === "thread/goal/cleared" ? null : params.goal as CodexGoal;
+    s.goalRevision = (s.goalRevision ?? 0) + 1;
+    s.onGoalChanged?.(s.goal);
+    if (!s.turn) armIdle(s);
+    return;
+  }
+  // /goal은 서버가 직접 턴을 시작하고 이어 간다. 일반 전송과 같은 승인·표시 경로를 쓴다.
+  if (!s.turn && method === "turn/started" && params.threadId === s.threadId && s.ambientRequest) {
+    const req = s.ambientRequest;
+    s.turn = { req, ambient: true, turnId: null, ctx: { model: s.model ?? undefined, startedAt: Date.now(), lastUsage: null, codexAgents: s.codexAgents }, permissionSeq: 0,
+      resolve() {}, reject(error) { req.onEvent({ type: "error", ts: Date.now(), fatal: true, message: String(error) }); req.onEvent({ type: "status", ts: Date.now(), status: "error" }); } };
+    req.onEvent({ type: "status", ts: Date.now(), status: "running" });
+  }
   const t = s.turn;
+  if (t && method === "turn/started" && params.threadId === s.threadId) t.turnId = (params.turn as { id?: string } | undefined)?.id ?? t.turnId;
   if (method === "thread/started") {
     const th = params.thread as { id?: string; parentThreadId?: string | null; source?: { subAgent?: unknown } } | undefined;
     // 하위 스레드 시작 알림으로 부모 세션 id를 바꾸면 이후 부모 이벤트가 모두 걸러진다.
@@ -280,6 +333,7 @@ function handleNotification(s: LiveCodex, method: string, params: Record<string,
   if (method === "turn/completed") {
     s.turn = null;
     t.resolve();
+    if (t.ambient) armIdle(s);
   }
 }
 
@@ -319,7 +373,7 @@ async function handleServerRequest(s: LiveCodex, method: string, params: Record<
   const itemId = typeof params.itemId === "string" ? params.itemId : `req-${Date.now()}`;
   const ask = async (tool: string, title: { message: string; msg: Msg }, input: Record<string, unknown>, description?: string) => {
     // 턴 도중 권한을 풀었으면 사람에게 묻지 않고 허용한다(전부 자동은 모두, 편집 자동은 파일 변경만 — Claude 의 acceptEdits 와 같은 뜻).
-    if (s.policy === "full" || (s.policy === "auto_edit" && tool === "ApplyPatch")) return { behavior: "allow" as const };
+    if (tool !== "AskUserQuestion" && (s.policy === "full" || (s.policy === "auto_edit" && tool === "ApplyPatch"))) return { behavior: "allow" as const };
     const requestId = `${itemId}#${++t.permissionSeq}`;
     const event: PermissionRequestEvent = {
       type: "permission_request",
@@ -331,7 +385,7 @@ async function handleServerRequest(s: LiveCodex, method: string, params: Record<
       title: title.message,
       titleMsg: title.msg,
       description,
-      canAlwaysAllow: true,
+      canAlwaysAllow: tool !== "AskUserQuestion",
     };
     t.req.onEvent(event);
     t.req.onEvent({ type: "status", ts: Date.now(), status: "waiting_permission" });
@@ -341,6 +395,11 @@ async function handleServerRequest(s: LiveCodex, method: string, params: Record<
     return answer;
   };
   switch (method) {
+    case "item/tool/requestUserInput": {
+      const questions = (Array.isArray(params.questions) ? params.questions : []) as { id: string; header: string; question: string; options?: { label: string; description: string }[] | null; isOther?: boolean; isSecret?: boolean }[];
+      const answer = await ask("AskUserQuestion", appMsg("session.msg.codexControl.question"), { questions: questions.map(q => ({ ...q, answerKey: q.id, options: q.options ?? [], allowOther: q.isOther === true || !q.options?.length })) });
+      return { answers: Object.fromEntries(questions.map(q => [q.id, { answers: answer.behavior === "allow" && answer.answers?.[q.id] ? [answer.answers[q.id]] : [] }])) };
+    }
     case "item/commandExecution/requestApproval": {
       const a = await ask("Bash", appMsg("session.msg.approval.runCommand"), { command: params.command ?? "", cwd: params.cwd ?? "" }, typeof params.reason === "string" ? params.reason : undefined);
       if (t.req.abort.signal.aborted) return { decision: "cancel" };
@@ -366,11 +425,20 @@ async function handleServerRequest(s: LiveCodex, method: string, params: Record<
 }
 
 /** 스레드가 맞지 않으면(cwd·세션 id 다름) 내리고 새로 연다. 스레드는 첫 턴 전에 start/resume 해 둔다. */
-async function sessionFor(runtime: CodexRuntime, req: Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "log">): Promise<LiveCodex> {
+function bindControlCallbacks(s: LiveCodex, req: CodexWarmRequest) {
+  if (req.onGoalChanged) s.onGoalChanged = req.onGoalChanged;
+  if (req.onAmbientEvent) {
+    s.onAmbientEvent = req.onAmbientEvent;
+    s.ambientRequest = { ...req, prompt: "", images: [], abort: new AbortController(), onEvent: req.onAmbientEvent, requestPermission: req.requestAmbientPermission };
+  }
+}
+
+async function sessionFor(runtime: CodexRuntime, req: CodexWarmRequest): Promise<LiveCodex> {
   const inflight = opening.get(req.sessionKey);
   if (inflight) await inflight.catch(() => {});
   const cur = live.get(req.sessionKey);
   if (cur && !cur.dead) {
+    bindControlCallbacks(cur, req);
     await cur.ready.catch(() => {}); // 예열이 스레드를 여는 중이면 끝날 때까지
     const sameThread = req.sessionId === null || cur.threadId === null || req.sessionId === cur.threadId;
     if (cur.cwd === req.cwd && sameThread && cur.threadId) return cur;
@@ -378,11 +446,14 @@ async function sessionFor(runtime: CodexRuntime, req: Pick<CodexTurnRequest, "se
     closeCodexSession(req.sessionKey);
   }
   const s = await openSession(runtime, req.sessionKey, req.cwd, req.log);
+  bindControlCallbacks(s, req);
   if (s.threadId) return s;
   // 스레드 열기를 ready 로 묶는다 — 같은 키의 다른 호출은 위에서 이걸 기다린다.
   s.ready = openThread(s, req).catch((e) => {
-    closeCodexSession(s.key);
-    throw e;
+    const closedByApp = s.closedByApp;
+    // 닫았다가 같은 탭을 다시 열었으면 예전 초기화의 실패로 새 연결까지 닫지 않는다.
+    if (live.get(s.key) === s) closeCodexSession(s.key);
+    throw closedByApp ? new MsgError("session.msg.sessionEnded") : e;
   });
   await s.ready;
   return s;
@@ -418,7 +489,29 @@ async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey"
   if (!s.threadId) throw new MsgError("session.msg.codexThreadOpen");
 }
 
-export type CodexWarmRequest = Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "log">;
+export type CodexWarmRequest = Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "log" | "codexMode" | "onGoalChanged" | "onAmbientEvent" | "requestAmbientPermission">;
+
+export async function runCodexControl(runtime: CodexRuntime, req: CodexWarmRequest & Pick<CodexTurnRequest, "codexMode" | "onGoalChanged" | "onAmbientEvent" | "requestAmbientPermission">, command: CodexControlCommand, arg: string): Promise<CodexControlResult & { sessionId: string }> {
+  if (appServerUnavailable) throw new MsgError("session.msg.codexControl.appServerRequired");
+  const s = await sessionFor(runtime, req);
+  s.policy = req.policy;
+  try {
+    if (command === "goal" && arg && !["status", "pause", "clear"].includes(arg) && !arg.startsWith("budget ")) {
+      const policy = POLICY_TO_APPSERVER[req.policy];
+      await s.server.request("thread/settings/update", { threadId: s.threadId, approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer, sandboxPolicy: policy.sandboxPolicy, ...(req.codexMode ? { collaborationMode: codexCollaborationMode(req.codexMode, req.model || s.model) } : {}) });
+    }
+    const goalRevision = s.goalRevision;
+    const result = await executeCodexControl(s.server, { threadId: s.threadId!, cwd: req.cwd, model: req.model || s.model, mode: req.codexMode }, command, arg);
+    if (s.dead || live.get(req.sessionKey) !== s) throw new MsgError("session.msg.sessionEnded");
+    if ("goal" in result) {
+      // RPC를 기다리는 동안 도착한 완료·한도 알림을 예전 active 응답으로 되돌리지 않는다.
+      if (s.goalRevision === goalRevision) s.goal = result.goal;
+      else result.goal = s.goal ?? null;
+    }
+    return { ...result, sessionId: s.threadId! };
+  } catch (error) { throw codexControlError(error); }
+  finally { if (!s.turn) armIdle(s); }
+}
 
 /** 예열: 프로세스와 스레드를 미리 열어 둔다. app-server 를 못 쓰면 아무것도 안 한다. */
 export async function warmCodexSession(runtime: CodexRuntime, req: CodexWarmRequest): Promise<"reused" | "opened" | "unavailable"> {
@@ -428,6 +521,19 @@ export async function warmCodexSession(runtime: CodexRuntime, req: CodexWarmRequ
   if (cur && !cur.dead && cur.cwd === req.cwd) return "reused";
   try {
     const s = await sessionFor(runtime, req);
+    if (req.onGoalChanged) {
+      // 일시정지된 목표는 턴을 시작하지 않으므로 재개 알림 대신 조회해서 복원한다. 구형 CLI는 예열을 계속한다.
+      try {
+        const goalRevision = s.goalRevision;
+        const result = await s.server.request<{ goal: CodexGoal | null }>("thread/goal/get", { threadId: s.threadId }, 10_000);
+        if (s.dead || live.get(req.sessionKey) !== s) return "unavailable";
+        if (s.goalRevision === goalRevision) {
+          s.goal = result.goal;
+          req.onGoalChanged(result.goal);
+        }
+      } catch { /* 선택 기능 조회 실패는 예열을 막지 않는다. */ }
+    }
+    if (s.dead) return "unavailable";
     armIdle(s);
     return "opened";
   } catch (e) {
@@ -449,17 +555,22 @@ function markUnavailableIfStartupFailure(e: unknown, log?: (line: string) => voi
 
 export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest): Promise<void> {
   if (req.abort.signal.aborted) throw new MsgError("session.msg.interrupted");
-  if (appServerUnavailable) return runCodexTurnExec(runtime, req);
+  if (appServerUnavailable) {
+    if (req.codexMode === "plan" || req.nativeAction) throw new MsgError("session.msg.codexControl.appServerRequired");
+    return runCodexTurnExec(runtime, req);
+  }
   let s: LiveCodex;
   try {
     s = await sessionFor(runtime, req);
   } catch (e) {
     markUnavailableIfStartupFailure(e, req.log);
-    if (appServerUnavailable) return runCodexTurnExec(runtime, req);
+    if (appServerUnavailable && !req.nativeAction && req.codexMode !== "plan") return runCodexTurnExec(runtime, req);
     throw e;
   }
   if (!s.threadId) throw new MsgError("session.msg.codexThreadOpen");
   s.onAmbientEvent = req.onAmbientEvent;
+  s.onGoalChanged = req.onGoalChanged;
+  s.ambientRequest = { ...req, prompt: "", images: [], abort: new AbortController(), onEvent: req.onAmbientEvent ?? req.onEvent, requestPermission: req.requestAmbientPermission ?? req.requestPermission };
   if (s.idleTimer) {
     clearTimeout(s.idleTimer);
     s.idleTimer = null;
@@ -487,12 +598,12 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
   s.toolsSinceReminder = 0;
   clearCodexLangReminder(s.threadId);
   const done = new Promise<void>((resolve, reject) => {
-    s.turn = { req, turnId: null, ctx: { model, startedAt: Date.now(), lastUsage: null, codexAgents: s.codexAgents }, resolve, reject, permissionSeq: 0 };
+    s.turn = { req, turnId: null, ctx: { model, startedAt: Date.now(), lastUsage: null, codexAgents: s.codexAgents, manualCompaction: req.nativeAction === "compact" }, resolve, reject, permissionSeq: 0 };
   });
   const turn = s.turn!;
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
   const onAbort = () => {
-    if (turn.turnId) void s.server.request("turn/interrupt", { threadId: s.threadId, turnId: turn.turnId }, 10_000).catch(() => {});
+    interruptCodexSession(s.key);
     graceTimer = setTimeout(() => {
       if (s.turn === turn) closeCodexSession(s.key);
     }, INTERRUPT_GRACE_MS);
@@ -500,29 +611,47 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
   req.abort.signal.addEventListener("abort", onAbort, { once: true });
   try {
     const map = POLICY_TO_APPSERVER[policy];
+    if (req.nativeAction) await s.server.request("thread/settings/update", { threadId: s.threadId, approvalPolicy: map.approvalPolicy, approvalsReviewer: map.approvalsReviewer, sandboxPolicy: map.sandboxPolicy });
     const input: Record<string, unknown>[] = [
       ...req.images.map((i) => ({ type: "localImage", path: i.filePath })),
       { type: "text", text: req.prompt },
       ...mentions.map((m) => ({ type: m.kind === "skill" ? "skill" : "mention", name: m.name, path: m.path })),
     ];
-    const r = await s.server.request<{ turn?: { id?: string } }>("turn/start", {
+    const r = await s.server.request<{ turn?: { id?: string } }>(req.nativeAction === "compact" ? "thread/compact/start" : req.nativeAction === "review" ? "review/start" : "turn/start", req.nativeAction ? {
+      threadId: s.threadId,
+      ...(req.nativeAction === "review" ? { delivery: "inline", target: req.prompt ? { type: "custom", instructions: req.prompt } : { type: "uncommittedChanges" } } : {}),
+    } : {
       threadId: s.threadId,
       input,
       cwd: req.cwd,
       model: req.model ?? null,
+      ...(req.codexMode ? { collaborationMode: codexCollaborationMode(req.codexMode, req.model || s.model) } : {}),
       approvalPolicy: map.approvalPolicy,
       approvalsReviewer: map.approvalsReviewer,
       sandboxPolicy: map.sandboxPolicy,
     });
-    turn.turnId = r.turn?.id ?? null;
+    turn.turnId = r.turn?.id ?? turn.turnId;
     if (req.abort.signal.aborted) onAbort();
     await done;
+  } catch (error) {
+    throw req.nativeAction || req.codexMode ? codexControlError(error) : error;
   } finally {
     req.abort.signal.removeEventListener("abort", onAbort);
     if (graceTimer) clearTimeout(graceTimer);
     if (s.turn === turn) s.turn = null;
     if (live.get(s.key) === s && !s.dead) armIdle(s);
   }
+}
+
+export function hasAmbientCodexTurn(key: string): boolean { return live.get(key)?.turn?.ambient === true; }
+
+export function interruptCodexSession(key: string): void {
+  const s = live.get(key);
+  if (!s) return;
+  if (s.goal?.status === "active") void s.server.request("thread/goal/set", { threadId: s.threadId, origin: "user", status: "paused" }, 10_000).catch(() => {});
+  if (s.turn?.turnId) void s.server.request("turn/interrupt", { threadId: s.threadId, turnId: s.turn.turnId }, 10_000).catch(() => {});
+  const turn = s.turn;
+  if (turn?.ambient) setTimeout(() => { if (s.turn === turn) closeCodexSession(key); }, INTERRUPT_GRACE_MS).unref();
 }
 
 /**
@@ -757,12 +886,28 @@ export async function runCodexTurnExec(runtime: CodexRuntime, req: CodexTurnRequ
  * 풀어 주는 변경은 이후 승인 요청에 대신 답하는 것으로 바로 적용하고(샌드박스는 다음 턴부터), 조이는 변경은 다음 턴부터다
  * (턴을 "묻지 않음" 으로 시작했으면 요청이 아예 오지 않는다).
  */
-export function applyCodexPolicy(sessionKey: string, policy: PermissionPolicy): "applied" | "next-turn" | "none" {
+export async function applyCodexPolicy(sessionKey: string, policy: PermissionPolicy): Promise<"applied" | "next-turn" | "none"> {
   const s = live.get(sessionKey);
   if (!s || s.dead) return "none";
   const rank: Record<PermissionPolicy, number> = { ask: 0, auto_edit: 1, auto_review: 2, full: 3 };
   // 검토 에이전트는 턴 도중에 붙일 수 없다 — auto_review 로 바꾸면 이번 턴은 지금처럼 사람이 답하고 다음 턴부터 바뀐다.
   const loosening = policy !== "auto_review" && rank[policy] >= rank[s.policy];
   s.policy = policy;
+  // 목표의 후속 턴은 runCodexTurn을 거치지 않는다. 서버의 다음 턴 기본값도 지금 바꾼다.
+  if (s.goal?.status === "active" && s.threadId) {
+    const map = POLICY_TO_APPSERVER[policy];
+    try {
+      await s.server.request("thread/settings/update", { threadId: s.threadId, approvalPolicy: map.approvalPolicy, approvalsReviewer: map.approvalsReviewer, sandboxPolicy: map.sandboxPolicy });
+    } catch (error) {
+      if (s.dead || live.get(sessionKey) !== s) return "none";
+      // 변경을 거절한 서버가 이전 권한으로 목표를 계속 실행하게 두지 않는다.
+      if (s.goal?.status === "active") {
+        s.goal = null;
+        s.onGoalChanged?.(null);
+        closeCodexSession(sessionKey);
+      }
+      throw error;
+    }
+  }
   return loosening ? "applied" : "next-turn";
 }

@@ -96,7 +96,7 @@ export interface CompactedBlock {
   kind: "compacted";
   id: string;
   trigger: "manual" | "auto";
-  preTokens: number;
+  preTokens?: number;
   postTokens?: number;
 }
 

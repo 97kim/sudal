@@ -106,6 +106,9 @@ export function PermissionPrompt({
 }
 
 type Question = {
+  answerKey?: string;
+  allowOther?: boolean;
+  isSecret?: boolean;
   question: string;
   header?: string;
   multiSelect?: boolean;
@@ -121,7 +124,7 @@ export function questionsOf(input: Record<string, unknown>): Question[] {
     const options = (Array.isArray(q.options) ? q.options : [])
       .filter((o): o is Record<string, unknown> => Boolean(o) && typeof o === "object" && typeof (o as Record<string, unknown>).label === "string")
       .map((o) => ({ label: str(o.label), description: str(o.description) || undefined, preview: str(o.preview) || undefined }));
-    out.push({ question: q.question, header: str(q.header) || undefined, multiSelect: q.multiSelect === true, options });
+    out.push({ question: q.question, header: str(q.header) || undefined, multiSelect: q.multiSelect === true, options, ...(typeof q.answerKey === "string" ? { answerKey: q.answerKey } : {}), ...(typeof q.allowOther === "boolean" ? { allowOther: q.allowOther } : {}), ...(typeof q.isSecret === "boolean" ? { isSecret: q.isSecret } : {}) });
   }
   return out;
 }
@@ -161,7 +164,7 @@ function QuestionPrompt({
     const answers: Record<string, string> = {};
     questions.forEach((q, i) => {
       const a = override && override.index === i ? override.label : answerOf(i);
-      if (a) answers[q.question] = a;
+      if (a) answers[q.answerKey ?? q.question] = a;
     });
     if (Object.keys(answers).length === 0) return;
     onAnswer({ behavior: "allow", answers });
@@ -219,7 +222,7 @@ function QuestionPrompt({
                     </button>
                   );
                 })}
-                <div
+                {q.allowOther !== false && <div
                   className={`rounded-md border px-3 py-2 ${set.has(OTHER) ? "border-accent/50 bg-accent-tint" : "cursor-pointer border-line hover:bg-panel-2"}`}
                   onClick={() => !set.has(OTHER) && toggle(i, OTHER, Boolean(q.multiSelect))}
                   data-question-other
@@ -227,6 +230,7 @@ function QuestionPrompt({
                   <span className="text-muted">{t("chat.permission.other")}</span>
                   {set.has(OTHER) && (
                     <input
+                      type={q.isSecret ? "password" : "text"}
                       autoFocus
                       value={custom[i] ?? ""}
                       onChange={(e) => setCustom((c) => ({ ...c, [i]: e.target.value }))}
@@ -240,7 +244,7 @@ function QuestionPrompt({
                       className="mt-1.5 w-full rounded border border-line bg-inset px-2 py-1 outline-none focus:border-accent"
                     />
                   )}
-                </div>
+                </div>}
               </div>
             </div>
           );

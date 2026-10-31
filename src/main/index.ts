@@ -22,6 +22,8 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { isPermissionPolicy, type PermissionAnswer, type PermissionPolicy } from "@shared/chat-events";
+import { CODEX_CONTROL_COMMANDS, type CodexControlCommand } from "@shared/codex-controls";
+import { isCodexSlashCommand } from "@shared/app-commands";
 import { isThemeMode } from "@shared/theme";
 import { accelerator, yieldsToTerminal, type AppShortcut } from "@shared/app-shortcuts";
 import { intlLocale, isLanguageSetting, resolveLocale, LANGUAGE_SETTING_DEFAULT, LOCALES, type Locale } from "@shared/i18n/locale";
@@ -2153,6 +2155,7 @@ async function handleChatSend(
   payload: ChatSendDto,
 ): Promise<ChatSendResult> {
   const text = (payload?.text ?? "").trim();
+  if (sessions.snapshot(tabId).provider === "codex" && isCodexSlashCommand(text)) return { ok: false, error: mt("session.msg.codexControl.unsupported", { command: text.split(/\s/)[0] }) };
   if (sessions.snapshot(tabId).provider === "agy" && payload?.images?.length)
     return { ok: false, error: mt("session.error.agyImagesUnsupported") };
   const prepared = prepareChatImages(payload?.images);
@@ -2179,18 +2182,21 @@ async function handleChatSend(
 
 async function pickDirectory(
   sender: Electron.WebContents,
+  defaultPath?: string,
 ): Promise<string | null> {
-  const dir = await pickDirectoryRaw(sender);
+  const dir = await pickDirectoryRaw(sender, defaultPath);
   if (dir) approveRoot(dir); // 사용자가 직접 고른 경로 — 이후 탭 cwd·워크스페이스 경로로 쓸 수 있다
   return dir;
 }
 
 async function pickDirectoryRaw(
   sender: Electron.WebContents,
+  defaultPath?: string,
 ): Promise<string | null> {
   const win = BrowserWindow.fromWebContents(sender);
   const opts: Electron.OpenDialogOptions = {
     properties: ["openDirectory", "createDirectory"],
+    ...(defaultPath ? { defaultPath } : {}),
   };
   const result = win
     ? await dialog.showOpenDialog(win, opts)
@@ -2697,11 +2703,29 @@ function registerIpc() {
     return { ...await sessions.history(tabId, before), sequence };
   });
   ipcMain.handle(IPC.chatClear, (_e, tabId: string) => sessions.clear(tabId));
+  ipcMain.handle(IPC.chatCodexControl, async (event, tabId: unknown, command: unknown, arg: unknown) => {
+    if (typeof tabId !== "string" || !workspaces.state().model.tabs.some((tab) => tab.id === tabId) || typeof command !== "string" || !(CODEX_CONTROL_COMMANDS as readonly string[]).includes(command) || typeof arg !== "string" || arg.length > 20_000) throw new Error(mt("main.error.badArgs"));
+    if (command === "cd") {
+      const snapshot = sessions.snapshot(tabId);
+      if (snapshot.provider !== "codex" || snapshot.controller !== "app" || sessions.isBusy(tabId)) throw new Error(mt("session.msg.codexControl.busy"));
+      const rawPath = arg.replace(/^(["'])([\s\S]*)\1$/, "$2");
+      const target = rawPath ? resolve(snapshot.cwd || homedir(), rawPath === "~" ? homedir() : rawPath.replace(/^~[\\/]/, `${homedir()}/`)) : homedir();
+      if (!existsSync(target) || !statSync(target).isDirectory()) throw new Error(mt("session.error.noCwdAt", { cwd: target }));
+      const selected = isApprovedDir(target) ? target : await pickDirectory(event.sender, target);
+      if (selected) sessions.configure(tabId, { cwd: selected });
+      return {};
+    }
+    return sessions.codexControl(tabId, command as CodexControlCommand, arg);
+  });
   // 압축은 되도록 provider 에게 맡긴다 — 모델이 무엇을 남길지 정하고 세션도 끊기지 않는다.
   ipcMain.handle(
     IPC.chatCompact,
     async (_e, tabId: string, focus?: string): Promise<CompactResult> => {
       if (typeof tabId !== "string") return { ok: false, error: mt("main.error.tabIdMissing") };
+      if (sessions.snapshot(tabId).provider === "codex") {
+        await sessions.codexControl(tabId, "compact", typeof focus === "string" ? focus : "");
+        return { ok: true, native: true };
+      }
       if (sessions.canCompactNatively(tabId)) {
         const f = typeof focus === "string" ? focus.trim() : "";
         const r = await handleChatSend(tabId, { text: f ? `/compact ${f}` : "/compact" });

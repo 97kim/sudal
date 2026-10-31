@@ -193,6 +193,7 @@ export const chat = {
     cancelRetry: "재시도 취소",
   },
   composer: {
+    commandSource: "{{source}} 제공 기능",
     imageLimit: "이미지는 최대 {{count}}장까지 첨부할 수 있습니다.",
     loadingCommands: "커맨드 목록을 불러오는 중…",
     loadingMentions: "스킬·앱 목록을 불러오는 중…",
@@ -239,6 +240,7 @@ export const chat = {
       tools: "· 도구 {{count}}회",
     },
     compacted: "압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
+    compactedTokensUnknown: "토큰 수 미제공",
     compactedAuto: "자동 압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
     loading: "대화 불러오는 중…",
     loadOlder: "이전 대화 불러오기",

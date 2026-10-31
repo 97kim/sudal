@@ -174,6 +174,7 @@ const api: SudalApi = {
     clear: (tabId: string) => ipcRenderer.invoke(IPC.chatClear, tabId),
     compact: (tabId: string, focus?: string) =>
       ipcRenderer.invoke(IPC.chatCompact, tabId, focus),
+    codexControl: (tabId, command, arg = "") => ipcRenderer.invoke(IPC.chatCodexControl, tabId, command, arg),
     handoffPreview: (tabId: string) =>
       ipcRenderer.invoke(IPC.chatHandoffPreview, tabId),
     switchProvider: (tabId: string, opts: SwitchProviderDto) =>
