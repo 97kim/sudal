@@ -2,7 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agyCommands, modelFromArg, parseAgyAppCommand, parseAppCommand, withAppCommands } from "./app-commands";
 import { createI18n } from "./i18n";
+import { acpCommands, parseAcpAppCommand } from "./app-commands";
 const { t } = createI18n("ko");
+
+test("ACP 명령과 앱 명령은 표시·실행에 같은 우선순위를 쓴다", () => {
+  const out = acpCommands(t, ["compact", "model", "mcp", "skills", "clear", "config", "rename"].map(name => ({ name, description: "agent", argumentHint: "scope", source: "acp" as const })));
+  for (const name of ["compact", "model", "mcp", "skills"]) {
+    assert.equal(out.find(command => command.name === name)?.source, "acp");
+    assert.equal(parseAcpAppCommand(`/${name} value`), null);
+    assert.equal(out.find(command => command.name === name)?.insert, undefined);
+  }
+  for (const name of ["clear", "config", "rename", "new", "cd"]) {
+    assert.equal(out.filter(command => command.name === name).length, 1);
+    assert.equal(out.find(command => command.name === name)?.source, undefined);
+    assert.equal(parseAcpAppCommand(`/${name} value`)?.name, name);
+  }
+});
 
 test("parseAppCommand: 이름·인자 분리, 다른 입력은 null", () => {
   assert.deepEqual(parseAppCommand("/model"), { name: "model", arg: "" });

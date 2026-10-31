@@ -1,6 +1,7 @@
 // 앱이 직접 처리하는 슬래시 커맨드. CLI 로 보내지 않고 앱 UI 를 연다 — SDK 모드에서는 /model·/config 가 TUI 화면을 못 띄우기 때문.
 import type { TFunction } from "i18next";
 import type { SlashCommandDto } from "./slash-commands";
+import { mergeSlashCommands } from "./slash-commands";
 
 export type AppCommandName = "model" | "config" | "mcp";
 
@@ -55,6 +56,16 @@ export function parseCodexCommand(text: string): { name: CodexCommandName; arg: 
   const m = /^\/([a-z]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
   if (!m || !(CODEX_COMMANDS as string[]).includes(m[1])) return null;
   return { name: m[1] as CodexCommandName, arg: (m[2] ?? "").trim() };
+}
+
+/** ACP 에이전트 명령은 그대로 실행한다. 대화 비우기·이름·경로·앱 설정만 Sudal이 소유한다. */
+const ACP_APP_COMMANDS = new Set(["config", "new", "clear", "rename", "cd"]);
+export function acpCommands(t: TFunction, commands: SlashCommandDto[]): SlashCommandDto[] {
+  return mergeSlashCommands(codexCommands(t).filter(command => ACP_APP_COMMANDS.has(command.name)), commands);
+}
+export function parseAcpAppCommand(text: string): { name: CodexCommandName; arg: string } | null {
+  const command = parseCodexCommand(text);
+  return command && ACP_APP_COMMANDS.has(command.name) ? command : null;
 }
 
 /**

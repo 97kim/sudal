@@ -1,5 +1,6 @@
 // Codex 의 `$` 언급: 스킬과 앱(커넥터)을 `$이름` 으로 부른다. Codex CLI 와 같은 규칙으로 목록을 만들고,
 // 보낼 때 글 속 `$이름` 을 찾아 app-server 입력의 skill·mention 항목으로 붙인다(글만 보내면 확실히 불리지 않는다).
+import { isInternalCommand, type SlashCommandDto } from "./slash-commands";
 
 export interface CodexMention {
   kind: "skill" | "app";
@@ -8,6 +9,24 @@ export interface CodexMention {
   description: string;
   /** 스킬은 SKILL.md 경로, 앱은 app://<id>. */
   path: string;
+}
+
+/** 자동완성에는 표시 정보만 필요하다. ACP는 스킬 경로를 제공하지 않을 수 있다. */
+export type CodexMentionLabel = Pick<CodexMention, "kind" | "name" | "description">;
+
+/** Codex ACP가 명령으로 제공한 `$스킬`을 기존 `$` 자동완성으로 분리한다. */
+export function splitAcpCodexCommands(list: readonly SlashCommandDto[]): { commands: SlashCommandDto[]; mentions: CodexMentionLabel[] } {
+  const commands: SlashCommandDto[] = [];
+  const mentions = new Map<string, CodexMentionLabel>();
+  for (const command of list) {
+    if (command.source !== "acp" || !command.name.startsWith("$")) {
+      commands.push(command);
+      continue;
+    }
+    const name = command.name.slice(1);
+    if (name && !isInternalCommand(name)) mentions.set(name, { kind: "skill", name, description: command.description });
+  }
+  return { commands, mentions: [...mentions.values()] };
 }
 
 /** `$` 뒤 이름에 쓸 수 있는 글자. Codex CLI 규칙(영문·숫자·_·-)에 플러그인 스킬의 ":"(plugin:skill)를 더한다. */
@@ -87,7 +106,7 @@ export function parseDollarQuery(beforeCaret: string): { start: number; query: s
 }
 
 /** 검색어로 거른다 — 이름 앞부분이 맞는 것 먼저, 그다음 이름에 들어 있는 것. */
-export function filterCodexMentions(list: readonly CodexMention[], query: string): CodexMention[] {
+export function filterCodexMentions<T extends CodexMentionLabel>(list: readonly T[], query: string): T[] {
   const q = query.toLowerCase();
   const prefix = list.filter((m) => m.name.toLowerCase().startsWith(q));
   const partial = list.filter((m) => !m.name.toLowerCase().startsWith(q) && m.name.toLowerCase().includes(q));

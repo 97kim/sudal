@@ -15,8 +15,9 @@ import { sameCwdOrNull } from "@shared/any-path";
 import { readCodexAgentInput } from "@shared/codex-agents";
 import { buildDedupeIndex, dropReplayedPrefix, indexEvent, type DedupeIndex, type ReplayCutStats } from "@shared/event-dedupe";
 import { buildHandoff, estimateTokens, type Handoff } from "@shared/handoff";
-import type { Provider, ProviderRateLimitDto } from "@shared/ipc";
+import type { AcpConfigValueDto, Provider, ProviderRateLimitDto } from "@shared/ipc";
 import type { SlashCommandDto } from "@shared/slash-commands";
+import { isPlanControl, isPlanControlOutput, withoutPlanControlHistory } from "@shared/plan-control";
 import type { LiveBackgroundTask, TaskFinishedNote } from "@shared/bg-tasks";
 import type { StoredChatImage } from "./chat-attachments";
 import type { BackgroundTasksSource } from "./claude-adapter";
@@ -49,6 +50,8 @@ import {
   type HookEvent,
 } from "./transcript-mirror";
 import { CodexApprovalDetector } from "./codex-approval";
+import { AcpAdapter } from "./acp-adapter";
+import type { AcpLaunchOptions, AcpProvider } from "./acp-client";
 import type { PersistedPrompt } from "./persistence";
 
 /** 세션을 누가 제어하는가. "terminal" 이면 CLI(TUI)가 pty 에서 돌고 앱은 기록 파일을 미러만 한다. */
@@ -65,6 +68,7 @@ export interface TerminalAttention {
 
 export interface SessionConfig {
   provider: Provider;
+  connection?: "acp";
   cwd: string | null;
   policy: PermissionPolicy;
   model?: string;
@@ -73,6 +77,8 @@ export interface SessionConfig {
 
 export interface SessionSnapshot {
   tabId: string;
+  connection?: "acp";
+  acpConfig?: AcpConfigValueDto[];
   provider: Provider;
   cwd: string | null;
   policy: PermissionPolicy;
@@ -114,6 +120,8 @@ export interface PendingPromptSummary {
 
 interface Session {
   tabId: string;
+  connection?: "acp";
+  acpRevision: number;
   provider: Provider;
   cwd: string | null;
   policy: PermissionPolicy;
@@ -191,6 +199,8 @@ export interface SessionStore {
 }
 
 export interface SessionManagerDeps {
+  acpRuntime?(provider: AcpProvider, tabId: string): Promise<Omit<AcpLaunchOptions, "cwd">>;
+  onAcpCommands?(tabId: string): void;
   /** 돌고 있는 Codex 턴에 지시를 끼워 넣는다. 테스트에서 바꿔 끼운다(기본: codex-adapter 의 steerCodexTurn). */
   steerCodex?: typeof steerCodexTurn;
   emit(tabId: string, event: ChatEvent): void;
@@ -299,12 +309,49 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
 };
 
 export class SessionManager {
+  private readonly acp: AcpAdapter | null;
   private readonly sessions = new Map<string, Session>();
   private readonly queue: string[] = [];
   private maxConcurrent: number;
 
   constructor(private readonly deps: SessionManagerDeps) {
     this.maxConcurrent = Math.max(1, deps.maxConcurrent ?? 4);
+    this.acp = deps.acpRuntime ? new AcpAdapter(deps.acpRuntime) : null;
+  }
+
+  private closeProviderSessions(tabId: string): void {
+    const session = this.sessions.get(tabId);
+    if (session) session.acpRevision++;
+    closeProviderSessions(tabId);
+    this.acp?.close(tabId);
+  }
+
+  private acpRequest(s: Session) {
+    if (!this.acp || !s.cwd || s.provider === "agy") throw new Error(mt("session.error.acpUnavailable"));
+    return {
+      sessionKey: s.tabId, provider: s.provider, cwd: s.cwd, sessionId: s.sessionId,
+      onSession: (id: string) => {
+        if (this.sessions.get(s.tabId) !== s) return;
+        s.sessionId = id;
+        this.deps.onMeta?.(s.tabId, { sessionId: id });
+        this.deps.onSnapshot?.(s.tabId, this.snapshot(s.tabId));
+      },
+      onCommands: () => this.deps.onAcpCommands?.(s.tabId),
+      onConfig: () => {
+        if (this.sessions.get(s.tabId) === s) this.deps.onSnapshot?.(s.tabId, this.snapshot(s.tabId));
+      },
+    };
+  }
+
+  async acpCommands(tabId: string): Promise<SlashCommandDto[]> {
+    const s = this.ensure(tabId);
+    if (s.connection !== "acp" || !s.cwd) return [];
+    const request = this.acpRequest(s);
+    const revision = s.acpRevision;
+    if (this.deps.ensureFolderTrust && !(await this.deps.ensureFolderTrust(tabId, request.cwd))) throw new MsgError("session.msg.untrustedFolder");
+    if (this.sessions.get(tabId) !== s || s.acpRevision !== revision || s.cwd !== request.cwd) throw new Error("ACP session changed");
+    await this.acp!.open(request);
+    return this.acp!.commands(tabId);
   }
 
   /** 동시 실행 상한을 바꾼다. 올리면 기다리던 턴을 바로 시작하고, 내려도 진행 중인 턴은 그대로 둔다(새 시작만 막힘). */
@@ -352,6 +399,8 @@ export class SessionManager {
       s = {
         tabId,
         provider: defaults?.provider ?? resolved?.provider ?? "claude",
+        connection: defaults?.connection ?? resolved?.connection,
+        acpRevision: 0,
         cwd: defaults?.cwd ?? resolved?.cwd ?? null,
         policy: defaults?.policy ?? resolved?.policy ?? "ask",
         model: defaults?.model ?? resolved?.model,
@@ -404,6 +453,8 @@ export class SessionManager {
     return {
       tabId,
       provider: s.provider,
+      connection: s.connection,
+      ...(s.connection === "acp" ? { acpConfig: this.acp?.config(tabId) ?? [] } : {}),
       cwd: s.cwd,
       policy: s.policy,
       model: s.model,
@@ -549,7 +600,13 @@ export class SessionManager {
       requestAmbientPermission: (req: PermissionRequestEvent) => this.waitPermission(this.ensure(tabId), req, new AbortController().signal),
     };
     try {
-      if (s.provider === "claude") {
+      if (s.connection === "acp") {
+        const request = this.acpRequest(s);
+        const revision = s.acpRevision;
+        if (this.deps.folderTrusted && !(await this.deps.folderTrusted(request.cwd))) return;
+        if (this.sessions.get(tabId) !== s || s.acpRevision !== revision || s.cwd !== request.cwd) return;
+        await this.acp!.open(request);
+      } else if (s.provider === "claude") {
         if (this.deps.folderTrusted && !(await this.deps.folderTrusted(s.cwd))) return;
         const r = await warmClaudeSession(await this.deps.claudeRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[claude] 예열 시작");
@@ -574,6 +631,7 @@ export class SessionManager {
     const s = this.ensure(tabId);
     const p = s.promptQueue.find((x) => x.id === id);
     const fail = (error: string) => ({ ok: false as const, error, snapshot: this.snapshot(tabId) });
+    if (s.connection === "acp") return fail(mt("session.error.acpUnsupported"));
     if (!p) return fail(mt("session.error.queueMissing"));
     if (s.provider !== "codex" || s.controller !== "app" || (s.status !== "running" && s.status !== "waiting_permission"))
       return fail(mt("session.error.steerCodexOnly"));
@@ -647,6 +705,7 @@ export class SessionManager {
   > {
     const s = this.ensure(tabId);
     if (s.provider === "agy") return { ok: false, error: mt("session.error.agyTerminalUnsupported") };
+    if (s.connection === "acp") return { ok: false, error: mt("session.error.acpUnsupported") };
     if (s.controller === "terminal")
       return { ok: true, snapshot: this.snapshot(tabId) };
     if (this.isBusy(tabId))
@@ -658,7 +717,7 @@ export class SessionManager {
     if (!this.deps.terminalCli)
       return { ok: false, error: mt("session.error.terminalUnavailable") };
     // 같은 세션 id 에 앱의 SDK 프로세스와 CLI 가 동시에 붙으면 안 된다 — 살아 있던 프로세스를 먼저 내린다.
-    closeProviderSessions(tabId);
+    this.closeProviderSessions(tabId);
     const isNew = !s.sessionId;
     if (s.provider === "claude" && !s.sessionId) {
       s.sessionId = randomUUID();
@@ -799,6 +858,7 @@ export class SessionManager {
     // agy 기록 동기화는 아직 없다. Claude/Codex 기록을 잘못 붙이지 않는다.
     if (provider === "agy") return;
     const s = this.ensure(tabId);
+    if (s.connection === "acp") return;
     if (s.controller !== "app" || this.isBusy(tabId) || s.external) return;
     if (s.provider !== provider) {
       // 조용히 넘기면 "터미널에서 띄웠는데 채팅에 아무것도 안 뜬다" 로 보인다 — 이유를 채팅에 남긴다.
@@ -812,7 +872,7 @@ export class SessionManager {
     }
     const roots0 = this.deps.transcriptRoots;
     if (!roots0) return;
-    closeProviderSessions(tabId); // 같은 세션에 앱 프로세스와 CLI 가 같이 붙지 않게
+    this.closeProviderSessions(tabId); // 같은 세션에 앱 프로세스와 CLI 가 같이 붙지 않게
     if (s.limitWait) {
       this.clearLimitTimer(s);
       s.limitWait = null;
@@ -1096,7 +1156,7 @@ export class SessionManager {
   /** 분기로 만든 새 탭에 새 provider 세션과 옮겨 온 기록을 심는다. 대기열·예약·백그라운드는 물려받지 않는다. */
   adoptFork(tabId: string, cfg: { provider: Provider; cwd: string; model?: string; policy: PermissionPolicy; sessionId: string }, prefix: ChatEvent[]): SessionSnapshot {
     const s = this.ensure(tabId);
-    closeProviderSessions(tabId);
+    this.closeProviderSessions(tabId);
     s.provider = cfg.provider;
     s.cwd = cfg.cwd;
     s.model = cfg.model;
@@ -1143,7 +1203,7 @@ export class SessionManager {
     const replay = createHistoryReplay(before);
     let count = 0;
     try {
-      for (const event of events) {
+      for (const event of s.connection === "acp" ? withoutPlanControlHistory(events) : events) {
         replay.push(event);
         if (++count % 128 === 0) {
           await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1160,10 +1220,12 @@ export class SessionManager {
 
   configure(tabId: string, patch: Partial<SessionConfig>): SessionSnapshot {
     const s = this.ensure(tabId);
+    if (patch.connection !== undefined && patch.connection !== s.connection) throw new Error(mt("session.error.acpUnsupported"));
+    if (s.connection === "acp" && ((patch.provider && patch.provider !== s.provider) || "model" in patch || (patch.policy && patch.policy !== s.policy))) throw new Error(mt("session.error.acpUnsupported"));
     const meta: Parameters<NonNullable<SessionManagerDeps["onMeta"]>>[1] = {};
     if (patch.provider && patch.provider !== s.provider) {
       // provider 가 바뀌면 이전 provider 의 세션 id 는 의미가 없다. 살아 있던 Claude 프로세스도 내린다.
-      closeProviderSessions(tabId);
+      this.closeProviderSessions(tabId);
       s.provider = patch.provider;
       s.sessionId = null;
       meta.provider = patch.provider;
@@ -1180,7 +1242,7 @@ export class SessionManager {
     // 같은 폴더를 다르게 적은 것(Windows 의 C:\Repo 와 c:/repo)은 바뀐 게 아니다 — 세션을 버리지 않는다
     if (patch.cwd !== undefined && !sameCwdOrNull(patch.cwd, s.cwd)) {
       // 작업 경로가 바뀌면 provider 세션은 새로 시작한다 (기록은 그대로). 살아 있던 프로세스는 옛 cwd 것이라 내린다.
-      closeProviderSessions(tabId);
+      this.closeProviderSessions(tabId);
       s.cwd = patch.cwd;
       s.sessionId = null;
       meta.sessionId = null;
@@ -1211,7 +1273,7 @@ export class SessionManager {
   inheritCwd(tabId: string, cwd: string | null): void {
     const s = this.sessions.get(tabId);
     if (!s || sameCwdOrNull(s.cwd, cwd)) return;
-    closeProviderSessions(tabId);
+    this.closeProviderSessions(tabId);
     s.cwd = cwd;
     s.sessionId = null;
     this.deps.onMeta?.(tabId, { sessionId: null });
@@ -1225,6 +1287,7 @@ export class SessionManager {
    */
   canCompactNatively(tabId: string): boolean {
     const s = this.sessions.get(tabId);
+    if (s?.connection === "acp") return !!s.sessionId && !this.isBusy(tabId) && !!this.acp?.commands(tabId).some(command => command.name === "compact");
     if (!s || s.provider !== "claude") return false;
     return !!s.sessionId && s.controller !== "terminal" && !this.isBusy(tabId);
   }
@@ -1232,6 +1295,7 @@ export class SessionManager {
   /** provider 가 압축을 못 할 때의 대비책: 지금까지를 요약해 같은 provider 의 새 세션으로 넘긴다. */
   compactFallback(tabId: string): SessionSnapshot {
     const s = this.ensure(tabId);
+    if (s.connection === "acp") throw new Error(mt("session.error.acpUnsupported"));
     return this.switchProvider(tabId, {
       provider: s.provider,
       model: s.model,
@@ -1263,6 +1327,7 @@ export class SessionManager {
     },
   ): SessionSnapshot {
     const s = this.ensure(tabId);
+    if (s.connection === "acp") throw new Error(mt("session.error.acpUnsupported"));
     if (this.isBusy(tabId)) this.abort(tabId);
     const events = this.events(tabId);
     const written = opts.preserveContext ? (opts.summary ?? "").trim() : "";
@@ -1277,7 +1342,7 @@ export class SessionManager {
       s.limitWait = null;
     }
     s.limitAttempts = 0;
-    closeProviderSessions(tabId); // 새 세션으로 시작하므로 살아 있던 프로세스는 내린다
+    this.closeProviderSessions(tabId); // 새 세션으로 시작하므로 살아 있던 프로세스는 내린다
     s.provider = opts.provider;
     s.model = opts.model || undefined;
     s.sessionId = null;
@@ -1349,21 +1414,24 @@ export class SessionManager {
     // 사용자가 새 지시를 직접 보내는 것이므로 이전 한도 재시도 예산은 리셋.
     s.limitAttempts = 0;
 
-    // 첫 사용자 메시지가 탭 제목이 된다.
-    const hadUser = this.hasUserMessage(s);
-    this.record(s, userEvent);
-    if (
-      !hadUser &&
-      userEvent.type === "user_message" &&
-      userEvent.text.trim()
-    ) {
-      this.deps.onMeta?.(tabId, { title: userEvent.text });
+    const planControl = s.connection === "acp" && images.length === 0 && isPlanControl(text);
+    // 모드 전환은 사용자 대화·자동 제목·인계서를 소비하지 않는다.
+    if (!planControl) {
+      const hadUser = this.hasUserMessage(s);
+      this.record(s, userEvent);
+      if (
+        !hadUser &&
+        userEvent.type === "user_message" &&
+        userEvent.text.trim()
+      ) {
+        this.deps.onMeta?.(tabId, { title: userEvent.text });
+      }
     }
 
-    const prompt = s.handoffPrefix
+    const prompt = !planControl && s.handoffPrefix
       ? `${s.handoffPrefix}\n\n---\n\n${text}`
       : text;
-    this.setHandoffPrefix(s, null);
+    if (!planControl) this.setHandoffPrefix(s, null);
     s.queued = { text, prompt, images };
 
     if (!this.canStart(tabId)) {
@@ -1378,6 +1446,7 @@ export class SessionManager {
   private start(s: Session) {
     const turn = s.queued;
     if (!turn) return;
+    const planControl = s.connection === "acp" && turn.images.length === 0 && isPlanControl(turn.text);
     s.queued = null;
     const abort = new AbortController();
     s.abort = abort;
@@ -1385,7 +1454,7 @@ export class SessionManager {
     // 사용자가 새로 말을 걸었다. 이건 이어받은 턴이 아니다 — 지난 백그라운드 표시를 물려주지 않는다.
     s.ambientFromBg = false;
     s.bgTaskFinished = false;
-    s.startedAt ??= Date.now();
+    if (!planControl) s.startedAt ??= Date.now();
     s.turnStartedAt = Date.now();
     // 턴 시작 시각을 렌더러가 바로 알게(진행 줄의 경과 시간 기준)
     this.deps.onSnapshot?.(s.tabId, this.snapshot(s.tabId));
@@ -1399,7 +1468,7 @@ export class SessionManager {
     let turnFailed = false;
     const emit = (e: ChatEvent) => {
       // Skill·Agent 카드가 열리면 companion Codex 의 rollout 을 찾기 시작하고, 그 카드가 끝나면 멈춘다
-      if (s.provider === "claude" && e.type === "tool_use" && !e.partial && !e.preview && AGENT_TOOLS.has(e.name) && !s.companion) this.startCompanion(s, e.toolUseId);
+      if (s.connection !== "acp" && s.provider === "claude" && e.type === "tool_use" && !e.partial && !e.preview && AGENT_TOOLS.has(e.name) && !s.companion) this.startCompanion(s, e.toolUseId);
       if (e.type === "tool_result" && s.companion?.parentToolUseId === e.toolUseId) this.stopCompanion(s);
       if (e.type === "turn_result" && e.isError) turnFailed = true;
       if (e.type === "turn_result" && e.isError && isUsageLimitText(e.errorText)) limitText = e.errorText ?? "usage limit";
@@ -1412,12 +1481,21 @@ export class SessionManager {
           this.deps.onMeta?.(s.tabId, { sessionId: next });
         }
       }
-      this.record(s, e);
+      if (planControl && e.type === "turn_result" && !e.isError) this.record(s, { ...e, control: "plan" });
+      else if (!planControl || !isPlanControlOutput(e)) this.record(s, e);
     };
 
     void (async () => {
       try {
-        if (s.provider === "agy") {
+        if (s.connection === "acp") {
+          const request = this.acpRequest(s);
+          const revision = s.acpRevision;
+          if (this.deps.ensureFolderTrust && !(await this.deps.ensureFolderTrust(s.tabId, request.cwd))) throw new MsgError("session.msg.untrustedFolder");
+          if (abort.signal.aborted || this.sessions.get(s.tabId) !== s || s.acpRevision !== revision || s.cwd !== request.cwd) throw new DOMException("ACP session changed", "AbortError");
+          await this.acp!.run({ ...request, prompt: turn.prompt, images: turn.images, signal: abort.signal,
+            emit, permission: (req, signal) => this.waitPermission(s, req, signal),
+          });
+        } else if (s.provider === "agy") {
           if (!this.deps.agyRuntime) throw new Error("agyRuntime is not configured");
           const runtime = await this.deps.agyRuntime(s.tabId);
           await runAgyTurn(runtime, {
@@ -1763,7 +1841,7 @@ export class SessionManager {
   resetSession(tabId: string): void {
     const s = this.sessions.get(tabId);
     if (!s || s.sessionId === null) return;
-    closeProviderSessions(tabId);
+    this.closeProviderSessions(tabId);
     s.sessionId = null;
     this.deps.onMeta?.(tabId, { sessionId: null });
     this.deps.onSnapshot?.(tabId, this.snapshot(tabId));
@@ -1775,7 +1853,7 @@ export class SessionManager {
     this.externalCliExited(tabId);
     if (s.controller === "terminal") this.detachTerminal(tabId);
     if (this.isBusy(tabId)) this.abort(tabId);
-    closeProviderSessions(tabId);
+    this.closeProviderSessions(tabId);
     s.events = this.deps.store ? null : [];
     s.hasUser = false;
     s.agentToolIds.clear();
@@ -1801,7 +1879,7 @@ export class SessionManager {
   release(tabId: string): void {
     this.externalCliExited(tabId);
     this.abort(tabId, { keepQueue: true });
-    closeProviderSessions(tabId);
+    this.closeProviderSessions(tabId);
     const s = this.sessions.get(tabId);
     if (s) {
       s.mirror?.stop();
@@ -1820,6 +1898,7 @@ export class SessionManager {
   /** 앱 종료: 턴 중단 + 미러·훅 워처 정리(훅 로그 삭제). */
   shutdown(): void {
     this.abortAll({ keepQueue: true });
+    this.acp?.closeAll();
     closeAllClaudeSessions();
     closeAllCodexSessions();
     closeAllAgySessions();
@@ -1872,7 +1951,7 @@ export class SessionManager {
   }
 
   private rememberEvent(s: Session, event: ChatEvent): void {
-    if (event.type === "user_message") s.hasUser = true;
+    if (event.type === "user_message" && !(s.connection === "acp" && isPlanControl(event.text) && !event.images?.length)) s.hasUser = true;
     if (event.type === "tool_use" && readCodexAgentInput(event.input)) s.agentToolIds.add(event.toolUseId);
   }
 

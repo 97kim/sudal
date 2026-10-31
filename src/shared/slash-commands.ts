@@ -9,6 +9,8 @@ export interface SlashCommandDto {
   aliases?: string[];
   /** 고르면 "/이름 " 대신 입력창에 넣을 글. Codex 의 /skills 는 "$" 를 넣어 스킬 목록을 연다. */
   insert?: string;
+  /** ACP가 이 세션에서 실행 가능하다고 제공한 명령. SDK/TUI 전용 필터를 적용하지 않는다. */
+  source?: "acp";
 }
 
 /**
@@ -55,11 +57,23 @@ export function filterCommands(
   const prefix: SlashCommandDto[] = [];
   const partial: SlashCommandDto[] = [];
   for (const c of commands) {
-    if (terminal.has(c.name) || isInternalCommand(c.name)) continue;
+    if ((c.source !== "acp" && terminal.has(c.name)) || isInternalCommand(c.name)) continue;
     const ns = names(c);
     if (!q || ns.some((n) => n.startsWith(q))) prefix.push(c);
     else if (ns.some((n) => n.includes(q))) partial.push(c);
   }
   const byName = (a: SlashCommandDto, b: SlashCommandDto) => a.name.localeCompare(b.name);
   return [...prefix.sort(byName), ...partial.sort(byName)];
+}
+
+/** 앱 명령이 같은 이름의 에이전트 명령보다 우선한다. 결과의 출처를 실행 시에도 사용한다. */
+export function mergeSlashCommands(app: SlashCommandDto[], agent: SlashCommandDto[]): SlashCommandDto[] {
+  const merged = new Map<string, SlashCommandDto>();
+  for (const command of [...app, ...agent]) if (!merged.has(command.name)) merged.set(command.name, command);
+  return [...merged.values()];
+}
+
+export function isAcpSlashCommand(text: string, commands: SlashCommandDto[] | null): boolean {
+  const name = /^\/(\S+)(?:\s|$)/.exec(text.trim())?.[1];
+  return !!name && !!commands?.some(command => command.source === "acp" && (command.name === name || command.aliases?.includes(name)));
 }

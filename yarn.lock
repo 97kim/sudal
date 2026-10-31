@@ -2,6 +2,11 @@
 # yarn lockfile v1
 
 
+"@agentclientprotocol/sdk@2.2.0":
+  version "2.2.0"
+  resolved "https://registry.yarnpkg.com/@agentclientprotocol/sdk/-/sdk-2.2.0.tgz#f028a38e2cbf59e303521c265ecf74e13c5a2e96"
+  integrity sha512-o1+eDQVb05yzPY+5v54awHyONU1oeLsbLVavkwrMQaZDuJDh/38pQiXJS4ix4d6QA3Y4bU0lHFRjwg99KKKSaQ==
+
 "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.296":
   version "0.3.296"
   resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.296.tgz#c2b2f48454ca157e96e3a788c924e3e8e41a9884"

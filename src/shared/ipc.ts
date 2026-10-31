@@ -268,6 +268,7 @@ export const IPC = {
   chatSwitchProvider: "chat:switch-provider",
   chatEvent: "chat:event",
   chatCommands: "chat:commands",
+  chatAcpNew: "chat:acp-new",
   chatCommandsChanged: "chat:commands-changed",
   chatCodexMentions: "chat:codex-mentions",
   chatSearch: "chat:search",
@@ -734,7 +735,17 @@ export interface SessionConfigDto {
   model?: string;
 }
 
+/** 에이전트가 보낸 현재 설정. 앱의 모델·권한 설정과 구분한다. */
+export interface AcpConfigValueDto {
+  id: string;
+  name: string;
+  value: string;
+  label: string;
+}
+
 export interface SessionSnapshotDto extends SessionConfigDto {
+  connection?: "acp";
+  acpConfig?: AcpConfigValueDto[];
   tabId: string;
   status: SessionStatus;
   sessionId: string | null;
@@ -911,6 +922,7 @@ export interface SudalApi {
     diagnostics(): Promise<CliDiagnosticsDto>;
   };
   chat: {
+    acpNew(tabId: string): Promise<{ ok: true; tabId: string } | { ok: false; error: string }>;
     send(tabId: string, payload: ChatSendDto): Promise<ChatSendResult>;
     abort(tabId: string): Promise<boolean>;
     answerPermission(

@@ -235,7 +235,7 @@ export function ContextPanel({
           badge={pct !== null ? `${pct}%` : undefined}
           badgeClass="text-accent"
         >
-          {last ? (
+          {config?.connection === "acp" ? <p className="text-muted">{t("chat.acp.usageUnknown")}</p> : last ? (
             <>
               {pct !== null && (
                 <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-panel-2">
@@ -273,7 +273,13 @@ export function ContextPanel({
           )}
         </Section>
 
-        <Section title={t("panel.context.permissions")}>
+        <Section title={t(config?.connection === "acp" ? "chat.acp.settings" : "panel.context.permissions")}>
+          {config?.connection === "acp" ? <dl className="flex flex-col gap-2" data-acp-config>
+            {config.acpConfig?.map(option => <div key={option.id} className="flex items-baseline justify-between gap-3 text-xs">
+              <dt className="text-muted">{option.name}</dt><dd className="text-right" data-acp-config-id={option.id}>{option.label}</dd>
+            </div>)}
+          </dl> :
+          <>
           <div className="flex flex-col gap-1.5">
             {POLICY_IDS.map((id) => {
               const active = (config?.policy ?? "ask") === id;
@@ -305,6 +311,7 @@ export function ContextPanel({
           <p className="mt-2 text-[10px] text-muted">
             {t(`panel.context.policy.${config?.policy ?? "ask"}.${config?.provider === "agy" ? "agyHelp" : isCodex ? "codexHelp" : "help"}`)}
           </p>
+          </>}
         </Section>
       </div>
 

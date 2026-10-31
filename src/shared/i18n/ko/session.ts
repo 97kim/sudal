@@ -1,6 +1,9 @@
 // 세션·에이전트 연결(main)의 문구. msg 아래는 대화 기록에 저장되는 키다 — 키와 값 이름을 바꾸지 않는다.
 export const session = {
   error: {
+    acpUnavailable: "ACP 실험 연결은 어댑터가 설정된 Claude·Codex 대화에서 사용할 수 있습니다.",
+    acpUnsupported: "이 기능은 ACP 실험 대화에서 아직 지원하지 않습니다. 지원되는 슬래시 명령은 입력창에서 확인하세요.",
+    acpSetup: "ACP 어댑터 설정을 확인하세요. 사용자 데이터 폴더의 acp-adapters.json 또는 SUDAL_ACP_CONFIG를 사용합니다.",
     agyImagesUnsupported: "Antigravity 채팅은 아직 이미지 첨부를 지원하지 않습니다. 이미지를 제거하거나 다른 에이전트를 선택해 주세요.",
     agyTerminalUnsupported: "Antigravity는 아직 같은 대화의 터미널 전환을 지원하지 않습니다. 별도 터미널에서 agy를 사용할 수 있습니다.",
     queueMissing: "대기열에 없는 지시입니다.",
@@ -116,6 +119,7 @@ export const session = {
     promptHint: "[작업 설명]",
   },
   msg: {
+    acpConfigChanged: "{{name}} 설정: {{value}}",
     agyHeadlessPermissions: "Antigravity 채팅은 CLI 권한 설정을 따릅니다. 이 화면에서는 도구 실행을 승인할 수 없으며, 추가 승인이 필요한 작업은 자동 거절됩니다.",
     agyTurnFailed: "Antigravity 작업이 완료되지 않았습니다 ({{status}})",
     aiReview: {

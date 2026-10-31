@@ -19,6 +19,7 @@ import type {
   FanoutStartDto,
 } from "@shared/ipc";
 import type { SlashCommandDto } from "@shared/slash-commands";
+import { isAcpSlashCommand } from "@shared/slash-commands";
 import { type WorktreeMeta,
   tabCwd,
   tabTitle,
@@ -50,8 +51,8 @@ import { VerifyPopover } from "../components/VerifyPopover";
 import { FanoutModal } from "../components/FanoutModal";
 import { FanoutCompare } from "../components/FanoutCompare";
 import { OrchestrationPanel } from "../components/OrchestrationPanel";
-import { agyCommands, codexCommands, modelFromArg, parseAgyAppCommand, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
-import type { CodexMention } from "@shared/codex-mentions";
+import { acpCommands, parseAcpAppCommand, agyCommands, codexCommands, modelFromArg, parseAgyAppCommand, parseAppCommand, parseCodexCommand, withAppCommands } from "@shared/app-commands";
+import { splitAcpCodexCommands, type CodexMention } from "@shared/codex-mentions";
 import { RightPanel } from "../components/RightPanel";
 import { TabBar } from "../components/TabBar";
 import { TerminalPanel } from "../components/TerminalPanel";
@@ -419,11 +420,18 @@ export function ChatView({
   const browserTabCount = editorTabs.files.length - fileTabCount;
   const paneLabel = [fileTabCount > 0 ? t("chat.header.codeCount", { count: fileTabCount }) : null, browserTabCount > 0 ? t("chat.header.browserCount", { count: browserTabCount }) : null].filter(Boolean).join(" · ");
   const provider = config?.provider ?? tab.provider;
+  const isAcp = (config?.connection ?? tab.connection) === "acp";
+  const acpPlanOption = config?.acpConfig?.find(option => option.id === "collaboration_mode") ?? config?.acpConfig?.find(option => option.id === "mode");
+  const planMode = isAcp ? acpPlanOption ? acpPlanOption.value === "plan" : null : undefined;
+  const [commands, setCommands] = useState<SlashCommandDto[] | null>(null);
+  const [commandsLoading, setCommandsLoading] = useState(false);
+  const acpCodexCommands = useMemo(() => isAcp && provider === "codex" ? splitAcpCodexCommands(commands ?? []) : null, [isAcp, provider, commands]);
+  const displayCommands = isAcp ? acpCommands(t, acpCodexCommands?.commands ?? commands ?? []) : provider === "claude" && commands ? withAppCommands(t, commands) : commands;
 
   const onSend = useCallback(
     async (text: string, images: ChatImageDto[]) => {
       // Codex 의 "/" 명령은 app-server 가 모르니 앱이 Sudal 기능으로 처리한다(나머지 글은 그대로 모델에게).
-      const codexCmd = images.length === 0 ? (provider === "codex" ? parseCodexCommand(text) : provider === "agy" ? parseAgyAppCommand(text) : null) : null;
+      const codexCmd = images.length === 0 ? (isAcp ? parseAcpAppCommand(text) : provider === "codex" ? parseCodexCommand(text) : provider === "agy" ? parseAgyAppCommand(text) : null) : null;
       if (codexCmd) {
         if (codexCmd.name === "new" || codexCmd.name === "clear") return onClear();
         if (codexCmd.name === "compact") return compactContext();
@@ -435,7 +443,7 @@ export function ChatView({
         }
         if (codexCmd.name === "init") text = t("session.codexCommand.initPrompt");
       }
-      const cmd = images.length === 0 ? parseAppCommand(text) : null;
+      const cmd = images.length === 0 && (!isAcp || codexCmd) ? parseAppCommand(text) : null;
       if (cmd?.name === "mcp") return onOpenMcp();
       if (cmd?.name === "config") return onOpenSettings();
       if (cmd?.name === "model") {
@@ -447,17 +455,16 @@ export function ChatView({
       if (!r.ok) throw new Error(r.error);
       setConfig(await window.sudal.chat.snapshot(tabId));
     },
-    [tabId, provider, setConfig, onOpenMcp, onOpenSettings, setModel, startRename, t],
+    [tabId, provider, isAcp, setConfig, onOpenMcp, onOpenSettings, setModel, startRename, t],
   );
 
   const snippets = useSnippets();
   // "/" 자동완성용 슬래시 커맨드 목록. null = 해당 없음(Codex), [] = 아직 로딩 중.
-  const [commands, setCommands] = useState<SlashCommandDto[] | null>(null);
   // Codex: "/" 는 앱이 처리하는 명령 목록, "$" 는 app-server 가 주는 스킬·앱 목록.
   const [mentions, setMentions] = useState<CodexMention[] | null>(null);
   const [mentionsLoading, setMentionsLoading] = useState(false);
   useEffect(() => {
-    if (provider !== "codex" || !config || !cwd) {
+    if (isAcp || provider !== "codex" || !config || !cwd) {
       setMentions(null);
       setMentionsLoading(false);
       return;
@@ -480,27 +487,31 @@ export function ChatView({
     return () => {
       alive = false;
     };
-  }, [tabId, provider, cwd, config !== null]);
+  }, [tabId, provider, isAcp, cwd, config !== null]);
   useEffect(() => {
-    if (provider === "agy" && config) {
+    setCommandsLoading(false);
+    if (!isAcp && provider === "agy" && config) {
       setCommands(agyCommands(t));
       return;
     }
-    if (provider === "codex" && config) {
+    if (!isAcp && provider === "codex" && config) {
       setCommands(codexCommands(t));
       return;
     }
-    if (provider !== "claude" || !config) {
+    if ((!isAcp && provider !== "claude") || !config) {
       setCommands(null);
       return;
     }
     let alive = true;
     setCommands([]);
-    const load = () =>
-      window.sudal.chat
+    const load = () => {
+      setCommandsLoading(true);
+      return window.sudal.chat
         .commands(tabId)
         .then((c) => alive && setCommands(c))
-        .catch(console.error);
+        .catch(error => { if (alive && isAcp) setAttachError(String(error)); else console.error(error); })
+        .finally(() => alive && setCommandsLoading(false));
+    };
     load();
     const off = window.sudal.chat.onCommandsChanged((changed) => {
       if (changed === cwd) load();
@@ -509,7 +520,7 @@ export function ChatView({
       alive = false;
       off();
     };
-  }, [tabId, provider, cwd, config !== null]);
+  }, [tabId, provider, isAcp, cwd, config !== null, isAcp ? config?.sessionId : null, t]);
 
   return (
     <OpenFileContext.Provider value={openFile}>
@@ -583,6 +594,7 @@ export function ChatView({
                 className={`h-1.5 w-1.5 rounded-full ${statusDot(state.status)}`}
               />
               <span className="shrink-0">{workspace.name}</span>
+              {isAcp && <span className="shrink-0 rounded bg-accent-tint px-1.5 text-accent" data-acp-connection>{t("chat.acp.badge")}</span>}
               {/* 불러오기 전엔 세션 설정이 없어 워크스페이스 경로가 보인다. 이때 바꾸면 이어 갈 대화가 새로 시작되므로 숨긴다 */}
               {loaded && <span className="shrink-0">·</span>}
               {!loaded ? null : cwd ? (
@@ -786,6 +798,13 @@ export function ChatView({
                 anchor={moreAnchor.current}
                 onClose={() => setMoreOpen(false)}
                 items={[
+                  ...(provider === "agy" ? [] : [{
+                    key: "acp-new", label: t("chat.acp.newChat"), icon: "sparkles" as const,
+                    hint: t("chat.acp.hint"), disabled: !cwd, disabledReason: t("chat.header.needCwd"),
+                    onSelect: () => {
+                      void window.sudal.chat.acpNew(tabId).then(result => { if (!result.ok) setAttachError(result.error); }).catch(error => setAttachError(String(error)));
+                    },
+                  }]),
                   {
                     key: "fanout",
                     label: t("chat.header.fanout.label"),
@@ -816,8 +835,8 @@ export function ChatView({
                     label: t("chat.header.attachTerminal.label"),
                     icon: "play",
                     hint: t("chat.header.attachTerminal.hint"),
-                    disabled: provider === "agy" || !cwd || running || terminalControlled,
-                    disabledReason: provider === "agy" ? t("session.error.agyTerminalUnsupported") : terminalControlled ? t("chat.header.attachTerminal.already") : running ? t("chat.header.attachTerminal.waitIdle") : t("chat.header.needCwd"),
+                    disabled: isAcp || provider === "agy" || !cwd || running || terminalControlled,
+                    disabledReason: isAcp ? t("session.error.acpUnsupported") : provider === "agy" ? t("session.error.agyTerminalUnsupported") : terminalControlled ? t("chat.header.attachTerminal.already") : running ? t("chat.header.attachTerminal.waitIdle") : t("chat.header.needCwd"),
                     onSelect: () => void attachTerminal(),
                   },
                 ]}
@@ -826,6 +845,7 @@ export function ChatView({
           </div>
           <button
             onClick={() => setSwitching(true)}
+            disabled={isAcp}
             className={`no-drag flex min-h-[31px] shrink-0 items-center rounded-md border border-line bg-panel py-1.5 hover:bg-panel-2 gap-1 px-1.5 @min-[800px]/chathead:gap-2 @min-[800px]/chathead:px-3`}
             title={PROVIDER_LABEL[provider]}
           >
@@ -950,7 +970,7 @@ export function ChatView({
                 tabId={tabId}
                 items={config!.pendingPrompts}
                 idle={(config!.status === "idle" || config!.status === "error") && !config!.limitWait}
-                steerable={provider === "codex" && (config!.status === "running" || config!.status === "waiting_permission") && !terminalControlled}
+                steerable={!isAcp && provider === "codex" && (config!.status === "running" || config!.status === "waiting_permission") && !terminalControlled}
                 onChanged={setConfig}
               />
             )}
@@ -973,7 +993,7 @@ export function ChatView({
                 </span>
                 <button
                   onClick={() => void compactContext()}
-                  disabled={ctxBusy || running || terminalControlled}
+                  disabled={ctxBusy || running || terminalControlled || (isAcp && !commands?.some(command => command.name === "compact"))}
                   className={`shrink-0 rounded border px-2 py-0.5 disabled:opacity-40 ${
                     ctxLevel === "critical"
                       ? "border-err/40 hover:bg-err/10"
@@ -1050,6 +1070,7 @@ export function ChatView({
             )}
 
             <BackgroundJobsBar tabId={tabId} sessionId={state.sessionId ?? config?.sessionId ?? null} />
+            {isAcp && <div className="px-4 py-2 text-xs text-muted" data-acp-trial>{t("chat.acp.banner")}</div>}
 
             <Composer
               disabled={!cwd || terminalControlled}
@@ -1060,13 +1081,14 @@ export function ChatView({
               runningHint={agentBusy ? t(agentViaCodex ? "chat.composerHint.codex" : "chat.composerHint.subagent", { name: agentBusy }) : undefined}
               providerLabel={PROVIDER_LABEL[provider]}
               imagesDisabledReason={provider === "agy" ? t("session.error.agyImagesUnsupported") : undefined}
-              policyTag={provider === "agy" && config?.policy === "ask" ? "CLI + SANDBOX" : undefined}
+              policyTag={isAcp ? "ACP" : provider === "agy" && config?.policy === "ask" ? "CLI + SANDBOX" : undefined}
               policy={config?.policy ?? "ask"}
-              commands={provider === "claude" && commands ? withAppCommands(t, commands) : commands}
-              commandsLoading={provider === "claude" && commands !== null && commands.length === 0}
-              mentions={mentions}
-              mentionsLoading={mentionsLoading}
-              isAppCommand={(text) => parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null) || (provider === "agy" && parseAgyAppCommand(text) !== null)}
+              planMode={planMode}
+              commands={displayCommands}
+              commandsLoading={commandsLoading}
+              mentions={acpCodexCommands?.mentions ?? mentions}
+              mentionsLoading={acpCodexCommands ? commandsLoading : mentionsLoading}
+              isAppCommand={(text) => isAcp ? parseAcpAppCommand(text) !== null || isAcpSlashCommand(text, displayCommands) : parseAppCommand(text) !== null || (provider === "codex" && parseCodexCommand(text) !== null) || (provider === "agy" && parseAgyAppCommand(text) !== null)}
               snippets={snippets}
               workspaceId={tab.workspaceId}
               draftKey={tabId}

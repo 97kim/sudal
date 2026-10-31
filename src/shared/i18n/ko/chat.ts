@@ -1,5 +1,14 @@
 // chat 영역의 한국어 문구.
 export const chat = {
+  acp: {
+    badge: "ACP 실험",
+    settings: "현재 ACP 설정",
+    usageUnknownShort: "사용량 집계 미지원",
+    usageUnknown: "ACP 실험 연결에서는 토큰·비용 집계를 아직 제공하지 않습니다.",
+    newChat: "새 ACP 실험 대화",
+    hint: "기존 대화는 유지하고 ACP 어댑터로 새 대화를 엽니다",
+    banner: "ACP 실험 대화 · 에이전트 슬래시 명령 사용 가능 · 일부 앱 기능 미지원",
+  },
   verifyCard: {
     hideOutput: "출력 접기",
     showOutput: "출력 보기",
@@ -193,6 +202,12 @@ export const chat = {
     cancelRetry: "재시도 취소",
   },
   composer: {
+    planMode: {
+      on: "계획 모드 켜짐",
+      off: "계획 모드 꺼짐",
+      loading: "모드 확인 중…",
+      hint: "현재 대화에 적용된 계획 모드 상태입니다.",
+    },
     imageLimit: "이미지는 최대 {{count}}장까지 첨부할 수 있습니다.",
     loadingCommands: "커맨드 목록을 불러오는 중…",
     loadingMentions: "스킬·앱 목록을 불러오는 중…",

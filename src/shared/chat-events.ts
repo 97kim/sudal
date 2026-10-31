@@ -151,6 +151,10 @@ export interface PermissionResolvedEvent extends Base {
 
 export interface TurnResultEvent extends Base {
   type: "turn_result";
+  /** 자동화 호출의 완료 신호는 보존하되 대화·사용량 요약에는 포함하지 않는 제어 실행. */
+  control?: "plan";
+  /** 연결이 사용량을 제공하지 않아 0을 합산용 자리값으로 쓴다. 화면에서는 0토큰으로 표시하지 않는다. */
+  usageUnavailable?: true;
   /** 턴 안의 모든 API 요청 누적치 (툴콜마다 대화를 다시 보내므로 컨텍스트 크기가 아니다). */
   usage: TokenUsage;
   /** 마지막 assistant 메시지 하나가 든 입력 컨텍스트(input + cache read + cache write). 다음 턴이 들고 갈 크기. */

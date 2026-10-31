@@ -134,6 +134,20 @@ test("ControlServer: CLI 탐색 중에는 생성만 기다리고 조회는 응�
   assert.equal(calls.filter((c) => c.startsWith("addWorkspace")).length, 1);
 });
 
+test("ControlServer: 숨긴 모드 전환도 완료를 기다리고 이전 대화 응답을 재사용하지 않는다", async () => {
+  const { deps } = fakeDeps();
+  const events = [...deps.events("t1")];
+  deps.events = () => events;
+  deps.send = async () => {
+    events.push({ type: "turn_result", ts: 10, control: "plan", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: 0, durationMs: 1, numTurns: 1, modelUsage: {}, isError: false });
+    return { ok: true, queued: false };
+  };
+  const srv = new ControlServer(deps, "unused");
+  const sent = await srv.dispatch("tab.send", { tab: "t1", text: "/plan", wait: true, timeoutMs: 500 }) as { wait: { satisfied: boolean }; reply: string };
+  assert.equal(sent.wait.satisfied, true);
+  assert.equal(sent.reply, "");
+});
+
 test("ControlServer: 선택자·목록·읽기·보내고 기다리기·화면 열기", async () => {
   const { deps, calls, pending, model } = fakeDeps();
   const srv = new ControlServer(deps, join(mkdtempSync(join(tmpdir(), "wb-ctl-")), "c.sock"));

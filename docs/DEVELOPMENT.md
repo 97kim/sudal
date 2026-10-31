@@ -19,6 +19,8 @@ yarn package    # ad-hoc 서명 arm64 DMG (release/sudal-<version>-arm64.dmg)
 - `SUDAL_APPROVED_ROOTS=경로:경로` — 검증용으로 작업 경로를 미리 승인한다.
 - `SUDAL_E2E_MOCK_KEYCHAIN=1` — (macOS, e2e 전용) 쿠키 암호화에 실제 키체인 대신 고정 키를 쓴다. 패키징 빌드마다 서명이 바뀌어 키체인 허용 창에 막히는 것을 피한다.
 
+Claude·Codex의 ACP 실험 대화 설정과 진단 명령은 [ACP 전환 준비](ACP-MIGRATION.ko.md)에 정리했다.
+
 ## 릴리스
 
 GitHub Actions의 `release` 워크플로가 macOS arm64 DMG와 Windows x64 설치 파일을 각 운영체제에서 빌드한다.

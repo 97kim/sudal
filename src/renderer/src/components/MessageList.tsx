@@ -674,11 +674,12 @@ function BlockView({ block }: { block: Block }) {
     case "turn": {
       const stats = (
         <span className="mono text-[10px]">
-          {(block.durationMs / 1000).toFixed(1)}s · in {fmt(block.usage.input)}{" "}
+          {(block.durationMs / 1000).toFixed(1)}s{block.usageUnavailable ? ` · ${t("chat.acp.usageUnknownShort")}` : <> · in {fmt(block.usage.input)}{" "}
           / out {fmt(block.usage.output)}
           {block.usage.cacheRead > 0 &&
             ` · cache ${fmt(block.usage.cacheRead)}`}
           {block.costUsd > 0 && ` · $${block.costUsd.toFixed(4)}`}
+          </>}
         </span>
       );
       // 성공한 턴은 통계 한 줄만 조용히. 실패는 원인을 봐야 하니 박스로.

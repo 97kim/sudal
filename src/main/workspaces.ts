@@ -111,6 +111,7 @@ export class WorkspaceService {
     if (!tab) return null;
     return {
       provider: tab.provider,
+      connection: tab.connection,
       cwd: tabCwd(this.model, tab),
       policy: tab.policy,
       model: tab.model,
@@ -195,7 +196,7 @@ export class WorkspaceService {
     const now = Date.now();
     const { model, tab } = createTab(this.model, ws.id, now, randomUUID(), {
       provider,
-      model: (provider === active?.provider ? active.model : undefined) || this.newTabModel(provider),
+      model: (provider === active?.provider && !active.connection ? active.model : undefined) || this.newTabModel(provider),
       policy: this.fixedNewTabPolicy() ?? active?.policy,
       cwd: extra?.cwd ?? inheritedCwd(this.model, ws.id, this.model.activeTabId),
     });
@@ -214,6 +215,16 @@ export class WorkspaceService {
       : model;
     this.commit(withWt);
     return tab.id;
+  }
+
+  createAcpTab(sourceId: string): string {
+    const source = this.model.tabs.find(tab => tab.id === sourceId);
+    if (!source || source.provider === "agy") throw new Error("ACP requires a Claude or Codex source tab");
+    const created = createTab(this.model, source.workspaceId, Date.now(), randomUUID(), {
+      provider: source.provider, connection: "acp", cwd: tabCwd(this.model, source) ?? undefined, policy: "ask",
+    });
+    this.commit(created.model);
+    return created.tab.id;
   }
 
   closeTab(tabId: string) {

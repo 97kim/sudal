@@ -2,6 +2,15 @@ import type { chat as ko } from "../ko/chat";
 import type { DeepPartial } from "../types";
 
 export const chat: DeepPartial<typeof ko> = {
+  acp: {
+    badge: "ACP trial",
+    settings: "Current ACP settings",
+    usageUnknownShort: "Usage unavailable",
+    usageUnknown: "Token and cost totals are not available for ACP trial connections yet.",
+    newChat: "New ACP trial chat",
+    hint: "Open a new chat through an ACP adapter and keep the current chat",
+    banner: "ACP trial · Agent slash commands available · Some app features unavailable",
+  },
   verifyCard: {
     hideOutput: "Collapse output",
     showOutput: "Show output",
@@ -195,6 +204,12 @@ export const chat: DeepPartial<typeof ko> = {
     cancelRetry: "Cancel retry",
   },
   composer: {
+    planMode: {
+      on: "Plan mode on",
+      off: "Plan mode off",
+      loading: "Checking mode…",
+      hint: "The current plan mode for this conversation.",
+    },
     imageLimit: "You can attach up to {{count}} images.",
     loadingCommands: "Loading command list…",
     loadingMentions: "Loading skills and apps…",

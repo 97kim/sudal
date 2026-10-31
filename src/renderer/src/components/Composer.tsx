@@ -22,7 +22,7 @@ import {
 } from "@shared/snippets";
 import { Icon } from "./Icon";
 import { parseAppCommand } from "@shared/app-commands";
-import { filterCodexMentions, parseDollarQuery, type CodexMention } from "@shared/codex-mentions";
+import { filterCodexMentions, parseDollarQuery, type CodexMentionLabel } from "@shared/codex-mentions";
 import { clearComposerDraft, loadComposerDraft, loadComposerFiles, onComposerDraftAppend, onComposerFilesDrop, saveComposerDraft, saveComposerFiles, withAttachedFiles, type ComposerFile } from "../composer-draft";
 import { appendToDraft } from "@shared/attachments";
 
@@ -30,7 +30,7 @@ import { appendToDraft } from "@shared/attachments";
 type PaletteRow =
   | { kind: "snippet"; key: string; snippet: SnippetDto }
   | { kind: "command"; key: string; command: SlashCommandDto }
-  | { kind: "mention"; key: string; mention: CodexMention };
+  | { kind: "mention"; key: string; mention: CodexMentionLabel };
 
 const MAX_SNIPPET_ROWS = 5;
 
@@ -55,6 +55,7 @@ export function Composer({
   imagesDisabledReason,
   policyTag,
   policy,
+  planMode,
   commands,
   commandsLoading,
   mentions = null,
@@ -81,12 +82,14 @@ export function Composer({
   imagesDisabledReason?: string;
   policyTag?: string;
   policy: PermissionPolicy;
+  /** undefined는 미지원, null은 확인 중. 에이전트가 알려 준 실제 상태를 표시한다. */
+  planMode?: boolean | null;
   /** "/" 자동완성 목록(앱이 처리하는 명령 포함). null 이면 이 provider 에선 지원하지 않음, [] 는 로딩 중. */
   commands: SlashCommandDto[] | null;
   /** 명령 목록을 불러오는 중인지. 없으면 commands 가 [] 인 것을 불러오는 중으로 본다. */
   commandsLoading?: boolean;
   /** "$" 자동완성 목록(Codex 스킬·앱). null 이면 "$" 목록을 쓰지 않는다. */
-  mentions?: CodexMention[] | null;
+  mentions?: CodexMentionLabel[] | null;
   /** `$` 목록을 아직 받는 중. 맞는 게 아직 없으면 "불러오는 중" 을 보여 준다. */
   mentionsLoading?: boolean;
   /** 앱이 처리하는 명령인지 — 그러면 첨부 파일 목록을 붙이지 않고 글 그대로 보낸다. */
@@ -603,6 +606,19 @@ export function Composer({
             <Icon name="paperclip" size={13} />
             <span className="hidden @[440px]:inline">{t("chat.composer.attach")}</span>
           </button>
+          {planMode !== undefined && (
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] leading-4 ${planMode === true ? "border-accent/35 bg-accent-tint text-accent" : "border-line text-muted"}`}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              title={t("chat.composer.planMode.hint")}
+              data-composer-plan={planMode === null ? "loading" : planMode ? "on" : "off"}
+            >
+              <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${planMode === true ? "bg-accent" : planMode === null ? "animate-pulse bg-muted" : "bg-muted-2"}`} />
+              {t(`chat.composer.planMode.${planMode === null ? "loading" : planMode ? "on" : "off"}`)}
+            </span>
+          )}
           {onSaveSnippet && text.trim().length > 0 && slashQuery === null && (
             <button
               onClick={() => {

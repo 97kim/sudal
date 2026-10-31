@@ -115,6 +115,7 @@ import {
   exportFileName,
 } from "@shared/transcript-search";
 import { PROVIDER_LABEL, SessionManager, summarizeToolInput } from "./session-manager";
+import { readAcpRuntime } from "./acp-runtime";
 import { codexRateLimitFromAppServer, UsageScanner } from "./transcripts";
 import { MobilePairing, parseTailscaleSelf, tailscaleAddresses } from "./mobile-access";
 import { MobileServer } from "./mobile-server";
@@ -1854,6 +1855,14 @@ function bootstrap() {
     claudeRuntime,
     codexRuntime,
     agyRuntime,
+    acpRuntime: async (provider, tabId) => ({
+      ...await readAcpRuntime(process.env.SUDAL_ACP_CONFIG || join(app.getPath("userData"), "acp-adapters.json"), provider),
+      env: await sdkEnv(tabId), clientVersion: app.getVersion(),
+    }),
+    onAcpCommands: (tabId) => {
+      const cwd = sessions.snapshot(tabId).cwd;
+      if (cwd) sendAll(IPC.chatCommandsChanged, cwd);
+    },
     newTabModel: (provider) => appSettings().newTabModel[provider] || undefined,
     folderTrusted: isFolderTrusted,
     ensureFolderTrust: (_tabId, cwd) => ensureFolderTrust(cwd),
@@ -2742,7 +2751,7 @@ function registerIpc() {
     const none = { list: [], complete: true };
     if (typeof tabId !== "string") return none;
     const snap = sessions.snapshot(tabId);
-    if (snap.provider !== "codex" || !snap.cwd) return none;
+    if (snap.connection === "acp" || snap.provider !== "codex" || !snap.cwd) return none;
     try {
       return await listCodexMentions(await codexRuntime(tabId), snap.cwd, (l) => console.log(l), full === true);
     } catch (e) {
@@ -2752,8 +2761,24 @@ function registerIpc() {
   });
   ipcMain.handle(IPC.chatCommands, async (_e, tabId: string) => {
     const snap = sessions.snapshot(tabId);
+    if (snap.connection === "acp") return sessions.acpCommands(tabId);
     if (snap.provider !== "claude" || !snap.cwd) return [];
     return slashCommands.get(snap.cwd, () => claudeRuntime());
+  });
+
+  ipcMain.handle(IPC.chatAcpNew, async (_e, sourceId: string) => {
+    try {
+      const source = typeof sourceId === "string" ? workspaces.tab(sourceId) : null;
+      if (!source || source.provider === "agy") throw new Error(mt("session.error.acpUnavailable"));
+      const cwd = workspaces.resolveConfig(sourceId)?.cwd;
+      await readAcpRuntime(process.env.SUDAL_ACP_CONFIG || join(app.getPath("userData"), "acp-adapters.json"), source.provider);
+      if (!cwd || !(await ensureFolderTrust(cwd))) throw new Error(mt("session.msg.untrustedFolder"));
+      const current = workspaces.resolveConfig(sourceId);
+      if (!current || current.cwd !== cwd || current.provider !== source.provider) throw new Error(mt("session.error.acpUnavailable"));
+      return { ok: true, tabId: workspaces.createAcpTab(sourceId) };
+    } catch (error) {
+      return { ok: false, error: `${mt("session.error.acpSetup")}\n${error instanceof Error ? error.message : String(error)}` };
+    }
   });
 
   ipcMain.handle(IPC.mcpStatus, async (_e, cwd: string) => {

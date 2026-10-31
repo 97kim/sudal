@@ -80,6 +80,7 @@ export function subagentLogLine(e: { tool?: string; input?: Record<string, strin
 
 export interface TurnBlock {
   kind: "turn";
+  usageUnavailable?: true;
   id: string;
   usage: TokenUsage;
   costUsd: number;
@@ -440,6 +441,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
     }
 
     case "turn_result": {
+      if (event.control === "plan") return state;
       // /mcp 같은 로컬 커맨드 턴은 모델을 거치지 않아 사용량이 0 이다. 컨텍스트 패널의 "마지막 턴" 은
       // 모델이 실제로 돈 마지막 턴을 가리키게 유지한다.
       const u = event.usage;
@@ -452,6 +454,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           ...finalizeRunningTools(finalizeStreaming(state.blocks), "turnEnded"),
           {
             kind: "turn",
+            ...(event.usageUnavailable ? { usageUnavailable: true as const } : {}),
             id: `turn-${event.ts}-${state.totals.turns + 1}`,
             usage: event.usage,
             costUsd: event.costUsd,

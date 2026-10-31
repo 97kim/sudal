@@ -15,6 +15,21 @@ function service(available: readonly Provider[]) {
   return ws;
 }
 
+test("ACP 실험 탭은 별도 연결로 저장하고 기존 세션·모델을 상속하지 않는다", () => {
+  const ws = service(["codex"]);
+  const source = ws.addWorkspace("/repo");
+  ws.onMeta(source.tabId, { sessionId: "native", model: "native-model", policy: "full" });
+  const trial = ws.createAcpTab(source.tabId);
+  assert.deepEqual(ws.resolveConfig(trial), { provider: "codex", connection: "acp", cwd: "/repo", sessionId: null, model: undefined, policy: "ask" });
+  assert.equal(ws.tab(source.tabId)?.sessionId, "native");
+  assert.equal(ws.tab(source.tabId)?.connection, undefined);
+  const normal = ws.tab(ws.createTab(source.workspaceId)!)!;
+  assert.equal(normal.connection, undefined);
+  assert.equal(normal.model, undefined);
+  ws.onMeta(source.tabId, { provider: "agy" });
+  assert.throws(() => ws.createAcpTab(source.tabId));
+});
+
 for (const provider of ["claude", "codex"] as const) {
   test(`only ${provider}: workspace and tab defaults use the installed CLI`, () => {
     const ws = service([provider]);

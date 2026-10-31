@@ -3,6 +3,9 @@ import type { DeepPartial } from "../types";
 
 export const session: DeepPartial<typeof ko> = {
   error: {
+    acpUnavailable: "ACP trial connections require a configured Claude or Codex adapter.",
+    acpUnsupported: "This feature is not available in ACP trial chats yet. Check the composer for supported slash commands.",
+    acpSetup: "Check the ACP adapter settings in acp-adapters.json in the user data folder, or SUDAL_ACP_CONFIG.",
     agyImagesUnsupported: "Antigravity chat does not support image attachments yet. Remove the images or select another agent.",
     agyTerminalUnsupported: "Antigravity does not support handing this conversation to the terminal yet. You can run agy in a separate terminal.",
     queueMissing: "That prompt is no longer in the queue.",
@@ -118,6 +121,7 @@ export const session: DeepPartial<typeof ko> = {
     promptHint: "[task]",
   },
   msg: {
+    acpConfigChanged: "{{name}} set to {{value}}",
     agyHeadlessPermissions: "Antigravity chat follows your CLI permission settings. Tool requests cannot be approved here; actions requiring additional approval are automatically denied.",
     agyTurnFailed: "Antigravity did not complete the turn ({{status}})",
     aiReview: {

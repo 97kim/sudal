@@ -1,6 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { codexAppSlug, codexMentionsFrom, filterCodexMentions, findCodexMentions, parseDollarQuery } from "./codex-mentions";
+import { codexAppSlug, codexMentionsFrom, filterCodexMentions, findCodexMentions, parseDollarQuery, splitAcpCodexCommands } from "./codex-mentions";
+
+test("Codex ACP 스킬은 슬래시 목록에서 빼고 경로를 추측하지 않는 $ 자동완성으로 옮긴다", () => {
+  const split = splitAcpCodexCommands([
+    { name: "plan", description: "Plan", argumentHint: "", source: "acp" },
+    { name: "$pdf", description: "Read PDF", argumentHint: "", source: "acp" },
+    { name: "$plugin:review", description: "Review", argumentHint: "", source: "acp" },
+    { name: "$pdf", description: "Updated PDF", argumentHint: "", source: "acp" },
+    { name: "$", description: "invalid", argumentHint: "", source: "acp" },
+    { name: "$plugin:_private", description: "internal", argumentHint: "", source: "acp" },
+  ]);
+  assert.deepEqual(split.commands.map(command => command.name), ["plan"]);
+  assert.deepEqual(split.mentions, [
+    { kind: "skill", name: "pdf", description: "Updated PDF" },
+    { kind: "skill", name: "plugin:review", description: "Review" },
+  ]);
+  assert.deepEqual(filterCodexMentions(split.mentions, "plugin:"), [split.mentions[1]]);
+  assert.deepEqual(splitAcpCodexCommands([]), { commands: [], mentions: [] });
+});
 
 test("codexAppSlug: Codex CLI 와 같은 슬러그", () => {
   assert.equal(codexAppSlug("Google Drive"), "google-drive");

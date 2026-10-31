@@ -20,6 +20,8 @@ export interface Workspace {
 }
 
 export interface TabMeta {
+  /** 명시적으로 만든 실험 탭. 없으면 기존 SDK/App Server 연결. */
+  connection?: "acp";
   id: string;
   workspaceId: string;
   /** 첫 사용자 메시지에서 따오거나 사용자가 붙인 이름. 없으면 "새 세션". */
@@ -206,13 +208,14 @@ export function createTab(
   workspaceId: string,
   now: number,
   id: string,
-  defaults: { provider?: Provider; model?: string; policy?: PermissionPolicy; cwd?: string } = {},
+  defaults: { provider?: Provider; model?: string; policy?: PermissionPolicy; cwd?: string; connection?: "acp" } = {},
 ): { model: WorkspaceModel; tab: TabMeta } {
   const tab: TabMeta = {
     id,
     workspaceId,
     title: null,
     provider: defaults.provider ?? "claude",
+    ...(defaults.connection ? { connection: defaults.connection } : {}),
     ...(defaults.model ? { model: defaults.model } : {}),
     ...(defaults.cwd ? { cwd: defaults.cwd } : {}),
     policy: defaults.policy ?? "ask",

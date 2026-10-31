@@ -12,6 +12,16 @@ import {
 
 let clock = 1000;
 
+test("사용량 미지원 턴은 기록 재생 후에도 0토큰 집계와 구분된다", () => {
+  const state = replaySession([{
+    type: "turn_result", ts: 1, usageUnavailable: true,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: 0, durationMs: 20,
+    numTurns: 1, modelUsage: {}, isError: false,
+  }]);
+  assert.equal(state.blocks[0].kind === "turn" && state.blocks[0].usageUnavailable, true);
+  assert.equal(state.lastTurn?.usageUnavailable, true);
+});
+
 test("Codex 하위 에이전트 상태 갱신은 부모의 응답 스트리밍·reasoning·툴 결과를 보존한다", () => {
   const input = { codexAgent: true, operation: "spawnAgent", description: "검토", agents: [{ id: "child", status: "running" }] };
   const state = replaySession([

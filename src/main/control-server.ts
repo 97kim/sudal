@@ -996,7 +996,10 @@ export class ControlServer {
 
   /** 마지막 사용자 메시지 뒤의 어시스턴트 텍스트를 이어 붙인 것. */
   private lastReply(tabId: string): string {
-    const blocks = replaySession(this.deps.events(tabId)).blocks;
+    const events = this.deps.events(tabId);
+    const last = events.findLast(event => event.type === "user_message" || event.type === "turn_result");
+    if (last?.type === "turn_result" && last.control === "plan") return "";
+    const blocks = replaySession(events).blocks;
     let i = blocks.length - 1;
     while (i >= 0 && blocks[i].kind !== "user") i--;
     return blocks
