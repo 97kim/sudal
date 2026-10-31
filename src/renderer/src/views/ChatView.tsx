@@ -42,7 +42,8 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { MessageList } from "../components/MessageList";
 import { PermissionPrompt } from "../components/PermissionPrompt";
 import { HeaderMenu } from "../components/HeaderMenu";
-import { hasModalDialog, Modal } from "../components/Modal";
+import { hasModalDialog } from "../components/Modal";
+import { CommandDialog } from "../components/CommandDialog";
 import { CodexGoalModal } from "../components/CodexGoalModal";
 import { CodexCommandResult } from "../components/CodexCommandResult";
 import { CodexFastSettings } from "../components/CodexFastSettings";
@@ -126,12 +127,6 @@ export function ChatView({
   const [goalOpen, setGoalOpen] = useState(false);
   const [commandPanel, setCommandPanel] = useState<{ name: string; data?: unknown; argument?: string } | null>(null);
   const resumableCodexTabs = useMemo(() => ws.model.tabs.filter(item => item.id !== tabId && item.provider === "codex").sort((a, b) => b.updatedAt - a.updatedAt), [ws.model.tabs, tabId]);
-  useEffect(() => {
-    if (!commandPanel) return;
-    const key = (e: KeyboardEvent) => { if (focused && e.key === "Escape") { e.stopPropagation(); setCommandPanel(null); } };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [commandPanel, focused]);
   // 에디터 패널(채팅 옆 분할). 변경 파일 목록·파일 트리·툴카드 경로 클릭으로 파일을 연다. 열린 파일은 탭마다 기억.
   const editorTabs = useEditorTabs(tabId);
   const openFile = useCallback<OpenFile>((path, at) => openEditorFile(tabId, path, at), [tabId]);
@@ -1213,17 +1208,14 @@ export function ChatView({
         </div>
 
         {goalOpen && <CodexGoalModal goal={config?.codexGoal ?? null} onRun={async (arg) => { await runCodexControl("goal", arg); const action = parseGoalAction(arg); if (action.action === "set" && (action.objective || action.status === "active")) setGoalOpen(false); }} onClose={() => setGoalOpen(false)} />}
-        {commandPanel && <Modal variant="pane" onClose={() => setCommandPanel(null)} className="max-h-[80%] w-[min(620px,95%)] overflow-auto p-5">
-          <div role="dialog" aria-modal="true" aria-label={`/${commandPanel.name}`}>
-            <div className="mb-4 flex justify-between"><h2 className="font-semibold">/{commandPanel.name}</h2><button autoFocus onClick={() => setCommandPanel(null)}>{t("session.codexUi.close")}</button></div>
+        {commandPanel && <CommandDialog key={commandPanel.name} name={commandPanel.name} onClose={() => setCommandPanel(null)}>
             {commandPanel.name === "fast" && !commandPanel.argument ? <CodexFastSettings onApply={mode => runCodexControl("fast", mode)} />
             : isFormattedCodexCommand(commandPanel.name) ? <CodexCommandResult key={commandPanel.name} command={commandPanel.name} argument={commandPanel.argument} initialData={commandPanel.data} onRefresh={async () => (await runCodexControl(commandPanel.name as FormattedCodexCommand)).data} />
             : commandPanel.name === "permissions" ? <div className="space-y-2">{PERMISSION_POLICIES.map((policy) => <button key={policy} onClick={() => void window.sudal.chat.configure(tabId, { policy }).then((snapshot) => { setConfig(snapshot); setCommandPanel(null); }).catch((e) => setAttachError(String(e)))} className="block w-full rounded border border-line p-3 text-left hover:bg-panel-2">{t(`panel.context.policy.${policy}.codexLabel`)}<span className="mt-1 block text-xs text-muted">{t(`panel.context.policy.${policy}.codexHelp`)}</span></button>)}</div>
             : commandPanel.name === "resume" ? <div className="space-y-2"><p className="text-sm text-muted">{t("session.codexUi.resumeHelp")}</p>{!resumableCodexTabs.length && <ResultEmpty text={t("session.codexResult.noSavedChats")} />}{resumableCodexTabs.map((item) => <button className="block w-full rounded border border-line p-2 text-left" key={item.id} onClick={() => void window.sudal.workspaces.reopenTab(item.id).then(() => { onActivateTab(item.id); setCommandPanel(null); }).catch((e) => setAttachError(String(e)))}>{tabTitle(item, t("shared.untitledTab"))}</button>)}</div>
             : commandPanel.name === "diff" ? !(commandPanel.data as import("@shared/ipc").GitChangeDto[]).length ? <ResultEmpty text={t("session.codexResult.noChanges")} /> : <div className="space-y-1">{(commandPanel.data as import("@shared/ipc").GitChangeDto[]).map((file) => <button key={file.path} className="block w-full rounded p-2 text-left hover:bg-panel-2" onClick={() => { openFile(file.path); setCommandPanel(null); }}>{file.path}<span className="ml-3 text-ok">+{file.added}</span><span className="ml-2 text-err">−{file.deleted}</span></button>)}</div>
             : <pre className="whitespace-pre-wrap break-all text-xs text-muted">{typeof commandPanel.data === "string" ? commandPanel.data : JSON.stringify(commandPanel.data ?? {}, null, 2)}</pre>}
-          </div>
-        </Modal>}
+        </CommandDialog>}
         {reviewOpen && <CrossReviewModal onStart={requestCrossReview} onClose={closeReview} />}
         {fanoutOpen && <FanoutModal initialPrompt={loadComposerDraft(tabId)} defaultProvider={provider} onStart={startFanout} onClose={closeFanout} />}
         {orchPanel && <OrchestrationPanel initialRunId={orchPanel.runId} onClose={closeOrch} />}
