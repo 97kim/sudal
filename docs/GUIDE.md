@@ -281,12 +281,14 @@ It refuses if this isn't the repository the fan-out was created from, and if the
 **Cleanup isn't automatic.** Only pressing "Delete worktrees" on the card deletes each session's worktree and closes its tab (with one confirmation). Adopting doesn't clean up,
 so you can keep looking at the comparison, but if you don't press it, the worktree folder (by default `~/sudal/worktrees/`) stays.
 
-## Cross-review (Claude ↔ Codex)
+## Cross-review
 
-"More" → "Cross-review" sends the working tree's changes (diff) to a new tab on the **other provider** for an independent review. Codex looks at what was written with Claude, and
-Claude looks at what was written with Codex. The review tab opens in the same workspace with the ask policy, and the active tab returns to where it was, so what you were doing
+Under "More" → "Cross-review", choose the **review agent and model** from the installed Claude Code, Codex, and Antigravity CLIs.
+Leave the model at its default to use the selected CLI's default model. The same CLI can also review independently in a separate session.
+The working tree's changes (diff) go to a new review tab in the same workspace with the ask policy, and the active tab returns to where it was, so what you were doing
 isn't interrupted. A review card stays in the original tab showing progress, and when the review tab's turn ends (up to 30 minutes), the answer is copied to the card.
 If the working tree is clean, there's nothing to send, so it refuses.
+Antigravity follows its CLI permission settings; tool actions requiring additional approval are automatically denied.
 
 ## Orchestration (coordinator and workers)
 

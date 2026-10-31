@@ -97,8 +97,14 @@ export const chat = {
     },
     crossReview: {
       label: "교차 리뷰",
-      hint: "작업 트리 변경을 {{target}} 새 탭에 보내 독립 리뷰를 받습니다",
+      hint: "리뷰할 에이전트와 모델을 골라 작업 트리 변경을 새 탭에 보냅니다",
       busy: "리뷰가 이미 돌고 있습니다",
+      description: "작업 트리 변경을 선택한 에이전트의 새 세션에 보내고, 결과를 이 대화의 카드로 받습니다.",
+      reviewer: "리뷰할 에이전트",
+      model: "리뷰 모델",
+      sameProvider: "같은 CLI도 새 세션에서 독립적으로 리뷰합니다.",
+      start: "리뷰 시작",
+      starting: "리뷰 준비 중…",
     },
     orchestration: {
       label: "오케스트레이션",

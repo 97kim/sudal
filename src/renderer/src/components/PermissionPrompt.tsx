@@ -4,6 +4,7 @@ import { usePaneFocusRef } from "../pane-focus";
 import type { PermissionAnswer, PermissionRequestEvent } from "@shared/chat-events";
 import { msgText } from "@shared/i18n/msg";
 import { DiffView, UnifiedDiff } from "./DiffView";
+import { hasModalDialog } from "./Modal";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -39,11 +40,12 @@ export function PermissionPrompt({
   const allowBtn = useRef<HTMLButtonElement>(null);
   // "허용" 에 포커스를 준다 — 단, 분할 화면의 다른 칸이면 주지 않는다. 옆 칸에서 쓰던 중에 누른 Enter 가 이 버튼을 누르게 된다.
   useEffect(() => {
-    if (paneFocus.current) allowBtn.current?.focus();
+    if (paneFocus.current && !hasModalDialog()) allowBtn.current?.focus();
   }, []);
   // Enter = 허용, Esc = 거부. 텍스트 입력 중이면 무시. 질문은 Enter 로 빈 답을 보내면 안 되므로 Esc(건너뛰기)만.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (hasModalDialog()) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
       // 분할 화면이면 포커스된 칸의 승인 창만 — 안 그러면 양쪽 승인 창이 키 한 번에 같이 승인된다.

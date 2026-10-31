@@ -99,8 +99,14 @@ export const chat: DeepPartial<typeof ko> = {
     },
     crossReview: {
       label: "Cross-review",
-      hint: "Send working tree changes to a new {{target}} tab for an independent review",
+      hint: "Choose an agent and model to review working tree changes in a new tab",
       busy: "A review is already running",
+      description: "Send working tree changes to a new session with the selected agent. The result returns as a card in this conversation.",
+      reviewer: "Review agent",
+      model: "Review model",
+      sameProvider: "The same CLI can also review independently in a new session.",
+      start: "Start review",
+      starting: "Preparing review…",
     },
     orchestration: {
       label: "Orchestration",

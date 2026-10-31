@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { AppInfoDto, ShortcutName } from "@shared/ipc";
 import { activeWorkspace, tabCwd } from "@shared/workspace-model";
 import { Icon } from "./components/Icon";
+import { hasModalDialog } from "./components/Modal";
 import { Sidebar, type View } from "./components/Sidebar";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { SearchPalette } from "./components/SearchPalette";
@@ -141,6 +142,7 @@ export function App() {
       if (!isMod(e) || !e.altKey || e.shiftKey || (IS_MAC ? e.ctrlKey : e.metaKey)) return;
       if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
       e.preventDefault();
+      if (hasModalDialog()) return;
       const pane: 0 | 1 = e.code === "ArrowLeft" ? 0 : 1;
       if (split.focused === pane) return;
       const input = document.querySelector<HTMLTextAreaElement>(`[data-chat-pane='${pane === 0 ? "left" : "right"}'] [data-composer] textarea`);
@@ -263,6 +265,7 @@ export function App() {
     /** 통합 터미널에 포커스가 있나(xterm 의 입력 textarea 나 찾기 입력창). */
     const terminalFocused = () => !!document.activeElement?.closest?.("[data-terminal-panel]");
     const handle = (name: ShortcutName) => {
+      if (hasModalDialog()) return;
       // 터미널 안에서 ⌘W·⌘K·⌘F 는 터미널 관례대로 — 세션 닫기·워크스페이스 전환·대화 검색이 아니라
       // 터미널 닫기·화면 지우기·터미널 안 찾기. 터미널에서 습관처럼 누른 ⌘W 로 세션이 통째로 사라지면 안 된다.
       if ((name === "close-tab" || name === "switch-workspace" || name === "search") && terminalFocused()) {

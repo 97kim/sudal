@@ -9,6 +9,7 @@ import {
 import type { PermissionAnswer, PermissionPolicy } from "@shared/chat-events";
 import type {
   ChatImageDto,
+  CrossReviewStartDto,
   LimitWaitDto,
   PendingPromptDto,
   Provider,
@@ -40,6 +41,8 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { MessageList } from "../components/MessageList";
 import { PermissionPrompt } from "../components/PermissionPrompt";
 import { HeaderMenu } from "../components/HeaderMenu";
+import { hasModalDialog } from "../components/Modal";
+import { CrossReviewModal } from "../components/CrossReviewModal";
 import { ProviderSwitchModal } from "../components/ProviderSwitchModal";
 import { ModelPickerModal } from "../components/ModelPickerModal";
 import { headerModelLabel } from "@shared/models";
@@ -196,7 +199,7 @@ export function ChatView({
   useEffect(
     () =>
       window.sudal.app.onShortcut((name) => {
-        if (name === "toggle-terminal" && focused) toggleTerminal();
+        if (name === "toggle-terminal" && focused && !hasModalDialog()) toggleTerminal();
       }),
     [toggleTerminal, focused],
   );
@@ -214,16 +217,18 @@ export function ChatView({
     else setAttachError(r.error);
   };
   const detachTerminal = () => void window.sudal.chat.detachTerminal(tabId);
-  // 교차 리뷰: main 이 diff 를 모아 다른 provider 탭에 보내고 결과 카드를 이 탭에 남긴다
+  // 교차 리뷰: 리뷰어·모델을 고르면 main 이 새 탭에 diff 를 보내고 결과 카드를 이 탭에 남긴다
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const closeReview = useCallback(() => setReviewOpen(false), []);
   const [reviewBusy, setReviewBusy] = useState(false);
-  const requestCrossReview = async () => {
+  const requestCrossReview = async (opts: CrossReviewStartDto): Promise<string | null> => {
     setReviewBusy(true);
     setAttachError(null);
     try {
-      const r = await window.sudal.chat.crossReview(tabId);
-      if (!r.ok) setAttachError(r.error);
+      const r = await window.sudal.chat.crossReview(tabId, opts);
+      return r.ok ? null : r.error;
     } catch (e) {
-      setAttachError(e instanceof Error ? e.message : String(e));
+      return e instanceof Error ? e.message : String(e);
     } finally {
       setReviewBusy(false);
     }
@@ -794,10 +799,10 @@ export function ChatView({
                     key: "cross-review",
                     label: t("chat.header.crossReview.label"),
                     icon: "switch",
-                    hint: t("chat.header.crossReview.hint", { target: provider === "claude" ? "Codex" : "Claude Code" }),
+                    hint: t("chat.header.crossReview.hint"),
                     disabled: !cwd || terminalControlled || reviewBusy,
                     disabledReason: reviewBusy ? t("chat.header.crossReview.busy") : !cwd ? t("chat.header.needCwd") : t("chat.header.terminalControlled"),
-                    onSelect: () => void requestCrossReview(),
+                    onSelect: () => setReviewOpen(true),
                   },
                   {
                     key: "orchestration",
@@ -1113,6 +1118,7 @@ export function ChatView({
           </div>
         </div>
 
+        {reviewOpen && <CrossReviewModal onStart={requestCrossReview} onClose={closeReview} />}
         {fanoutOpen && <FanoutModal initialPrompt={loadComposerDraft(tabId)} defaultProvider={provider} onStart={startFanout} onClose={closeFanout} />}
         {orchPanel && <OrchestrationPanel initialRunId={orchPanel.runId} onClose={closeOrch} />}
         {compareFanoutId && (

@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
 
+/** 창 전체 대화상자를 조작하는 동안 배경의 칸 이동·메뉴 단축키가 포커스를 빼앗지 않게 한다. */
+export function hasModalDialog(): boolean {
+  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+}
+
 /**
  * 어두운 배경 위의 패널. 배경을 누르면 닫히고, 패널 안의 클릭은 배경까지 가지 않는다.
  *   window  — 창 전체를 덮는 큰 화면(포털로 띄우는 것들)
