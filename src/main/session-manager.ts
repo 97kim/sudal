@@ -22,7 +22,7 @@ import type { StoredChatImage } from "./chat-attachments";
 import type { BackgroundTasksSource } from "./claude-adapter";
 import { applyClaudePolicy, closeAllClaudeSessions, closeClaudeSession, interruptClaudeSession, runClaudeTurn, warmClaudeSession, type ClaudeRuntime } from "./claude-adapter";
 import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, hasAmbientCodexTurn, interruptCodexSession, runCodexTurn, runCodexControl, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
-import type { CodexMode, CodexGoal, CodexControlCommand, CodexControlResult } from "@shared/codex-controls";
+import { parseGoalAction, type CodexMode, type CodexGoal, type CodexControlCommand, type CodexControlResult } from "@shared/codex-controls";
 import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
 import { readJsonl } from "./jsonl-reader";
@@ -1182,30 +1182,63 @@ export class SessionManager {
     if (!s.cwd) throw new Error(mt("session.error.cwdFirst"));
     if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
     if (this.isBusy(tabId) && !["goal", "status", "usage", "ps", "stop", "mcp", "hooks", "plugins", "debug-config"].includes(command)) throw new MsgError("session.msg.codexControl.busy");
+    let goalObjective: string | undefined;
+    if (command === "goal") {
+      try {
+        const action = parseGoalAction(arg);
+        if (action.action === "set") goalObjective = action.objective;
+      } catch (e) {
+        throw new MsgError((e as Error).message === "goalLength" ? "session.msg.codexControl.goalLength" : "session.msg.codexControl.goalBudget");
+      }
+    }
     // 새 목표·재개는 서버가 직접 턴을 시작한다. 일반 채팅과 같은 동시 실행 상한을 지킨다.
     const startsGoal = command === "goal" && !!arg && !["status", "pause", "clear"].includes(arg) && !/^budget(?:\s|$)/.test(arg);
     if (startsGoal && s.status !== "running" && s.status !== "waiting_permission" && !this.canStart(tabId)) throw new MsgError("session.msg.codexControl.busy");
     if (command === "compact" || command === "review") {
       if (command === "compact" && arg) throw new MsgError("session.msg.codexControl.compactUsage");
       if (!this.canStart(tabId)) throw new MsgError("session.msg.codexControl.busy");
+      if (command === "review") {
+        const text = arg.trim() ? `/review ${arg.trim()}` : "/review";
+        const hadUser = this.hasUserMessage(s);
+        this.record(s, { type: "user_message", ts: Date.now(), id: randomUUID(), text });
+        if (!hadUser) this.deps.onMeta?.(tabId, { title: arg.trim() || text });
+      }
       s.queued = { text: "", prompt: arg, images: [], nativeAction: command };
       this.start(s);
       return {};
     }
     s.controlBusy = true;
     if (startsGoal) this.goalStarts.add(s);
+    const goalRequestedAt = Date.now();
+    // 목표 변경 알림은 기존 작업에서도 온다. RPC 성공이 확인될 때까지 작업 이벤트만 잠시 보관한다.
+    let goalEvents: ChatEvent[] | null = goalObjective ? [] : null;
+    const flushGoalEvents = () => {
+      const events = goalEvents;
+      goalEvents = null;
+      if (!events || this.shuttingDown || this.sessions.get(tabId) !== s || s.provider !== "codex") return;
+      for (const event of events) this.ambientEvent(tabId, event);
+    };
     try {
       const runtime = await this.deps.codexRuntime(tabId);
       if (this.shuttingDown || this.sessions.get(tabId) !== s) throw new MsgError("session.msg.sessionEnded");
       const result = await runCodexControl(runtime, {
         sessionKey: tabId, cwd: s.cwd, sessionId: s.sessionId, policy: s.policy, model: s.model, codexMode: s.codexMode,
-        onAmbientEvent: (event) => this.ambientEvent(tabId, event),
+        onAmbientEvent: (event) => {
+          if (this.shuttingDown || this.sessions.get(tabId) !== s || s.provider !== "codex") return;
+          if (goalEvents) goalEvents.push(event);
+          else this.ambientEvent(tabId, event);
+        },
         requestAmbientPermission: (request) => this.waitPermission(s, request, new AbortController().signal),
         onGoalChanged: (goal) => this.codexGoalChanged(s, goal),
       }, command, arg);
-      if (this.sessions.get(tabId) !== s || s.provider !== "codex") throw new MsgError("session.msg.sessionEnded");
+      if (this.shuttingDown || this.sessions.get(tabId) !== s || s.provider !== "codex") throw new MsgError("session.msg.sessionEnded");
       s.sessionId = result.sessionId;
       this.deps.onMeta?.(tabId, { sessionId: result.sessionId });
+      if (goalObjective) {
+        const hadUser = this.hasUserMessage(s);
+        this.record(s, { type: "user_message", ts: goalRequestedAt, id: randomUUID(), text: `/goal ${goalObjective}` });
+        if (!hadUser) this.deps.onMeta?.(tabId, { title: goalObjective });
+      }
       if (result.mode) {
         s.codexMode = result.mode;
         this.deps.onMeta?.(tabId, { codexMode: result.mode });
@@ -1216,6 +1249,7 @@ export class SessionManager {
     } finally {
       s.controlBusy = false;
       this.goalStarts.delete(s);
+      flushGoalEvents();
       this.drain();
       this.drainPending(s);
     }

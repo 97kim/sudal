@@ -5,6 +5,7 @@ import { chmod, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { SessionManager } from "./session-manager";
+import { Store } from "./persistence";
 import { contextUsage, replaySession } from "@shared/session-state";
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -15,7 +16,7 @@ async function until(predicate: () => boolean) {
 }
 
 /** 실제 App Server의 자동 턴·알림 순서를 재현한다. 모델이나 사용자 계정을 호출하지 않는다. */
-async function fixture(options: { warmReadMode?: "stale" | "exit" | "release" | "paused"; initializeDelay?: number } = {}) {
+async function fixture(options: { warmReadMode?: "stale" | "exit" | "release" | "paused"; initializeDelay?: number; persist?: boolean; goalNotifications?: boolean; rejectRepeatedGoal?: boolean; goalReplyDelay?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sudal-codex-goals-"));
   const log = join(dir, "requests.jsonl");
   writeFileSync(log, "");
@@ -25,10 +26,10 @@ const fs = require('node:fs');
 const fixtureOptions = ${JSON.stringify(options)};
 const send = value => process.stdout.write(JSON.stringify(value)+'\\n');
 const record = value => fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(value)+'\\n');
-let goal = null, policy = {};
+let goal = null, policy = {}, goalSetCalls = 0;
 const started = id => { record({started:id,policy}); send({method:'turn/started',params:{threadId:'parent',turn:{id}}}); };
 const completed = id => send({method:'turn/completed',params:{threadId:'parent',turn:{id,status:'completed'}}});
-const finishGoal = () => { goal.status='complete'; send({method:'thread/goal/updated',params:{threadId:'parent',goal}}); };
+const finishGoal = () => { goal.status='complete'; if(fixtureOptions.goalNotifications !== false) send({method:'thread/goal/updated',params:{threadId:'parent',goal}}); };
 require('node:readline').createInterface({input:process.stdin}).on('close',()=>process.exit(0)).on('line',line=>{
   const m = JSON.parse(line); if(m.id === undefined || !m.method) return;
   record(m);
@@ -36,16 +37,22 @@ require('node:readline').createInterface({input:process.stdin}).on('close',()=>p
   if(m.method === 'initialize' && fixtureOptions.initializeDelay) return setTimeout(()=>reply({}),fixtureOptions.initializeDelay);
   if(m.method === 'thread/start' || m.method === 'thread/resume') { policy=m.params; return reply({thread:{id:'parent'},model:'fixture'}); }
   if(m.method === 'thread/settings/update') {
+    if(goal && fixtureOptions.rejectRepeatedGoal) {
+      send({method:'thread/goal/updated',params:{threadId:'parent',goal}});
+      send({method:'item/completed',params:{threadId:'parent',turnId:'goal-1',item:{type:'agentMessage',id:'old-progress',text:'Existing goal progress'}}});
+    }
     if(goal?.objective === 'reject-policy' && m.params.approvalPolicy === 'untrusted') return send({id:m.id,error:{message:'fixture policy rejected'}});
     policy={...policy,...m.params}; return reply({});
   }
   if(m.method === 'thread/goal/set') {
+    if(fixtureOptions.rejectRepeatedGoal && ++goalSetCalls === 2) return send({id:m.id,error:{message:'fixture repeated goal rejected'}});
     if(m.params.objective === 'FAIL') return send({id:m.id,error:{message:'fixture goal rejected'}});
     goal={...(goal || {objective:'',status:'active',tokenBudget:null,tokensUsed:0,timeUsedSeconds:0}),...m.params};
-    send({method:'thread/goal/updated',params:{threadId:'parent',goal}});
+    if(fixtureOptions.goalNotifications !== false) send({method:'thread/goal/updated',params:{threadId:'parent',goal}});
     if(m.params.objective === 'late-response') {
       const oldGoal={...goal}; started('goal-1'); finishGoal(); completed('goal-1');
-      return setTimeout(()=>reply({goal:oldGoal}),80);
+      record({goalReplyWaiting:true});
+      return setTimeout(()=>reply({goal:oldGoal}),fixtureOptions.goalReplyDelay ?? 80);
     }
     reply({goal});
     if(m.params.objective) {
@@ -97,7 +104,8 @@ require('node:readline').createInterface({input:process.stdin}).on('close',()=>p
     writeFileSync(executable, '@echo off\r\nnode "%~dp0\\fake.cjs" %*\r\n');
   } else await chmod(script, 0o755);
   const snapshots: { tabId: string; status: string }[] = [];
-  const manager = new SessionManager({ emit() {}, maxConcurrent: 1, onSnapshot(_tabId, snapshot) { snapshots.push(snapshot); },
+  const store = options.persist ? new Store(dir) : undefined;
+  const manager = new SessionManager({ emit() {}, store, maxConcurrent: 1, onSnapshot(_tabId, snapshot) { snapshots.push(snapshot); },
     resolveConfig: () => ({ provider: "codex", cwd: dir, policy: "full" }),
     codexRuntime: async () => { await wait(30); return { codexPath: executable, env: { ...process.env } as Record<string, string> }; },
     claudeRuntime: async () => { throw new Error("Claude must not be called"); },
@@ -105,13 +113,75 @@ require('node:readline').createInterface({input:process.stdin}).on('close',()=>p
   const logs = (): Record<string, any>[] => readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
   const cleanup = async () => {
     manager.shutdown();
+    store?.flush();
     assert.equal(dirname(resolve(dir)), resolve(tmpdir()));
     assert.ok(basename(dir).startsWith("sudal-codex-goals-"));
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   };
   const send = (tab: string) => manager.send(tab, "queued prompt", [], { type: "user_message", id: tab, ts: Date.now(), text: "queued prompt" });
-  return { manager, logs, cleanup, send, snapshots };
+  return { manager, logs, cleanup, send, snapshots, store };
 }
+
+for (const goalNotifications of [true, false]) {
+  test(`목표 작업은 자동 턴 앞에 한 번 기록되고 다시 열어도 남는다 (목표 알림 ${goalNotifications ? "있음" : "없음"})`, async () => {
+    const { manager, logs, cleanup, store } = await fixture({ persist: true, goalNotifications });
+    try {
+      await manager.codexControl("a", "goal", "late-response");
+      await until(() => !manager.isBusy("a"));
+      const events = manager.events("a");
+      const goalIndex = events.findIndex(event => event.type === "user_message" && event.text === "/goal late-response");
+      const resultIndex = events.findIndex(event => event.type === "turn_result");
+      assert.ok(goalIndex >= 0 && goalIndex < resultIndex);
+      assert.ok(events[goalIndex].ts <= events[resultIndex].ts, "RPC 응답이 늦어도 사용자 요청 시각을 유지한다");
+      await manager.codexControl("a", "goal", "status");
+      await manager.codexControl("a", "goal", "clear");
+      assert.equal(manager.snapshot("a").codexGoal, null);
+      manager.release("a");
+      const reloaded = replaySession(manager.events("a"));
+      assert.deepEqual(reloaded.blocks.filter(block => block.kind === "user").map(block => block.text), ["/goal late-response"]);
+      assert.equal(store!.readEvents("a").filter(event => event.type === "user_message").length, 1);
+      assert.equal(logs().filter(row => row.method === "turn/start").length, 0);
+    } finally { await cleanup(); }
+  });
+}
+
+test("목표 응답을 기다리다 닫은 탭의 이벤트를 다시 연 탭에 반영하지 않는다", async () => {
+  const { manager, logs, cleanup } = await fixture({ persist: true, goalReplyDelay: 5000 });
+  try {
+    const oldRequest = assert.rejects(manager.codexControl("a", "goal", "late-response"));
+    await until(() => logs().some(row => row.goalReplyWaiting));
+    manager.release("a");
+    await manager.codexControl("a", "goal", "complete");
+    await oldRequest;
+    await until(() => !manager.isBusy("a") && manager.snapshot("a").codexGoal?.status === "complete");
+    const events = manager.events("a");
+    assert.deepEqual(events.filter(event => event.type === "user_message").map(event => event.text), ["/goal complete"]);
+    assert.equal(events.filter(event => event.type === "turn_result").length, 1);
+  } finally { await cleanup(); }
+});
+
+test("기존 목표의 진행 알림이 와도 거절된 동일 목표 요청은 기록하지 않는다", async () => {
+  const { manager, cleanup, store } = await fixture({ persist: true, rejectRepeatedGoal: true });
+  try {
+    await manager.codexControl("a", "goal", "repeat goal");
+    await until(() => manager.isBusy("a"));
+    await assert.rejects(manager.codexControl("a", "goal", "repeat goal"), /repeated goal rejected/);
+    const events = manager.events("a");
+    assert.deepEqual(events.filter(event => event.type === "user_message").map(event => event.text), ["/goal repeat goal"]);
+    assert.ok(events.some(event => event.type === "assistant_text" && event.text === "Existing goal progress"), "실패를 기다리는 동안 도착한 기존 작업의 이벤트도 유지한다");
+    assert.equal(store!.readEvents("a").filter(event => event.type === "user_message").length, 1);
+  } finally { await cleanup(); }
+});
+
+test("목표 변경 알림 없이 성공 응답만 와도 작업 내용을 한 번 기록한다", async () => {
+  const { manager, cleanup } = await fixture({ goalNotifications: false });
+  try {
+    await manager.codexControl("a", "goal", "hold");
+    assert.deepEqual(manager.events("a").filter(event => event.type === "user_message").map(event => event.text), ["/goal hold"]);
+    await manager.codexControl("a", "goal", "status");
+    assert.equal(manager.events("a").filter(event => event.type === "user_message").length, 1);
+  } finally { await cleanup(); }
+});
 
 test("자동 목표 완료 후 같은 탭의 메시지와 다른 탭의 실행 대기열을 모두 진행한다", async () => {
   const { manager, logs, cleanup, send } = await fixture();
@@ -208,13 +278,35 @@ test("서버가 권한 변경을 거절하면 자동 목표를 이전 권한으�
   } finally { await cleanup(); }
 });
 
-test("네이티브 리뷰의 최종 텍스트를 채팅 기록에 남긴다", async () => {
-  const { manager, logs, cleanup } = await fixture();
+for (const instructions of ["", "이번 변경의 동시성과 오류 처리를 검토해줘"]) {
+  test(`네이티브 리뷰의 요청·결과를 순서대로 저장한다 (${instructions ? "추가 지시" : "기본 리뷰"})`, async () => {
+    const { manager, logs, cleanup } = await fixture({ persist: true });
+    try {
+      await manager.codexControl("a", "review", instructions);
+      await until(() => logs().some(row => row.method === "review/start") && !manager.isBusy("a"));
+      const replay = replaySession(manager.events("a"));
+      const requestText = instructions ? `/review ${instructions}` : "/review";
+      assert.deepEqual(replay.blocks.filter(block => block.kind === "user").map(block => block.text), [requestText]);
+      const requestIndex = replay.blocks.findIndex(block => block.kind === "user");
+      const resultIndex = replay.blocks.findIndex(block => block.kind === "text" && block.text === "[P1] Fixture review finding");
+      assert.ok(requestIndex >= 0 && resultIndex > requestIndex, "사용자 요청이 검토 결과보다 먼저 보인다");
+      const reviews = logs().filter(row => row.method === "review/start");
+      assert.equal(reviews.length, 1, "기록을 남겨도 검토를 중복 실행하지 않는다");
+      assert.deepEqual(reviews[0].params.target, instructions ? { type: "custom", instructions } : { type: "uncommittedChanges" });
+      assert.equal(logs().filter(row => row.method === "turn/start").length, 0);
+      manager.release("a");
+      assert.deepEqual(replaySession(manager.events("a")).blocks.filter(block => block.kind === "user").map(block => block.text), [requestText]);
+    } finally { await cleanup(); }
+  });
+}
+
+test("실행 중 거절된 리뷰 요청은 채팅 기록에 추가하지 않는다", async () => {
+  const { manager, cleanup } = await fixture();
   try {
-    await manager.codexControl("a", "review", "");
-    await until(() => logs().some(row => row.method === "review/start") && !manager.isBusy("a"));
-    const replay = replaySession(manager.events("a"));
-    assert.ok(replay.blocks.some(block => block.kind === "text" && block.text === "[P1] Fixture review finding"));
+    await manager.codexControl("a", "goal", "hold");
+    await until(() => manager.isBusy("a"));
+    await assert.rejects(manager.codexControl("a", "review", "동시 실행 검토"));
+    assert.deepEqual(manager.events("a").filter(event => event.type === "user_message").map(event => event.text), ["/goal hold"]);
   } finally { await cleanup(); }
 });
 
