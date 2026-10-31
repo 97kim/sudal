@@ -1,6 +1,11 @@
 // 슬래시 커맨드 목록(Claude Agent SDK 의 SlashCommand)과 입력창 자동완성용 순수 함수.
 
+export type SlashCommandSource = "sudal" | "claude" | "codex" | "agy";
+export const COMMAND_SOURCE_LABELS: Record<SlashCommandSource, string> = { sudal: "Sudal", claude: "Claude", codex: "Codex", agy: "Antigravity" };
+
 export interface SlashCommandDto {
+  /** 기능 제공 주체. 앱이 명령을 가로채는지(clientHandled)와는 구분한다. */
+  source?: SlashCommandSource;
   /** 선행 슬래시 없는 이름 */
   name: string;
   description: string;
@@ -9,6 +14,8 @@ export interface SlashCommandDto {
   aliases?: string[];
   /** 고르면 "/이름 " 대신 입력창에 넣을 글. Codex 의 /skills 는 "$" 를 넣어 스킬 목록을 연다. */
   insert?: string;
+  /** CLI 화면 대신 앱이 직접 처리하는 명령은 터미널 전용 이름이어도 표시한다. */
+  clientHandled?: boolean;
 }
 
 /**
@@ -55,7 +62,7 @@ export function filterCommands(
   const prefix: SlashCommandDto[] = [];
   const partial: SlashCommandDto[] = [];
   for (const c of commands) {
-    if (terminal.has(c.name) || isInternalCommand(c.name)) continue;
+    if ((terminal.has(c.name) && !c.clientHandled) || isInternalCommand(c.name)) continue;
     const ns = names(c);
     if (!q || ns.some((n) => n.startsWith(q))) prefix.push(c);
     else if (ns.some((n) => n.includes(q))) partial.push(c);

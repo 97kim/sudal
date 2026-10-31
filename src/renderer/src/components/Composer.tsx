@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { PermissionPolicy } from "@shared/chat-events";
 import type { ChatImageDto } from "@shared/ipc";
 import {
+  COMMAND_SOURCE_LABELS,
   filterCommands,
   parseSlashQuery,
   type SlashCommandDto,
@@ -128,6 +129,7 @@ export function Composer({
   const [imageLimit, setImageLimit] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const mentionFileRef = useRef<HTMLInputElement>(null);
   // 에디터·터미널의 "채팅에 첨부": 지금 글 뒤에 이어 붙이고 커서를 끝으로
   useEffect(() => {
     if (!draftKey) return;
@@ -278,10 +280,18 @@ export function Composer({
     // 커맨드 목록에 clear 가 있다고 비켜서지 않는다 — SDK 가 주는 159개 안에 들어 있어서,
     // 그걸 보고 물러나면 이 가로채기가 영영 동작하지 않는다(처음 만들 때 그렇게 걸렸다).
     // 고르면 다른 글을 넣는 명령(/skills → "$")은 쳐서 보내도 같게 — 보내지 않고 그 글로 바꾼다.
-    const insert = images.length === 0 ? commands?.find((c) => c.insert !== undefined && trimmed === `/${c.name}`)?.insert : undefined;
+    const insertCommand = images.length === 0 ? commands?.find((c) => c.insert !== undefined && (trimmed === `/${c.name}` || trimmed.startsWith(`/${c.name} `))) : undefined;
+    const insert = insertCommand ? `${insertCommand.insert}${trimmed.slice(insertCommand.name.length + 1).trim()}` : undefined;
     if (insert !== undefined) {
       setText(insert);
       setCaret(insert.length);
+      return;
+    }
+    if (images.length === 0 && commands?.some((command) => command.name === "mention") && /^\/mention(?:\s|$)/.test(trimmed)) {
+      const path = trimmed.slice("/mention".length).trim();
+      if (path) setFiles((current) => [...current.filter((file) => file.path !== path), { path, name: path.split(/[\\/]/).pop() || path }].slice(0, 20));
+      else mentionFileRef.current?.click();
+      setText("");
       return;
     }
     if (trimmed === "/clear" && images.length === 0 && files.length === 0 && onClear) {
@@ -293,7 +303,9 @@ export function Composer({
     try {
       // 앱이 처리하는 명령(/model 등)은 글 그대로 보내고 첨부 파일은 남긴다 — 합치면 명령 인자가 깨지고,
       // 명령은 파일을 쓰지 않으니 보낸 셈이 아니다. 판별 기준은 ChatView 와 같다(이미지가 있으면 명령 아님).
-      const appCommand = images.length === 0 && isAppCommand(trimmed);
+      const planArgument = /^\/plan\s+([\s\S]+)$/.exec(trimmed)?.[1];
+      const inlineCodexPlan = commands?.some(command => command.name === "plan" && command.clientHandled) && planArgument && !["on", "off", "default"].includes(planArgument);
+      const appCommand = images.length === 0 && !inlineCodexPlan && isAppCommand(trimmed);
       await onSend(
         appCommand ? trimmed : withAttachedFiles(trimmed, files, t("chat.composer.attachedFiles")),
         images.map(({ name, mime, base64 }) => ({ name, mime, base64 })),
@@ -485,6 +497,15 @@ export function Composer({
                         <span className="mono shrink-0 text-[12px]">
                           /{row.command.name}
                         </span>
+                        {row.command.source && (
+                          <span
+                            className={`shrink-0 rounded border px-1.5 py-px text-[10px] leading-tight ${row.command.source === "sudal" ? "border-accent/20 bg-accent-tint text-accent" : "border-line bg-panel-2 text-muted"}`}
+                            title={t("chat.composer.commandSource", { source: COMMAND_SOURCE_LABELS[row.command.source] })}
+                            data-command-source={row.command.source}
+                          >
+                            {COMMAND_SOURCE_LABELS[row.command.source]}
+                          </span>
+                        )}
                         {row.command.argumentHint && (
                           <span
                             className="mono max-w-[38%] shrink-0 truncate text-[12px] text-muted-2"
@@ -583,6 +604,7 @@ export function Composer({
           style={{ userSelect: "text" }}
         />
         <div className="flex items-center gap-1 whitespace-nowrap px-3 pb-2.5 pt-1">
+          <input ref={mentionFileRef} type="file" multiple hidden onChange={(e) => { takeFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
           <input
             ref={fileRef}
             type="file"

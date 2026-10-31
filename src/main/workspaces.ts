@@ -114,13 +114,14 @@ export class WorkspaceService {
       cwd: tabCwd(this.model, tab),
       policy: tab.policy,
       model: tab.model,
+      codexMode: tab.codexMode,
       sessionId: tab.sessionId,
     };
   }
 
   onMeta(
     tabId: string,
-    patch: { title?: string; sessionId?: string | null; provider?: Provider; model?: string; policy?: PermissionPolicy; cwd?: string | null },
+    patch: { title?: string; sessionId?: string | null; provider?: Provider; model?: string; policy?: PermissionPolicy; cwd?: string | null; codexMode?: import("@shared/codex-controls").CodexMode },
   ) {
     const p: Parameters<typeof updateTab>[2] = {};
     if (patch.cwd !== undefined) p.cwd = patch.cwd ?? undefined;
@@ -129,6 +130,7 @@ export class WorkspaceService {
     if (patch.sessionId !== undefined) p.sessionId = patch.sessionId;
     if (patch.provider) p.provider = patch.provider;
     if ("model" in patch) p.model = patch.model;
+    if ("codexMode" in patch) p.codexMode = patch.codexMode;
     if (patch.policy) p.policy = patch.policy;
     this.commit(updateTab(this.model, tabId, p, Date.now()));
   }

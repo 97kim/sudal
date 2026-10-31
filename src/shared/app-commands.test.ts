@@ -1,8 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agyCommands, modelFromArg, parseAgyAppCommand, parseAppCommand, withAppCommands } from "./app-commands";
+import { agyCommands, codexCommands, isCodexSlashCommand, modelFromArg, parseCodexCommand, parseAgyAppCommand, parseAppCommand, withAppCommands } from "./app-commands";
 import { createI18n } from "./i18n";
+import { filterCommands } from "./slash-commands";
 const { t } = createI18n("ko");
+
+test("명령 출처: 앱 기능과 Codex·Claude·Antigravity 기능을 구분한다", () => {
+  const codex = new Map(codexCommands(t).map(command => [command.name, command.source]));
+  for (const name of ["plan", "goal", "compact", "review", "mcp", "rename", "fork"]) assert.equal(codex.get(name), "codex", name);
+  for (const name of ["config", "model", "permissions", "new", "clear", "resume", "diff", "export", "worktree"]) assert.equal(codex.get(name), "sudal", name);
+  const claude = withAppCommands(t, [{ name: "compact", description: "", argumentHint: "" }, { name: "clear", description: "", argumentHint: "" }, { name: "mcp", description: "", argumentHint: "" }]);
+  assert.equal(claude.find(command => command.name === "compact")?.source, "claude");
+  assert.equal(claude.find(command => command.name === "clear")?.source, "sudal");
+  assert.equal(claude.find(command => command.name === "mcp")?.source, "sudal");
+  const agy = agyCommands(t);
+  assert.equal(agy.find(command => command.name === "plan")?.source, "agy");
+  assert.equal(agy.find(command => command.name === "config")?.source, "sudal");
+});
+
+test("Codex의 plan·goal과 하이픈 명령을 제공하고 미지원 명령도 가로챈다", () => {
+  for (const command of ["plan", "goal", "mcp", "review", "permissions", "debug-config"]) {
+    assert.ok(codexCommands(t).some(c=>c.name===command));
+    assert.equal(parseCodexCommand(`/${command}`)?.name,command);
+  }
+  assert.deepEqual(parseCodexCommand("/goal pause"),{name:"goal",arg:"pause"});
+  assert.equal(parseCodexCommand("/logout"),null);
+  assert.equal(isCodexSlashCommand("/logout"),true);
+  assert.equal(isCodexSlashCommand("/typo"),true);
+  assert.equal(isCodexSlashCommand("//path"),false);
+  assert.ok(filterCommands(codexCommands(t), "resume").some(command=>command.name==="resume"), "앱에서 구현한 resume은 터미널 전용 필터로 숨기지 않는다");
+});
 
 test("parseAppCommand: 이름·인자 분리, 다른 입력은 null", () => {
   assert.deepEqual(parseAppCommand("/model"), { name: "model", arg: "" });

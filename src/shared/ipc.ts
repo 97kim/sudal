@@ -262,6 +262,7 @@ export const IPC = {
   chatHistory: "chat:history",
   chatClear: "chat:clear",
   chatCompact: "chat:compact",
+  chatCodexControl: "chat:codex-control",
   browserRegister: "browser:register",
   browserFavicon: "browser:favicon",
   chatHandoffPreview: "chat:handoff-preview",
@@ -732,9 +733,11 @@ export interface SessionConfigDto {
   cwd: string | null;
   policy: PermissionPolicy;
   model?: string;
+  codexMode?: import("./codex-controls").CodexMode;
 }
 
 export interface SessionSnapshotDto extends SessionConfigDto {
+  codexGoal?: import("./codex-controls").CodexGoal | null;
   tabId: string;
   status: SessionStatus;
   sessionId: string | null;
@@ -991,6 +994,7 @@ export interface SudalApi {
     search(query: string): Promise<SearchResultDto[]>;
     /** 저장 다이얼로그를 띄워 세션을 마크다운으로 내보낸다. 취소하면 null. */
     exportMarkdown(tabId: string): Promise<string | null>;
+    codexControl(tabId: string, command: import("./codex-controls").CodexControlCommand, arg?: string): Promise<import("./codex-controls").CodexControlResult>;
   };
   worktree: WorktreeApi;
   /** 오케스트레이션(Run/Task/Dispatch) — 사람 코디네이터용 UI. */

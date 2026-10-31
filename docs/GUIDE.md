@@ -53,22 +53,41 @@ the SDK exec path (`codex exec` each turn, sandbox only, no approvals).
 Type `/` in a Claude tab's input box and the commands available in that workspace appear (built-in, skills, `.claude/commands`, plugins).
 ↑↓ to move, Tab/Enter to select, Esc to close. The list comes from briefly launching the CLI without a prompt and reading the initialize response (`src/main/claude-commands.ts`,
 no turn, no cost), and is cached per cwd. It refreshes when a `commands_changed` push arrives mid-turn. Terminal-only commands like `/exit` and `/resume` are
-hidden. Codex tabs have no such API, so nothing appears there.
+hidden. Codex tabs show a command list handled directly by Sudal.
 
 Commands the app handles itself (`src/shared/app-commands.ts`, marked "handled by the app" in the palette): `/model` opens the model picker, and with an argument like `/model opus` it
 changes this session's model right away (`/model default` goes back to the CLI default; applies from the next turn, the session is kept, and the header shows the model you set). `/config` opens the settings screen.
 Both exist because the TUI screens can't be shown in SDK mode. These commands aren't sent to the CLI, so they don't appear in the conversation history either.
 
-`/mcp` returns only a one-line summary in SDK mode, so it isn't sent to the CLI; it opens the Settings → MCP servers screen instead. That screen reads each server's connection status, errors, and tool list
+Claude's `/mcp` returns only a one-line summary in SDK mode, so it isn't sent to the CLI; it opens the Settings → MCP servers screen instead. That screen reads each server's connection status, errors, and tool list
 read-only in the same way (a CLI without a prompt + `mcpServerStatus()`, `src/main/claude-mcp.ts`). It waits up to 10 seconds for servers to connect. Reconnecting and toggling on/off apply only to that
 process, which makes no sense in an app that starts a new process every turn, so they aren't offered, and OAuth sign-in (needs-auth) has to be done in a terminal.
+
+On the default Codex App Server connection, `/plan` toggles plan mode. `/plan on`, `/plan off`, and `/plan followed by a task` are also supported.
+The composer shows the current mode. Planning questions use the question cards. `/goal` opens goal controls; `/goal followed by an objective`
+saves a goal and starts working on it. `/goal pause`, `resume`, `clear`, and `budget 40000` pause, resume, clear, or change the token budget.
+Server-initiated goal turns appear in chat and support approvals and cancellation. Plan and goal controls themselves are not sent as chat messages.
+
+`/compact` compacts the same Codex thread; `/review [instructions]` starts a native Codex review.
+`/mcp`, `/status`, `/usage`, `/ps`, `/stop`, `/hooks`, `/plugins`, `/memories [on|off]`, `/fast on|off`, and `/debug-config`
+use Codex status and settings APIs. Hooks and plugins currently support inspection only. `/permissions` opens Sudal's permission selector.
+`/usage` displays usage windows, reset times, and credits as cards. `/mcp` shows server connection and authentication states with expandable tool catalogs and server/tool search. Both views support refresh and retain the last successful result if a refresh fails.
+`/status` shows session details; `/ps` lists commands, CPU, and memory; `/hooks` and `/plugins` provide searchable configuration lists. `/memories` shows the summary text, while memory toggles, `/fast`, and `/stop` show completion messages without a refresh button that repeats the operation. `/debug-config` offers folded, copyable diagnostics with sensitive values hidden. `/diff` and `/resume` also explain empty results.
+`/fork` branches from the latest completed turn; `/resume` opens another Codex conversation saved in Sudal.
+`/diff`, `/copy`, `/export`, `/mention`, `/worktree`, `/pwd`, and `/cwd` use the app's changed files, response copying, export, attachments, isolation, and directory display.
+`/skills [query]` and `/apps [query]` switch to the `$` list. `/rename` updates both the Codex thread name and the Sudal tab title.
+`/cd [path]` changes the working directory; directories outside approved roots require the folder picker.
+`/new`, `/clear`, `/model`, `/config`, and `/init` are also available.
+
+Terminal UI commands and other commands without an integration show an explanation and are not sent to the model. Features requiring a recent
+App Server report the need to update instead of pretending to support them through the legacy SDK execution path. Availability depends on the installed Codex version and account features.
 
 ## Prompt snippets
 
 Save instructions you paste often under a name, and pull them up in the input box with `/name`. In the "/" palette, snippets come before slash commands, and
 picking one inserts the whole body into the input box (a command inserts only its name). The scope is per workspace or global ("All workspaces"); the palette shows
 global ones plus those for the current workspace. There are two ways to save: the "Snippet" button that appears when the input box has text (you set only the name and scope), and Settings > Snippets
-(list, edit, delete). Even in a Codex tab with no slash commands, the palette opens if a snippet exists. They're stored in `userData/snippets.json`, and
+(list, edit, delete). Snippets and commands handled by the app share the same palette. They're stored in `userData/snippets.json`, and
 removing a workspace deletes the snippets of that scope. The pure logic is in `src/shared/snippets.ts`.
 
 ## Prompt queue

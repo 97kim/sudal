@@ -21,7 +21,8 @@ import type { LiveBackgroundTask, TaskFinishedNote } from "@shared/bg-tasks";
 import type { StoredChatImage } from "./chat-attachments";
 import type { BackgroundTasksSource } from "./claude-adapter";
 import { applyClaudePolicy, closeAllClaudeSessions, closeClaudeSession, interruptClaudeSession, runClaudeTurn, warmClaudeSession, type ClaudeRuntime } from "./claude-adapter";
-import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, runCodexTurn, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
+import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, hasAmbientCodexTurn, interruptCodexSession, runCodexTurn, runCodexControl, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
+import type { CodexMode, CodexGoal, CodexControlCommand, CodexControlResult } from "@shared/codex-controls";
 import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
 import { readJsonl } from "./jsonl-reader";
@@ -64,6 +65,7 @@ export interface TerminalAttention {
 }
 
 export interface SessionConfig {
+  codexMode?: CodexMode;
   provider: Provider;
   cwd: string | null;
   policy: PermissionPolicy;
@@ -72,6 +74,8 @@ export interface SessionConfig {
 }
 
 export interface SessionSnapshot {
+  codexMode?: CodexMode;
+  codexGoal?: CodexGoal | null;
   tabId: string;
   provider: Provider;
   cwd: string | null;
@@ -97,6 +101,7 @@ export interface SessionSnapshot {
 }
 
 interface QueuedTurn {
+  nativeAction?: "compact" | "review";
   text: string;
   prompt: string;
   images: StoredChatImage[];
@@ -113,6 +118,9 @@ export interface PendingPromptSummary {
 }
 
 interface Session {
+  codexMode?: CodexMode;
+  codexGoal?: CodexGoal | null;
+  controlBusy?: boolean;
   tabId: string;
   provider: Provider;
   cwd: string | null;
@@ -215,6 +223,7 @@ export interface SessionManagerDeps {
       sessionId?: string | null;
       provider?: Provider;
       model?: string;
+      codexMode?: CodexMode;
       policy?: PermissionPolicy;
       cwd?: string | null;
     },
@@ -300,6 +309,9 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
 
 export class SessionManager {
   private readonly sessions = new Map<string, Session>();
+  /** goal RPC가 돌아오기 전부터 자동 목표 실행의 자리를 예약한다. */
+  private readonly goalStarts = new Set<Session>();
+  private shuttingDown = false;
   private readonly queue: string[] = [];
   private maxConcurrent: number;
 
@@ -355,6 +367,7 @@ export class SessionManager {
         cwd: defaults?.cwd ?? resolved?.cwd ?? null,
         policy: defaults?.policy ?? resolved?.policy ?? "ask",
         model: defaults?.model ?? resolved?.model,
+        codexMode: defaults?.codexMode ?? resolved?.codexMode,
         status: "idle",
         sessionId: defaults?.sessionId ?? resolved?.sessionId ?? null,
         abort: null,
@@ -407,6 +420,8 @@ export class SessionManager {
       cwd: s.cwd,
       policy: s.policy,
       model: s.model,
+      ...(s.codexMode ? { codexMode: s.codexMode } : {}),
+      ...(s.codexGoal !== undefined ? { codexGoal: s.codexGoal } : {}),
       status: s.status,
       sessionId: s.sessionId,
       handoffPending: s.handoffPrefix !== null,
@@ -539,6 +554,7 @@ export class SessionManager {
       policy: s.policy,
       model: s.model,
       log: (line: string) => this.deps.log?.(tabId, line),
+      onGoalChanged: (goal: CodexGoal | null) => this.codexGoalChanged(s, goal),
       onBackgroundTasks: (sessionId: string, tasks: LiveBackgroundTask[], source: BackgroundTasksSource) => this.deps.onBackgroundTasks?.(tabId, sessionId, tasks, source),
       onTaskFinished: (note: TaskFinishedNote) => {
         this.ensure(tabId).bgTaskFinished = true;
@@ -558,7 +574,9 @@ export class SessionManager {
         const r = await warmAgySession(await this.deps.agyRuntime(tabId), req);
         if (r === "opened") this.deps.log?.(tabId, "[agy] 예열 시작");
       } else {
-        const r = await warmCodexSession(await this.deps.codexRuntime(tabId), req);
+        const runtime = await this.deps.codexRuntime(tabId);
+        if (this.shuttingDown || this.sessions.get(tabId) !== s || s.provider !== "codex" || s.cwd !== req.cwd || s.controller !== "app") return;
+        const r = await warmCodexSession(runtime, req);
         if (r === "opened") this.deps.log?.(tabId, "[codex] 예열 시작");
       }
     } catch (e) {
@@ -618,7 +636,7 @@ export class SessionManager {
     // release() 로 내려간 세션 객체(탭 닫기·삭제)는 더 이상 이 매니저의 것이 아니다 — 큐를 소비하지 않고 디스크에 남긴다.
     if (this.sessions.get(s.tabId) !== s) return;
     const restable = s.status === "idle" || (opts.allowError && s.status === "error");
-    if (s.controller !== "app" || s.limitWait || !restable || s.promptQueue.length === 0 || this.isBusy(s.tabId)) return;
+    if (this.shuttingDown || s.controlBusy || s.controller !== "app" || s.limitWait || !restable || s.promptQueue.length === 0 || this.isBusy(s.tabId)) return;
     const next = s.promptQueue.shift()!;
     this.persistQueue(s);
     this.deps.onSnapshot?.(s.tabId, this.snapshot(s.tabId));
@@ -1158,13 +1176,60 @@ export class SessionManager {
     }
   }
 
+  async codexControl(tabId: string, command: CodexControlCommand, arg: string): Promise<CodexControlResult> {
+    const s = this.ensure(tabId);
+    if (s.provider !== "codex" || s.controller !== "app") throw new MsgError("session.msg.codexControl.codexOnly");
+    if (!s.cwd) throw new Error(mt("session.error.cwdFirst"));
+    if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
+    if (this.isBusy(tabId) && !["goal", "status", "usage", "ps", "stop", "mcp", "hooks", "plugins", "debug-config"].includes(command)) throw new MsgError("session.msg.codexControl.busy");
+    // 새 목표·재개는 서버가 직접 턴을 시작한다. 일반 채팅과 같은 동시 실행 상한을 지킨다.
+    const startsGoal = command === "goal" && !!arg && !["status", "pause", "clear"].includes(arg) && !/^budget(?:\s|$)/.test(arg);
+    if (startsGoal && s.status !== "running" && s.status !== "waiting_permission" && !this.canStart(tabId)) throw new MsgError("session.msg.codexControl.busy");
+    if (command === "compact" || command === "review") {
+      if (command === "compact" && arg) throw new MsgError("session.msg.codexControl.compactUsage");
+      if (!this.canStart(tabId)) throw new MsgError("session.msg.codexControl.busy");
+      s.queued = { text: "", prompt: arg, images: [], nativeAction: command };
+      this.start(s);
+      return {};
+    }
+    s.controlBusy = true;
+    if (startsGoal) this.goalStarts.add(s);
+    try {
+      const runtime = await this.deps.codexRuntime(tabId);
+      if (this.shuttingDown || this.sessions.get(tabId) !== s) throw new MsgError("session.msg.sessionEnded");
+      const result = await runCodexControl(runtime, {
+        sessionKey: tabId, cwd: s.cwd, sessionId: s.sessionId, policy: s.policy, model: s.model, codexMode: s.codexMode,
+        onAmbientEvent: (event) => this.ambientEvent(tabId, event),
+        requestAmbientPermission: (request) => this.waitPermission(s, request, new AbortController().signal),
+        onGoalChanged: (goal) => this.codexGoalChanged(s, goal),
+      }, command, arg);
+      if (this.sessions.get(tabId) !== s || s.provider !== "codex") throw new MsgError("session.msg.sessionEnded");
+      s.sessionId = result.sessionId;
+      this.deps.onMeta?.(tabId, { sessionId: result.sessionId });
+      if (result.mode) {
+        s.codexMode = result.mode;
+        this.deps.onMeta?.(tabId, { codexMode: result.mode });
+      }
+      if ("goal" in result) this.codexGoalChanged(s, result.goal ?? null);
+      this.deps.onSnapshot?.(tabId, this.snapshot(tabId));
+      return command === "status" ? { ...result, data: { thread: result.data, session: this.snapshot(tabId) } } : result;
+    } finally {
+      s.controlBusy = false;
+      this.goalStarts.delete(s);
+      this.drain();
+      this.drainPending(s);
+    }
+  }
+
   configure(tabId: string, patch: Partial<SessionConfig>): SessionSnapshot {
     const s = this.ensure(tabId);
+    if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
     const meta: Parameters<NonNullable<SessionManagerDeps["onMeta"]>>[1] = {};
     if (patch.provider && patch.provider !== s.provider) {
       // provider 가 바뀌면 이전 provider 의 세션 id 는 의미가 없다. 살아 있던 Claude 프로세스도 내린다.
       closeProviderSessions(tabId);
       s.provider = patch.provider;
+      s.codexGoal = null;
       s.sessionId = null;
       meta.provider = patch.provider;
       meta.sessionId = null;
@@ -1182,6 +1247,7 @@ export class SessionManager {
       // 작업 경로가 바뀌면 provider 세션은 새로 시작한다 (기록은 그대로). 살아 있던 프로세스는 옛 cwd 것이라 내린다.
       closeProviderSessions(tabId);
       s.cwd = patch.cwd;
+      s.codexGoal = null;
       s.sessionId = null;
       meta.sessionId = null;
       meta.cwd = patch.cwd;
@@ -1195,6 +1261,10 @@ export class SessionManager {
     if ("model" in patch) {
       s.model = patch.model || undefined;
       meta.model = s.model;
+    }
+    if (patch.codexMode) {
+      s.codexMode = patch.codexMode;
+      meta.codexMode = patch.codexMode;
     }
     if (Object.keys(meta).length > 0) this.deps.onMeta?.(tabId, meta);
     const snap = this.snapshot(tabId);
@@ -1263,6 +1333,7 @@ export class SessionManager {
     },
   ): SessionSnapshot {
     const s = this.ensure(tabId);
+    if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
     if (this.isBusy(tabId)) this.abort(tabId);
     const events = this.events(tabId);
     const written = opts.preserveContext ? (opts.summary ?? "").trim() : "";
@@ -1279,6 +1350,7 @@ export class SessionManager {
     s.limitAttempts = 0;
     closeProviderSessions(tabId); // 새 세션으로 시작하므로 살아 있던 프로세스는 내린다
     s.provider = opts.provider;
+    s.codexGoal = null;
     s.model = opts.model || undefined;
     s.sessionId = null;
     this.setHandoffPrefix(s, handoff ? handoff.summary : null);
@@ -1314,11 +1386,11 @@ export class SessionManager {
     return !!s && s.status !== "idle" && s.status !== "error";
   }
 
-  private runningCount(): number {
+  private runningCount(excludeTabId?: string): number {
     let n = 0;
     for (const s of this.sessions.values()) {
-      if (this.exemptTabs.has(s.tabId)) continue;
-      if (s.status === "running" || s.status === "waiting_permission") n += 1;
+      if (s.tabId === excludeTabId || this.exemptTabs.has(s.tabId)) continue;
+      if (s.status === "running" || s.status === "waiting_permission" || this.goalStarts.has(s) || s.codexGoal?.status === "active") n += 1;
     }
     return n;
   }
@@ -1331,6 +1403,7 @@ export class SessionManager {
   ): Promise<{ ok: true; queued: boolean; pending?: boolean } | { ok: false; error: string }> {
     const s = this.ensure(tabId);
     if (s.provider === "agy" && images.length > 0) return { ok: false, error: mt("session.error.agyImagesUnsupported") };
+    if (s.controlBusy) return { ok: false, error: mt("session.msg.codexControl.busy") };
     if (s.controller === "terminal")
       return {
         ok: false,
@@ -1443,6 +1516,10 @@ export class SessionManager {
             policy: s.policy,
             currentPolicy: () => s.policy,
             model: s.model,
+            codexMode: s.codexMode,
+            nativeAction: turn.nativeAction,
+            onGoalChanged: (goal) => this.codexGoalChanged(s, goal),
+            requestAmbientPermission: (request) => this.waitPermission(s, request, new AbortController().signal),
             abort,
             onEvent: emit,
             onAmbientEvent: (event) => this.ambientEvent(s.tabId, event),
@@ -1482,7 +1559,7 @@ export class SessionManager {
           });
         }
         // 한도 오류는 finally 의 재시도 예약이 맡는다(그 경로는 idle 을 전제로 한다).
-        this.setStatus(s, turnFailed && !limitText && !abort.signal.aborted ? "error" : "idle");
+        if (s.provider !== "codex" || !hasAmbientCodexTurn(s.tabId)) this.setStatus(s, turnFailed && !limitText && !abort.signal.aborted ? "error" : "idle");
       } catch (e) {
         if (!abort.signal.aborted && isUsageLimitText(describeError(e))) limitText = describeError(e);
         if (abort.signal.aborted) {
@@ -1507,12 +1584,13 @@ export class SessionManager {
         }
       } finally {
         s.abort = null;
-        s.turnStartedAt = null;
+        const ambientCodex = s.provider === "codex" && hasAmbientCodexTurn(s.tabId);
+        if (!ambientCodex) s.turnStartedAt = null;
         // 탭이 닫히며 release 된 뒤에 늦게 끝난 턴이면 세션이 이미 지워져 있다 —
         // snapshot() 은 ensure() 로 되살리므로, 아직 같은 세션일 때만 알린다.
         if (this.sessions.get(s.tabId) === s) this.deps.onSnapshot?.(s.tabId, this.snapshot(s.tabId));
         this.stopCompanion(s);
-        this.rejectAllPending(s);
+        if (!ambientCodex) this.rejectAllPending(s);
         if (limitText && !abort.signal.aborted) {
           // 재시도를 예약한다. 큐는 재시도가 성공할 때까지 멈춰 둔다(연쇄로 같은 한도에 걸리며 유실되는 것을 막는다).
           if (s.limitAttempts > 0) s.limitWait = { until: null, attempts: s.limitAttempts, message: "", turn, timer: null };
@@ -1556,12 +1634,26 @@ export class SessionManager {
     if (file) this.deps.log?.(s.tabId, `[companion] 감시 종료 (${file})`);
   }
 
+  private codexGoalChanged(s: Session, goal: CodexGoal | null): void {
+    if (this.shuttingDown || this.sessions.get(s.tabId) !== s || s.provider !== "codex") return;
+    const wasActive = s.codexGoal?.status === "active";
+    s.codexGoal = goal;
+    this.deps.onSnapshot?.(s.tabId, this.snapshot(s.tabId));
+    // 목표 상태 알림이 turn/completed보다 늦어도 예약한 자리를 풀고 대기열을 진행한다.
+    if (wasActive && goal?.status !== "active") queueMicrotask(() => {
+      if (this.shuttingDown || this.sessions.get(s.tabId) !== s) return;
+      this.drain();
+      if (!s.ambientStopped) this.drainPending(s);
+    });
+  }
+
   /** 상한과 무관하게 시작해도 되는지: 예외 탭(코디네이터)이거나 자리가 있으면. */
   private canStart(tabId: string): boolean {
-    return this.exemptTabs.has(tabId) || this.runningCount() < this.maxConcurrent;
+    return this.exemptTabs.has(tabId) || this.runningCount(tabId) < this.maxConcurrent;
   }
 
   private drain() {
+    if (this.shuttingDown) return;
     // 예외 탭은 큐 어디에 있든 먼저 꺼내고, 나머지는 자리가 나는 만큼 순서대로
     for (const tabId of [...this.queue]) {
       if (!this.exemptTabs.has(tabId)) continue;
@@ -1569,10 +1661,11 @@ export class SessionManager {
       const s = this.sessions.get(tabId);
       if (s && s.status === "queued" && s.queued) this.start(s);
     }
-    while (this.queue.length > 0 && this.runningCount() < this.maxConcurrent) {
-      const tabId = this.queue.shift()!;
+    for (const tabId of [...this.queue]) {
       const s = this.sessions.get(tabId);
-      if (!s || s.status !== "queued" || !s.queued) continue;
+      if (!s || s.status !== "queued" || !s.queued) { this.queue.splice(this.queue.indexOf(tabId), 1); continue; }
+      if (!this.canStart(tabId)) continue;
+      this.queue.splice(this.queue.indexOf(tabId), 1);
       this.start(s);
     }
   }
@@ -1617,6 +1710,7 @@ export class SessionManager {
         // 살아 있으면 끊는다. 프로세스가 이미 없으면(유령 상태) 끊을 것이 없을 뿐,
         // 화면에 남은 "도는 중" 은 똑같이 정리해 줘야 한다 — 안 그러면 영영 못 멈춘다.
         if (s.provider === "claude") interruptClaudeSession(tabId);
+        if (s.provider === "codex") interruptCodexSession(tabId);
         this.rejectAllPending(s);
         s.ambientStopped = true;
         s.turnStartedAt = null;
@@ -1643,9 +1737,17 @@ export class SessionManager {
           if (r !== "none") this.deps.log?.(tabId, `[claude] 권한 ${policy} — ${r === "applied" ? "이번 턴부터" : "다음 턴부터"}`);
         })
         .catch(() => {});
-    } else {
-      const r = s.provider === "agy" ? applyAgyPolicy(tabId, policy) : applyCodexPolicy(tabId, policy);
+    } else if (s.provider === "agy") {
+      const r = applyAgyPolicy(tabId, policy);
       if (r !== "none") this.deps.log?.(tabId, `[codex] 권한 ${policy} — ${r === "applied" ? "이번 턴부터(샌드박스는 다음 턴부터)" : "다음 턴부터"}`);
+    } else {
+      void applyCodexPolicy(tabId, policy).then((r) => {
+        if (r !== "none") this.deps.log?.(tabId, `[codex] 권한 ${policy} — ${r === "applied" ? "이번 턴부터(샌드박스는 다음 턴부터)" : "다음 턴부터"}`);
+      }).catch((error) => {
+        if (this.sessions.get(tabId) !== s) return;
+        this.record(s, { type: "error", ts: Date.now(), fatal: false, ...appMsg("session.msg.codexControl.policyUpdateFailed", { detail: describeError(error) }) });
+        this.drain();
+      });
     }
     if (policy !== "full") return;
     // 이미 떠 있는 승인 창은 게이트가 지나쳐 버린 요청이라 따로 풀어 준다.
@@ -1677,6 +1779,12 @@ export class SessionManager {
       s.ambientPermissionsOpen = 0;
       this.setStatus(s, e.isError && !stopped ? "error" : "idle");
       this.deps.onSnapshot?.(tabId, this.snapshot(tabId));
+      // 어댑터가 이번 턴을 해제하고, 같은 묶음의 다음 자동 턴 알림까지 처리한 뒤 대기열을 연다.
+      queueMicrotask(() => {
+        if (this.shuttingDown || this.sessions.get(tabId) !== s) return;
+        this.drain();
+        if (!stopped && !e.isError) this.drainPending(s);
+      });
       return;
     }
     if (e.type === "status") {
@@ -1694,6 +1802,11 @@ export class SessionManager {
         if (s.ambientPermissionsOpen === 0 && s.pendingReqs.size === 0) s.ambientBeforePermission = null;
       }
       s.status = status;
+      if (s.provider === "codex") {
+        if (status === "running") s.turnStartedAt ??= Date.now();
+        this.deps.onStatus?.(tabId, status);
+        this.deps.onSnapshot?.(tabId, this.snapshot(tabId));
+      }
       this.record(s, status === e.status ? e : { ...e, status });
       return;
     }
@@ -1771,6 +1884,7 @@ export class SessionManager {
 
   clear(tabId: string): SessionSnapshot {
     const s = this.ensure(tabId);
+    if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
     this.historyReads.delete(tabId);
     this.externalCliExited(tabId);
     if (s.controller === "terminal") this.detachTerminal(tabId);
@@ -1782,6 +1896,7 @@ export class SessionManager {
     s.dedupe = buildDedupeIndex([]);
     s.sessionId = null;
     this.setHandoffPrefix(s, null);
+    s.codexGoal = null;
     s.startedAt = null;
     s.promptQueue = [];
     this.persistQueue(s);
@@ -1811,6 +1926,8 @@ export class SessionManager {
       s.limitWait = null;
     }
     this.sessions.delete(tabId);
+    this.drain();
+    this.broadcastQueued();
   }
 
   abortAll(opts: { keepQueue?: boolean } = {}): void {
@@ -1819,6 +1936,7 @@ export class SessionManager {
 
   /** 앱 종료: 턴 중단 + 미러·훅 워처 정리(훅 로그 삭제). */
   shutdown(): void {
+    this.shuttingDown = true;
     this.abortAll({ keepQueue: true });
     closeAllClaudeSessions();
     closeAllCodexSessions();

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { appServerUsage, classifyResumeFailure, sudalEnvArgs, mapAppServerNotification, normalizeFileChanges, reasoningSummaryArgs, resumeConflictMessage, type AppServerTurnContext } from "./codex-app-server";
 import { mapCodexChildNotification } from "./codex-app-server";
 import { readCodexAgentInput } from "@shared/codex-agents";
-import { replaySession } from "@shared/session-state";
+import { contextUsage, replaySession } from "@shared/session-state";
 import type { ChatEvent } from "@shared/chat-events";
 
 const collab = (id: string, tool: string, states: Record<string, { status: string; message?: string }>) => ({
@@ -119,6 +119,24 @@ test("mapAppServerNotification: 파일 변경·MCP 도구 호출", () => {
   assert.equal(mcp[0].type === "tool_use" && mcp[0].name, "github:search");
   assert.equal(mcp[1].type === "tool_result" && mcp[1].output, "hit");
   assert.deepEqual(appServerUsage(undefined), { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+});
+
+test("수동 압축의 토큰은 집계하되 완료 후 컨텍스트 게이지는 비운다", () => {
+  const c: AppServerTurnContext = { startedAt: 0, lastUsage: { input: 400, output: 20, cacheRead: 600, cacheWrite: 0 }, manualCompaction: true };
+  const boundary = mapAppServerNotification("item/completed", { item: { type: "contextCompaction", id: "compact" } }, 1, c);
+  const events = [...boundary, ...mapAppServerNotification("turn/completed", { turn: { id: "turn", status: "completed" } }, 2, c)];
+  assert.deepEqual(events.map(event => event.type), ["turn_result", "compacted"]);
+  const replay = replaySession(events);
+  assert.equal(contextUsage(replay), null);
+  assert.equal(replay.totals.usage.input, 400);
+  assert.equal(replay.totals.usage.cacheRead, 600);
+  assert.equal(events[1].type === "compacted" && events[1].preTokens, 1000);
+});
+
+test("자동 압축의 경계를 즉시 표시하고 토큰 수 미제공은 0으로 바꾸지 않는다", () => {
+  const c: AppServerTurnContext = { startedAt: 0, lastUsage: null };
+  assert.deepEqual(mapAppServerNotification("item/completed", { item: { type: "contextCompaction", id: "compact" } }, 1, c), [{ type: "compacted", ts: 1, trigger: "auto" }]);
+  assert.deepEqual(mapAppServerNotification("item/started", { item: { type: "enteredReviewMode", id: "review", review: "changes" } }, 2, c), []);
 });
 
 test("mapAppServerNotification: reasoning 요약 델타는 thinking_delta, 단락 경계는 줄바꿈", () => {

@@ -490,7 +490,7 @@ function Group({
         <div className="h-px flex-1 bg-line" />
         <span className="shrink-0">
           {t(b.trigger === "auto" ? "chat.messages.compactedAuto" : "chat.messages.compacted", {
-            tokens: `${k(b.preTokens)}${b.postTokens !== undefined ? ` → ${k(b.postTokens)}` : ""}`,
+            tokens: `${b.preTokens === undefined ? t("chat.messages.compactedTokensUnknown") : k(b.preTokens)}${b.postTokens !== undefined ? ` → ${k(b.postTokens)}` : ""}`,
           })}
         </span>
         <div className="h-px flex-1 bg-line" />

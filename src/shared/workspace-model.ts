@@ -28,6 +28,7 @@ export interface TabMeta {
   titleCustom?: boolean;
   provider: Provider;
   model?: string;
+  codexMode?: import("./codex-controls").CodexMode;
   policy: PermissionPolicy;
   /** 이 탭의 작업 경로. 없으면 워크스페이스 기본 경로를 쓴다. */
   cwd?: string;
