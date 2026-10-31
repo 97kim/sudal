@@ -8,6 +8,7 @@ import {
   IPC,
   type ChatEventEnvelope,
   type ChatSendDto,
+  type CrossReviewStartDto,
   type Provider,
   type RendererErrorDto,
   type ShortcutName,
@@ -160,7 +161,7 @@ const api: SudalApi = {
     configure: (tabId: string, patch: Partial<SessionConfigDto>) =>
       ipcRenderer.invoke(IPC.chatConfigure, tabId, patch),
     snapshot: (tabId: string) => ipcRenderer.invoke(IPC.chatSnapshot, tabId),
-    crossReview: (tabId: string) => ipcRenderer.invoke(IPC.chatCrossReview, tabId),
+    crossReview: (tabId: string, opts?: CrossReviewStartDto) => ipcRenderer.invoke(IPC.chatCrossReview, tabId, opts),
     verify: (tabId: string, opts?: { commands?: string[] }) => ipcRenderer.invoke(IPC.chatVerify, tabId, opts),
     verifyAbort: (tabId: string) => ipcRenderer.invoke(IPC.chatVerifyAbort, tabId),
     verifySuggest: (tabId: string) => ipcRenderer.invoke(IPC.chatVerifySuggest, tabId),

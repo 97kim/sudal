@@ -48,9 +48,9 @@ sudal tab read --tab 리뷰 --last 3
 <tr>
 <td width="42%" valign="middle">
 
-### 버튼 하나로 교차 리뷰
+### 리뷰어를 골라 교차 리뷰
 
-헤더의 `···` → "교차 리뷰"를 누르면 지금 탭의 변경을 반대쪽 에이전트의 새 탭에 보내요. 리뷰 결과는 원래 탭에 카드로 돌아와요.
+헤더의 `···` → "교차 리뷰"에서 Claude Code·Codex·Antigravity와 모델을 골라 지금 탭의 변경을 리뷰받아요. 같은 CLI도 별도 세션에서 리뷰할 수 있고, 결과는 원래 탭에 카드로 돌아와요.
 
 </td>
 <td width="58%"><img src="docs/images/demo-cross-review.gif" alt="Claude가 고친 뒤 교차 리뷰를 누르면 Codex 리뷰 탭이 변경을 리뷰하고 결과가 원래 탭의 카드로 돌아오는 장면" width="100%" /></td>

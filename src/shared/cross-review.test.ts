@@ -1,8 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildReviewPrompt, CROSS_REVIEW_DIFF_MAX, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "./cross-review";
+import { buildReviewPrompt, CROSS_REVIEW_DIFF_MAX, otherProvider, validateReviewRequest, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "./cross-review";
 import { createI18n } from "./i18n";
 const { t } = createI18n("ko");
+
+test("교차 리뷰 요청: 세 CLI와 같은 CLI를 명시할 수 있고 모델은 공백을 정리한다", () => {
+  for (const author of ["claude", "codex", "agy"] as const) {
+    for (const provider of ["claude", "codex", "agy"] as const) {
+      assert.deepEqual(validateReviewRequest(t, { provider, model: " custom-model " }, author), { ok: true, provider, model: "custom-model" });
+      assert.deepEqual(validateReviewRequest(t, { provider, model: "  " }, author), { ok: true, provider });
+    }
+    assert.deepEqual(validateReviewRequest(t, undefined, author), { ok: true, provider: otherProvider(author) });
+  }
+  for (const request of [null, [], "agy", {}, { provider: "unknown" }, { provider: "codex", model: 1 }, { provider: "agy", model: null }]) {
+    assert.equal(validateReviewRequest(t, request, "claude").ok, false, JSON.stringify(request));
+  }
+});
 
 test("cross-review: 상대 provider·제목·범위·프롬프트(긴 diff 는 자른다)", () => {
   assert.equal(otherProvider("claude"), "codex");

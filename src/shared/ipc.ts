@@ -25,6 +25,12 @@ import type { PricingEntry, UsageFilter, UsageSummary } from "./usage";
 export type Provider = "claude" | "codex" | "agy";
 export const PROVIDERS: Provider[] = ["claude", "codex", "agy"];
 
+export interface CrossReviewStartDto {
+  provider: Provider;
+  /** 생략하면 선택한 CLI의 기본 모델. 원래 탭의 모델은 물려받지 않는다. */
+  model?: string;
+}
+
 /** 모델 피커의 한 줄. id 는 CLI 에 넘기는 값(별칭 또는 전체 이름). */
 export interface ModelOptionDto {
   id: string;
@@ -917,8 +923,8 @@ export interface SudalApi {
       patch: Partial<SessionConfigDto>,
     ): Promise<SessionSnapshotDto>;
     snapshot(tabId: string): Promise<SessionSnapshotDto>;
-    /** 교차 리뷰: 이 탭의 작업 트리 diff 를 다른 provider 의 새 탭에 보내고, 답이 오면 이 탭에 카드로 붙인다. */
-    crossReview(tabId: string): Promise<{ ok: true; reviewTabId: string; scope: string } | { ok: false; error: string }>;
+    /** 교차 리뷰: 선택한 provider·모델의 새 탭에 diff 를 보내고 결과를 원래 탭에 붙인다. opts 생략 시 기존 상대 provider. */
+    crossReview(tabId: string, opts?: CrossReviewStartDto): Promise<{ ok: true; reviewTabId: string; scope: string } | { ok: false; error: string }>;
     /** 검증: 워크스페이스에 저장한 명령(또는 commands)을 이 탭의 cwd 에서 순서대로 돌리고 결과를 이 탭에 카드로 남긴다. */
     verify(tabId: string, opts?: { commands?: string[] }): Promise<VerifyStartResult>;
     verifyAbort(tabId: string): Promise<boolean>;

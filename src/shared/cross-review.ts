@@ -1,11 +1,23 @@
-// 교차 리뷰: 한 탭의 작업 트리 변경(diff)을 다른 provider 탭에 보내 독립 리뷰를 받는다. 프롬프트는 여기서 만든다.
+// 교차 리뷰: 한 탭의 작업 트리 변경(diff)을 선택한 리뷰어의 새 탭에 보내 독립 리뷰를 받는다.
 import type { TFunction } from "i18next";
-import type { Provider } from "./ipc";
+import { PROVIDERS, type CrossReviewStartDto, type Provider } from "./ipc";
 
 export const CROSS_REVIEW_DIFF_MAX = 120_000;
 
 export function otherProvider(p: Provider): Provider {
   return p === "claude" ? "codex" : "claude";
+}
+
+/** 오래된 호출은 기존 상대 CLI로 유지한다. 명시적 요청은 같은 CLI도 별도 세션에서 리뷰할 수 있다. */
+export function validateReviewRequest(t: TFunction, request: unknown, author: Provider):
+  | { ok: true; provider: Provider; model?: string }
+  | { ok: false; error: string } {
+  if (request === undefined) return { ok: true, provider: otherProvider(author) };
+  if (!request || typeof request !== "object" || Array.isArray(request)) return { ok: false, error: t("main.error.badRequest") };
+  const { provider, model } = request as Partial<CrossReviewStartDto>;
+  if (!PROVIDERS.includes(provider as Provider)) return { ok: false, error: t("main.review.badProvider") };
+  if (model !== undefined && typeof model !== "string") return { ok: false, error: t("main.review.badModel") };
+  return { ok: true, provider: provider as Provider, ...(model?.trim() ? { model: model.trim() } : {}) };
 }
 
 export function reviewTabTitle(t: TFunction, originTitle: string): string {

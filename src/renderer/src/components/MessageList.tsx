@@ -749,7 +749,7 @@ function fmt(n: number): string {
 function ReviewCard({ block }: { block: ReviewBlock }) {
   const { t, i18n } = useTranslation();
   const now = useNow(block.status === "requested");
-  const name = block.reviewer === "claude" ? "Claude Code" : "Codex";
+  const name = block.reviewer === "claude" ? "Claude Code" : block.reviewer === "agy" ? "Antigravity" : "Codex";
   const secs = Math.max(0, Math.floor((now - block.ts) / 1000));
   return (
     <div className="content-indent rounded-lg border border-line bg-panel" data-review-card={block.id} data-review-status={block.status}>

@@ -186,6 +186,9 @@ export const main: DeepPartial<typeof ko> = {
   },
   review: {
     tabTitle: "Cross-review · {{title}}",
+    badProvider: "Choose an agent to review the changes.",
+    badModel: "The review model must be a string.",
+    cliMissing: "The selected reviewer's CLI could not be found. Check its installation path in Settings.",
     noChanges: "There are no file changes to review.",
     diffUnreadable: "Couldn't read the diff to review.",
     tabCreateFailed: "Couldn't create the review tab.",

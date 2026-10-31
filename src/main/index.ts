@@ -54,7 +54,7 @@ import { fetchMcpStatus } from "./claude-mcp";
 import { currentCodexBackgroundJobs, onCodexBackgroundJobsChanged, forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
 import { setAgySessionIdleMs, type AgyRuntime } from "./agy-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
-import { buildReviewPrompt, otherProvider, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
+import { buildReviewPrompt, validateReviewRequest, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
 import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/handoff";
 import { lastReplyText } from "@shared/session-state";
 import { parseCron } from "@shared/cron";
@@ -1005,27 +1005,31 @@ function fanoutError(key: MsgKey): { error: string; errorMsg: Msg } {
 }
 
 /**
- * 교차 리뷰: 이 탭의 작업 트리 diff 를 다른 provider 의 새 탭에 보내고, 그 탭의 첫 답이 오면 이 탭에 review 카드로 남긴다.
+ * 교차 리뷰: 이 탭의 작업 트리 diff 를 선택한 리뷰어의 새 탭에 보내고, 그 탭의 첫 답이 오면 이 탭에 review 카드로 남긴다.
  * 리뷰 탭은 화면을 빼앗지 않고(활성 탭 복원) 정책은 ask(읽기 전용에 가깝게). 결과 대기는 main 이 하므로 사용자가 탭을 옮겨도 이어진다.
  */
-async function startCrossReview(tabId: string): Promise<{ ok: true; reviewTabId: string; scope: string } | { ok: false; error: string }> {
+async function startCrossReview(tabId: string, opts?: unknown): Promise<{ ok: true; reviewTabId: string; scope: string } | { ok: false; error: string }> {
   const tab = workspaces.tab(tabId);
   if (!tab) return { ok: false, error: mt("main.error.tabNotFound") };
   const snap = sessions.snapshot(tabId);
   if (!snap.cwd) return { ok: false, error: mt("main.error.cwdRequired") };
+  const request = validateReviewRequest(mt, opts, snap.provider);
+  if (!request.ok) return request;
+  const reviewer = request.provider;
+  const cli = await cliDiscovery().find(reviewer);
+  if (!cli.installed || !cli.path) return { ok: false, error: cli.error || mt("main.review.cliMissing") };
   const cwd = snap.cwd;
   const env = await cliDiscovery().buildEnv();
   const changes = await gitChanges(cwd, env);
   if (changes.length === 0) return { ok: false, error: mt("main.review.noChanges") };
   const diff = await gitDiffFor(cwd, env, changes.map((c) => c.path));
   if (!diff.trim()) return { ok: false, error: mt("main.review.diffUnreadable") };
-  const reviewer = otherProvider(snap.provider);
   const originTitle = tabTitleOf(tabId);
   const prevActive = workspaces.state().model.activeTabId;
   const reviewTabId = workspaces.createTab(tab.workspaceId);
   if (!reviewTabId) return { ok: false, error: mt("main.review.tabCreateFailed") };
-  // model 은 명시적으로 비운다 — 새 탭이 활성 탭의(다른 provider 의) 모델명을 물려받지 않게
-  sessions.configure(reviewTabId, { cwd, provider: reviewer, policy: "ask", model: undefined });
+  // model 을 항상 명시한다 — 기본 선택 시 활성 탭의 모델명을 물려받지 않게 비운다.
+  sessions.configure(reviewTabId, { cwd, provider: reviewer, policy: "ask", model: request.model });
   workspaces.renameTab(reviewTabId, reviewTabTitle(mt, originTitle));
   if (prevActive && prevActive !== reviewTabId) workspaces.activateTab(prevActive);
   const scopeParams = reviewScopeParams(changes);
@@ -2620,9 +2624,9 @@ function registerIpc() {
   ipcMain.handle(IPC.chatFanoutCompare, (_e, tabId: string, fanoutId: string) => fanoutCompare(String(tabId), String(fanoutId)));
   ipcMain.handle(IPC.chatFanoutAdopt, (_e, tabId: string, fanoutId: string, variantTabId: string) => fanoutAdopt(String(tabId), String(fanoutId), String(variantTabId)));
   ipcMain.handle(IPC.chatFanoutCleanup, (_e, tabId: string, fanoutId: string) => fanoutCleanup(String(tabId), String(fanoutId)));
-  ipcMain.handle(IPC.chatCrossReview, (_e, tabId: string) => {
+  ipcMain.handle(IPC.chatCrossReview, (_e, tabId: string, opts?: unknown) => {
     if (typeof tabId !== "string") throw new Error(mt("main.error.badArgs"));
-    return startCrossReview(tabId);
+    return startCrossReview(tabId, opts);
   });
   ipcMain.handle(IPC.chatAttachTerminal, (_e, tabId: string) =>
     sessions.attachTerminal(tabId),

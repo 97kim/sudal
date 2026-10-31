@@ -188,6 +188,9 @@ export const main = {
   },
   review: {
     tabTitle: "교차 리뷰 · {{title}}",
+    badProvider: "리뷰할 에이전트를 선택해 주세요.",
+    badModel: "리뷰 모델은 문자열이어야 합니다.",
+    cliMissing: "선택한 리뷰어의 CLI를 찾을 수 없습니다. 설정에서 설치 경로를 확인해 주세요.",
     noChanges: "리뷰할 파일 변경이 없습니다.",
     diffUnreadable: "리뷰할 diff를 읽지 못했습니다.",
     tabCreateFailed: "리뷰 탭을 만들지 못했습니다.",

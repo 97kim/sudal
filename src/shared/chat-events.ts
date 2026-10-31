@@ -196,7 +196,7 @@ export interface CompactedEvent extends Base {
 }
 
 /**
- * 교차 리뷰: 다른 provider 탭에 diff 를 보내 받은 결과. reviewTabId 로 같은 카드를 갱신한다(requested → done|failed).
+ * 교차 리뷰: 선택한 리뷰어의 새 탭에 diff 를 보내 받은 결과. reviewTabId 로 같은 카드를 갱신한다(requested → done|failed).
  * 원래 탭의 기록에 남으므로 재시작 뒤에도 카드가 보인다.
  */
 export interface ReviewEvent extends Base {

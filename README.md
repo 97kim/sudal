@@ -48,9 +48,9 @@ sudal tab read --tab Review --last 3
 <tr>
 <td width="42%" valign="middle">
 
-### Cross-review in one click
+### Choose your review agent
 
-Click `···` → "Cross-review" in the header to send the current tab's changes to a new tab on the other agent. The review comes back to the original tab as a card.
+Click `···` → "Cross-review" in the header and choose Claude Code, Codex, or Antigravity and a model to review the current tab's changes. You can also use the same CLI in a separate session. The review comes back to the original tab as a card.
 
 </td>
 <td width="58%"><img src="docs/images/en/demo-cross-review.gif" alt="After Claude makes a fix, clicking Cross-review has a Codex review tab review the changes, and the result returns to the original tab as a card" width="100%" /></td>
