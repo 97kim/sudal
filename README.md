@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong>Agents hand work to other agents and collect the results.</strong><br/>
-  A macOS and Windows app that runs Claude Code and Codex as tabs in a workspace.
+  A macOS and Windows app that runs Claude Code, Codex, and Antigravity as tabs in a workspace.
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
   <sub>All I told Claude was: "Fix it, then hand the missing-quantity case and its test to Codex." Claude opened the Codex tab itself, handed off the work, and when Codex finished, collected the result, tested it, and wrapped up. (The waiting parts are sped up.)</sub>
 </p>
 
-You don't need a Sudal account. The app finds the `claude` and `codex` CLIs you've already logged in to and uses them, so `CLAUDE.md`, skills, MCP servers, and the rest of your setup apply exactly as they do in the terminal.
+You don't need a Sudal account. The app finds the `claude`, `codex`, and `agy` (Antigravity) CLIs you've already logged in to and uses their existing login and configuration.
 
 ## Agents hand off work on their own
 
@@ -80,7 +80,7 @@ Fan-out sends the same request to several sessions at once, each in its own isol
 
 ### See what it's about to do first
 
-Before it changes a file or runs a command, it asks with a permission card. Files read, commands run, and code changed pile up as tool cards, so you don't have to chase terminal output.
+With Claude Code and Codex, it asks with a permission card before changing a file or running a command. Files read, commands run, and code changed pile up as tool cards, so you don't have to chase terminal output.
 
 </td>
 <td width="58%"><img src="docs/images/en/hero.png" alt="Claude asking for permission to run a command before running tests" width="100%" /></td>
@@ -163,13 +163,17 @@ While you work in other apps, Sudari, our otter, sits in the corner of your scre
 |---|---|
 | Claude Code | A logged-in `claude` CLI |
 | Codex | A logged-in `codex` CLI |
+| Antigravity | A logged-in `agy` CLI |
 
-Either one is enough. If you switch agents mid-conversation, Sudal summarizes the conversation so far and passes it along.
+Any one is enough. If you switch agents mid-conversation, Sudal summarizes the conversation so far and passes it along.
+
+Antigravity supports chat, model selection, and subscription limits by model group, including reset times. Image attachments and continuing the same conversation in a terminal are not supported yet. Its chat follows the CLI permission settings; tools requiring additional approval are automatically denied because they cannot be approved in the chat.
 
 ## Install
 
-**Requirements**: An Apple Silicon Mac (macOS 13 or later) or 64-bit Windows 10/11, and at least one logged-in `claude` or `codex` CLI.
+**Requirements**: An Apple Silicon Mac (macOS 13 or later) or 64-bit Windows 10/11, and at least one logged-in `claude`, `codex`, or `agy` CLI.
 If you don't have one yet, follow the [Claude Code setup](https://code.claude.com/docs/en/setup) or [Codex CLI setup](https://developers.openai.com/codex/cli) guide, then log in.
+For Antigravity, install the `agy` CLI and log in before opening Sudal.
 On Windows, Claude Code also needs [Git for Windows](https://git-scm.com/downloads/win) (Git Bash).
 
 ### macOS
@@ -213,10 +217,10 @@ Updates happen inside the app. When a new version is out, click the update butto
 
 1. Click **Add workspace** in the sidebar and create a workspace named after your work.
 2. Click **Choose working directory…** at the top of the screen and pick the repository folder you'll work in.
-3. Pick **Claude Code** or **Codex** at the top right.
+3. Pick **Claude Code**, **Codex**, or **Antigravity** at the top right.
 4. Type a request in the input box and send it. For example: "The tests are failing. Find the cause and fix it."
 
-Permissions start at "Ask before changes", so before it changes a file or runs a command, it shows you what it's about to do and asks.
+Permissions start at "Ask before changes". Claude Code and Codex show you what they're about to do and ask before changing a file or running a command. For Antigravity, see the permission limitations under [Supported agents](#supported-agents).
 
 ## And more
 
@@ -228,7 +232,7 @@ Permissions start at "Ask before changes", so before it changes a file or runs a
 - **Notifications**: Sessions waiting for permission or finished show up in the sidebar, the Dock badge (the taskbar on Windows), and system notifications, and ⌘⇧↓ jumps straight to them.
 - **Chat search and export**: ⌘F searches even closed sessions, and you can export a conversation as Markdown.
 - **Worktree cleanup**: In settings, see leftover worktrees with their size and number of uncommitted changes, and delete them.
-- **Usage**: See usage by model and workspace, estimated cost at API prices, and your Claude and Codex subscription limits.
+- **Usage**: See usage by model and workspace, estimated cost at API prices, and your Claude, Codex, and Antigravity subscription limits. Antigravity limits are grouped by model, with reset times.
 - **Context and limits**: Warns you before the context window fills up, and when you hit a Claude usage limit, retries at the time it resets.
 - Dark mode, image paste, and an indicator for background tasks that keep running after a turn ends.
 - **Language**: Use the screens, menus, and notifications in Korean or English. Choose under Settings → General → Language; the default follows your system language.
@@ -239,12 +243,12 @@ Shortcuts are written for Mac; on Windows, press Ctrl for ⌘. The full list and
 
 ### Do I need an account or API key?
 
-You don't need a separate Sudal account. It uses the `claude` and `codex` CLIs you've already logged in to, and billing is just each service's subscription or API pricing.
+You don't need a separate Sudal account. It uses the `claude`, `codex`, and `agy` CLIs you've already logged in to, and billing is just each service's subscription or API pricing.
 Sudal runs the CLIs you installed and logged in to yourself. It doesn't collect, store, or relay your credentials, and each service's terms, pricing, and limits apply.
 
 ### Where does my code go?
 
-Sudal itself sends nothing anywhere. Communication with the models is handled by the Claude Code and Codex CLIs, as usual.
+Sudal itself sends nothing anywhere. Communication with the models is handled by the Claude Code, Codex, and Antigravity CLIs, as usual.
 
 ### Where is my data stored?
 

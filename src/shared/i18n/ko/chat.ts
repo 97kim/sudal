@@ -234,7 +234,7 @@ export const chat = {
     },
     compacted: "압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
     compactedAuto: "자동 압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
-    loading: "대화를 불러오는 중…",
+    loading: "대화 불러오는 중…",
     loadOlder: "이전 대화 불러오기",
     turnFailed: "작업을 완료하지 못했습니다. 변경된 파일을 확인한 뒤 다시 요청하세요.",
     forkHint: "이 턴까지의 대화를 새 탭으로 갈라 다른 방향으로 이어 갑니다. 원래 탭은 그대로 두고, 파일은 되돌리지 않습니다",

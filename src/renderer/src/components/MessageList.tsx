@@ -275,11 +275,27 @@ export function MessageList({
       data-history-count={blocks.length}
     >
       <div ref={contentRef} className="mx-auto flex max-w-[820px] flex-col gap-5">
-        {(hasMore || historyError) && <div className="text-center text-xs text-muted" data-older-history>
-          {historyError && <p role="alert">{historyError}</p>}
-          <button disabled={loadingOlder} onClick={() => historyError ? onReload?.() : void onLoadOlder?.()}>
-            {loadingOlder ? t("chat.messages.loading") : t("chat.messages.loadOlder")}
-          </button>
+        {(hasMore || historyError) && <div className="flex flex-col gap-2 py-1 text-xs text-muted" data-older-history>
+          {historyError && <p className="text-center text-err" role="alert">{historyError}</p>}
+          <div className="flex items-center gap-3">
+            <span className="h-px min-w-0 flex-1 bg-line" aria-hidden="true" />
+            <button
+              type="button"
+              disabled={loadingOlder}
+              aria-busy={loadingOlder}
+              title={loadingOlder ? t("chat.messages.loading") : t("chat.messages.loadOlder")}
+              onClick={() => historyError ? onReload?.() : void onLoadOlder?.()}
+              className="inline-flex h-8 w-52 min-w-0 items-center justify-center gap-2 rounded-full border border-line bg-panel px-3 text-[11px] font-medium text-muted transition-colors enabled:hover:border-muted-2 enabled:hover:bg-panel-2 enabled:hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-wait"
+            >
+              <span className="flex h-3 w-3 shrink-0 items-center justify-center" aria-hidden="true">
+                {loadingOlder
+                  ? <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-accent/25 border-t-accent motion-reduce:animate-none" />
+                  : <Icon name="chevronUp" size={12} />}
+              </span>
+              <span className="min-w-0 truncate">{loadingOlder ? t("chat.messages.loading") : t("chat.messages.loadOlder")}</span>
+            </button>
+            <span className="h-px min-w-0 flex-1 bg-line" aria-hidden="true" />
+          </div>
         </div>}
         {blocks.length === 0 &&
           (loading ? (
