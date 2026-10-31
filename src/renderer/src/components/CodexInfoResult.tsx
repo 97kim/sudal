@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { codexHooks, codexMemory, codexPlugins, codexResultErrorMessage, codexSessionInfo, codexTerminals } from "@shared/codex-command-results";
+import { codexHooks, codexMemory, codexPlugins, codexSessionInfo, codexTerminals } from "@shared/codex-command-results";
+import { userErrorMessage } from "@shared/error-message";
 import { PERMISSION_POLICIES } from "@shared/chat-events";
 import { Icon } from "./Icon";
 
@@ -100,7 +101,7 @@ function DebugResult({ data }: { data: unknown }) {
 function CopyText({ getText }: { getText: () => string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false), [error, setError] = useState<string | null>(null);
-  return <><button onClick={() => { void navigator.clipboard.writeText(getText()).then(() => { setCopied(true); setError(null); }).catch(error => setError(codexResultErrorMessage(error))); }} className="rounded border border-line px-2 py-1 text-[11px] text-muted hover:bg-panel-2 hover:text-fg">{t(copied ? "session.codexResult.copied" : "session.codexResult.copy")}</button>{error && <span role="alert" className="ml-2 text-xs text-err">{error}</span>}</>;
+  return <><button onClick={() => { void navigator.clipboard.writeText(getText()).then(() => { setCopied(true); setError(null); }).catch(error => setError(userErrorMessage(error))); }} className="rounded border border-line px-2 py-1 text-[11px] text-muted hover:bg-panel-2 hover:text-fg">{t(copied ? "session.codexResult.copied" : "session.codexResult.copy")}</button>{error && <span role="alert" className="ml-2 text-xs text-err">{error}</span>}</>;
 }
 
 function Confirmation({ text, note }: { text: string; note?: string }) { return <div role="status" className="rounded-xl border border-line p-4" data-command-confirmation><div className="flex items-start gap-2 text-sm"><Icon name="check" size={16} className="mt-0.5 shrink-0 text-ok" /><p>{text}</p></div>{note && <p className="mt-2 text-xs leading-relaxed text-muted">{note}</p>}</div>; }

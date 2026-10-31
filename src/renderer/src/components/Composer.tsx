@@ -10,6 +10,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { PermissionPolicy } from "@shared/chat-events";
 import type { ChatImageDto } from "@shared/ipc";
+import { userErrorMessage } from "@shared/error-message";
 import {
   COMMAND_SOURCE_LABELS,
   filterCommands,
@@ -319,7 +320,7 @@ export function Composer({
       setImages([]);
       if (!appCommand) setFiles([]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(userErrorMessage(e));
     }
   }, [text, images, files, disabled, onSend, draftKey, onClear, t, commands, isAppCommand, imagesDisabledReason]);
 

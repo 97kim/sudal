@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CodexGoal } from "@shared/codex-controls";
+import { userErrorMessage } from "@shared/error-message";
 import { Modal } from "./Modal";
 import { usePaneFocusRef } from "../pane-focus";
 
@@ -20,7 +21,7 @@ export function CodexGoalModal({ goal, onRun, onClose }: { goal: CodexGoal | nul
   }, [onClose, busy]);
   const run = async (arg: string) => {
     setBusy(true); setError(null);
-    try { await onRun(arg); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await onRun(arg); } catch (e) { setError(userErrorMessage(e)); }
     finally { setBusy(false); }
   };
   return <Modal variant="pane" onClose={() => { if (!busy) onClose(); }} className="w-[min(520px,95%)] p-5">

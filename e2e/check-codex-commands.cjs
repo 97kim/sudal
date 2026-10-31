@@ -22,8 +22,14 @@ const { _electron } = require("playwright-core");
     let usageReads=0;
     let terminalsStopped=false;
     let memoryMode='enabled';
+    let failFastOff=true;
     const handle=ipcMain.handle.bind(ipcMain);
     ipcMain.handle=(channel,fn)=>handle(channel,
+      channel==='chat:configure' ? async(...args)=>{
+        if(args[2]?.policy==='auto_edit'){const error=new Error('fixture permission update rejected');error.name='MsgError';throw error;}
+        if(args[2]?.model==='rejected-model'){const error=new Error('fixture model rejected');error.name='MsgError';throw error;}
+        return fn(...args);
+      } :
       channel==='chat:commands' ? async()=>[{name:'compact',description:'fixture Claude command',argumentHint:''},{name:'clear',description:'fixture clear',argumentHint:''}] :
       channel==='git:changes' ? async()=>[] :
       channel==='chat:codex-mentions' ? async()=>({list:[{kind:'skill',name:'example',description:'fixture',path:'/fixture/example/SKILL.md'}],complete:true}) :
@@ -38,10 +44,15 @@ const { _electron } = require("playwright-core");
       channel==='chat:snapshot' ? async(...args)=>({...await fn(...args),...state}) :
       channel==='chat:codex-control' ? async(_e,id,command,arg)=>{
         globalThis.__calls.push([command,arg]);
+        if(command==='rename' && arg==='Rejected rename'){const error=new Error('fixture rename rejected');error.name='MsgError';throw error;}
         if(command==='status')return {data:{session:{sessionId:'fixture-session',model:'gpt-fixture',status:'idle',policy:'ask',cwd:'C:/fixture',codexMode:'default',controller:'app',pendingPrompts:[]},thread:{thread:{cliVersion:'0.166.0',gitInfo:{branch:'feature/results'}}}}};
         if(command==='ps')return {data:{data:terminalsStopped?[]:[{processId:'worker-1',command:'node background.js',cwd:'C:/fixture',osPid:123,cpuPercent:0,rssKb:2048}]}};
         if(command==='stop'){terminalsStopped=true;return {data:{stopped:true}};}
-        if(command==='fast')return {data:{fast:arg==='on'}};
+        if(command==='fast'){
+          if(!['on','off'].includes(arg)){const error=new Error('/fast on 또는 /fast off로 입력해 주세요.');error.name='MsgError';throw error;}
+          if(arg==='off' && failFastOff){failFastOff=false;const error=new Error('fixture fast unavailable');error.name='MsgError';throw error;}
+          return {data:{fast:arg==='on'}};
+        }
         if(command==='memories'){
           if(arg){memoryMode=arg==='on'?'enabled':'disabled';return {data:{mode:memoryMode}};}
           return {data:{summary:memoryMode==='enabled'?'Fixture memory summary\\n\\nUse the project conventions.':null}};
@@ -102,6 +113,28 @@ const { _electron } = require("playwright-core");
     assert.ok((await status.innerText()).includes('feature/results'));
     await page.screenshot({path:path.join(repo,'.sudal/codex-slash-audit/status-result-ui.png')});
     await page.getByRole('button',{name:'닫기',exact:true}).click();
+    await submit('/permissions auto_edit');
+    await page.getByText('fixture permission update rejected',{exact:true}).waitFor();
+    await submit('/permissions');
+    const permissions=page.getByRole('dialog',{name:'/permissions',exact:true});
+    await permissions.getByRole('button',{name:/작업 경로 내 파일 편집 허용/}).click();
+    await page.locator('[data-terminal-banner]').getByText('fixture permission update rejected',{exact:true}).waitFor();
+    await permissions.getByRole('button',{name:'닫기',exact:true}).click();
+    await submit('/rename');
+    const title=page.getByPlaceholder('세션 이름',{exact:true});
+    await title.fill('Rejected rename'); await title.press('Enter');
+    await page.locator('[data-terminal-banner]').getByText('fixture rename rejected',{exact:true}).waitFor();
+    await page.locator('header').getByText('Codex commands',{exact:true}).waitFor();
+    assert.ok(!(await page.locator('[data-terminal-banner]').innerText()).includes('MsgError'));
+    assert.ok(!(await page.locator('[data-terminal-banner]').innerText()).includes('chat:codex-control'));
+    await submit('/model');
+    const model=page.locator('[data-model-picker]');
+    await model.locator('[data-model-custom]').fill('rejected-model');
+    await model.locator('[data-model-custom]').press('Enter');
+    await model.getByText('fixture model rejected',{exact:true}).waitFor();
+    assert.ok(!(await model.innerText()).includes('chat:configure'));
+    assert.ok(!(await model.innerText()).includes('MsgError'));
+    await model.getByRole('button').first().click();
     await submit('/ps');
     const processes=page.locator('[data-codex-result="ps"]');
     await processes.getByText('node background.js',{exact:true}).waitFor();
@@ -127,7 +160,24 @@ const { _electron } = require("playwright-core");
     await submit('/memories');
     await page.locator('[data-memory-summary]').getByText(/Fixture memory summary/).waitFor();
     await page.getByRole('button',{name:'닫기',exact:true}).click();
-    for(const [text,message] of [['/memories off','메모리 사용을 껐습니다'],['/fast on','빠른 처리를 켰습니다'],['/stop','터미널 중단 요청을 처리했습니다']]){
+    await submit('/fast');
+    const fast=page.locator('[data-codex-fast-settings]');
+    await fast.waitFor();
+    assert.equal((await app.evaluate(()=>globalThis.__calls)).filter(call=>call[0]==='fast').length,0,'opening the picker must not change fast processing');
+    await fast.getByRole('button',{name:'빠른 처리 켜기',exact:true}).click();
+    await fast.getByText('이 세션의 빠른 처리를 켰습니다.',{exact:true}).waitFor();
+    await fast.getByRole('button',{name:'빠른 처리 끄기',exact:true}).click();
+    await fast.getByRole('alert').getByText('fixture fast unavailable',{exact:true}).waitFor();
+    assert.ok(!(await fast.getByRole('alert').innerText()).includes('MsgError'));
+    assert.ok(!(await fast.getByRole('alert').innerText()).includes('chat:codex-control'));
+    await fast.getByText('이 세션의 빠른 처리를 켰습니다.',{exact:true}).waitFor();
+    await fast.getByRole('button',{name:'빠른 처리 끄기',exact:true}).click();
+    await fast.getByText('이 세션의 빠른 처리를 껐습니다.',{exact:true}).waitFor();
+    assert.equal(await fast.getByRole('alert').count(),0);
+    await page.getByRole('button',{name:'닫기',exact:true}).click();
+    await submit('/fast invalid');
+    await page.getByText('/fast on 또는 /fast off로 입력해 주세요.',{exact:true}).waitFor();
+    for(const [text,message] of [['/memories off','메모리 사용을 껐습니다'],['/fast on','빠른 처리를 켰습니다'],['/fast off','빠른 처리를 껐습니다'],['/stop','터미널 중단 요청을 처리했습니다']]){
       await submit(text);
       const result=page.locator('[data-command-confirmation]');
       await result.getByText(new RegExp(message)).waitFor();
@@ -231,6 +281,13 @@ const { _electron } = require("playwright-core");
     assert.ok(!(await compacted.innerText()).includes('0k'));
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({passed:true,nativeReviewOutput:true,compactionWithoutTokenCount:true,formattedStatus:true,formattedTerminals:true,formattedHooks:true,formattedPlugins:true,memorySummary:true,mutationConfirmation:true,noMutationRefresh:true,emptyDiffAndResume:true,foldedDiagnostics:true,formattedUsage:true,usageRefresh:true,refreshErrorPreservesData:true,formattedMcp:true,mcpSearch:true,commandSourceBadges:true,planBadge:true,goalControls:true,goalNoDuplicatePrompt:true,skillsArguments:true,resumeInPalette:true,codexMcp:true,unsupportedBlocked:true,planningQuestionAnswer:true}));
+  } catch(error) {
+    if(app) {
+      const failedPage=await app.firstWindow();
+      console.error(JSON.stringify({visibleText:(await failedPage.locator('body').innerText()).slice(-8000),calls:await app.evaluate(()=>globalThis.__calls)}));
+      await failedPage.screenshot({path:path.join(repo,'.sudal/codex-slash-audit/command-failure-ui.png')});
+    }
+    throw error;
   } finally {
     await app?.close();
     const target=path.resolve(profile);
