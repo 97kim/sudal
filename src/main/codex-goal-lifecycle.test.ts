@@ -219,6 +219,7 @@ test("자동 목표의 턴 사이에도 자리를 유지하고 완료하면 대�
     await send("b");
     await until(() => manager.snapshot("a").status === "idle");
     assert.equal(manager.snapshot("a").codexGoal?.status, "active");
+    assert.equal(manager.hasActiveWork("a"), true, "자동 검증은 목표의 턴 사이를 유휴 작업 경로로 취급하지 않는다");
     assert.equal(manager.snapshot("b").status, "queued");
     await assert.rejects(manager.codexControl("c", "goal", "hold C"));
     await until(() => manager.snapshot("a").codexGoal?.status === "complete" && logs().some(row => row.method === "turn/start") && !manager.isBusy("b"));

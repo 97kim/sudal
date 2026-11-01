@@ -2,7 +2,7 @@
 // 실행은 로그인 셸(zsh -lc)이라 사용자의 PATH·nvm 등이 그대로 적용된다(Windows 는 cmd.exe). 하나라도 실패하면 뒤 명령은 건너뛴다.
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { VerifyCommandResult, VerifyEvent } from "@shared/chat-events";
 import { VERIFY_COMMAND_TIMEOUT_MS, cutOutput, overallStatus, suggestVerifyCommands } from "@shared/verify";
@@ -10,6 +10,7 @@ import type { Msg } from "@shared/i18n/msg";
 import { sanitizeCliEnv } from "./cli-env";
 import { appMsg, mt } from "./i18n";
 import { IS_WIN, killProcessTree } from "./win-proc";
+import { sameCwdOrNull } from "@shared/any-path";
 
 export interface VerifyRunOptions {
   tabId: string;
@@ -76,6 +77,11 @@ export class VerifyRunner {
   running(tabId: string): string | null {
     for (const r of this.runs.values()) if (r.tabId === tabId) return r.runId;
     return null;
+  }
+
+  runningIn(cwd: string): boolean {
+    const canonical = (path: string) => { try { return realpathSync(path); } catch { return path; } };
+    return [...this.runs.values()].some(run => sameCwdOrNull(canonical(run.cwd), canonical(cwd)));
   }
 
   /** 실행을 시작하고 runId 를 돌려준다. 같은 탭에 진행 중인 실행이 있으면 거부. */

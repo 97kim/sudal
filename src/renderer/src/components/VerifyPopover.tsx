@@ -13,6 +13,7 @@ export function VerifyPopover({
   onSave,
   onRun,
   onClose,
+  feedback,
 }: {
   tabId: string;
   /** 붙일 버튼 — 헤더가 overflow-hidden 이라 body 포털로 그리고 이 요소 아래에 fixed 로 놓는다. */
@@ -24,6 +25,7 @@ export function VerifyPopover({
   onSave: (commands: string[]) => void;
   onRun: (commands: string[]) => void;
   onClose: () => void;
+  feedback?: { enabled: boolean; maxAttempts: number; onChange: (enabled: boolean, maxAttempts: number) => void };
 }) {
   const { t } = useTranslation();
   const [text, setText] = useState(saved.join("\n"));
@@ -105,6 +107,11 @@ export function VerifyPopover({
         className="mono w-full resize-y rounded-md border border-line bg-inset px-2.5 py-2 text-[12px] leading-[1.6] outline-none focus:border-accent"
         data-verify-commands
       />
+      {feedback && <div className="mt-3 border-t border-line pt-3">
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium"><input type="checkbox" checked={feedback.enabled} onChange={event => feedback.onChange(event.target.checked, feedback.maxAttempts)} className="accent-accent" data-feedback-enabled />{t("chat.feedback.enable")}</label>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted">{t("chat.feedback.help")}</p>
+        {feedback.enabled && <label className="mt-2 flex items-center justify-between text-xs text-muted">{t("chat.feedback.attempts")}<select value={feedback.maxAttempts} onChange={event => feedback.onChange(true, Number(event.target.value))} className="rounded border border-line bg-inset px-2 py-1 text-fg"><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select></label>}
+      </div>}
       <div className="mt-2 flex items-center gap-2 text-[11px] text-muted">
         {suggested && saved.length === 0 && commands.length > 0 && <span data-verify-suggested>{t("chat.verifyPopover.suggested")}</span>}
         {commands.length > VERIFY_MAX_COMMANDS - 1 && <span>{t("chat.verifyPopover.max", { count: VERIFY_MAX_COMMANDS })}</span>}

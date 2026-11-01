@@ -289,6 +289,20 @@ leaves the results in the conversation as a card (`VerifyRunner` in `src/main/ve
 in the cwd. Each command's exit code and output tail pile up on the card, and if any command failed, the card stays red so
 you can follow up by telling the model to "fix this result". Unlike when the model runs tests itself, only the commands you set run, with no approval.
 
+### Automatic repair of verification failures
+
+Enable **Let AI fix verification failures** in the verification command editor, then run it. Failure output is sent to the current session's agent.
+After the agent finishes repairing, Sudal reruns the same commands. Choose 1–3 repair attempts; a run lasts at most 10 minutes.
+The current permission policy remains in effect, including waiting for approvals and questions. A passing initial check does not call the agent.
+
+Progress, the latest failure, and verification results appear above the conversation. **Stop automatic repair** stops verification or its repair turn.
+A new instruction, a working-directory or agent change, terminal handoff, or closing the tab also stops automatic repair.
+The same failure on an unchanged revision stops further attempts.
+
+Use a trusted Git working directory with an existing commit. HEAD, tracked changes, and non-ignored new file contents must match before and after verification.
+Changes after verification require a new check. Restarting the app restores the recorded state without automatically restarting work.
+This first version handles **failures of configured commands**; automatic console monitoring, generated UI scenarios, and automatic cross-review are outside its scope.
+
 ## Fan-out (the same instruction to several models)
 
 "More" → "Fan-out" in the header sends the same instruction to 2 to 4 isolated sessions at once. Each session gets its own new isolated worktree and tab
@@ -492,3 +506,20 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
 - `orchestration/<runId>.jsonl` — the raw events of a Run (restart recovery)
 - `control.sock` · `control.json` — the socket the sudal CLI connects to, and its location
 - `hooks/<session id>.jsonl` — hook log for the terminal-mode permission-waiting hint (deleted when the CLI exits)
+# Project harness
+
+Open **Work environment** above the conversation to enable the harness for a project. It is off by default. Disabling preserves configuration and task history; standalone verification and cross-review remain available.
+
+**Project configuration** discovers existing guidance, development documents and verification commands. Discovery does not confirm that a tool works or that guidance was applied. Review references, commands and procedures before saving `sudal.harness.json` at the project root. Share this file through Git; enablement, tasks and evidence remain in local app data. Concurrent configuration changes require reloading the draft.
+
+**Ask AI for a configuration draft** sends an explicit request through the current session, using its existing provider and permission policy. Suggested commands and configuration changes are never automatically executed or applied.
+
+Use **Start task** to enter a goal and completion criteria, one `description | verification method` per line. Starting a task pauses the previous one in that tab. AI responses may also propose a task for explicit acceptance or dismissal. Task context is added when the next ordinary conversation turn actually starts, including after compaction or provider changes. Slash commands retain their original semantics.
+
+Select criteria and run **Verify selected criteria** or **Review selected criteria**. Evidence is associated with the original task even if another task starts. Review completion and AI assertions do not automatically pass criteria. Manual confirmation requires a note. Code or criterion changes retain old evidence while requiring rechecking. Unavailable Git fingerprints are shown as unknown code freshness.
+
+Automatic repair is a separate opt-in, with at most two repair attempts and the existing time, permission and cancellation limits. Disabling stops only harness-owned repair. Standalone checks, reviews and normal conversation continue. Restart restores records without automatically resuming execution.
+
+Tasks with failed or unconfirmed criteria may be completed with a reason; completion does not mean verification passed. **Task history** allows resuming paused or completed tasks.
+
+**Prevent recurrence** records a problem and requests targeted configuration improvements. Proposed, applied and user-confirmed operation are separate states. Code and regression-test edits remain separate tasks, and problem descriptions are not silently appended to project rules.

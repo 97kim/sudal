@@ -101,6 +101,7 @@ export interface SessionSnapshot {
 }
 
 interface QueuedTurn {
+  taskBasePrompt?: string;
   nativeAction?: "compact" | "review";
   text: string;
   prompt: string;
@@ -199,6 +200,7 @@ export interface SessionStore {
 }
 
 export interface SessionManagerDeps {
+  taskContext?(tabId: string, cwd: string): string;
   /** 돌고 있는 Codex 턴에 지시를 끼워 넣는다. 테스트에서 바꿔 끼운다(기본: codex-adapter 의 steerCodexTurn). */
   steerCodex?: typeof steerCodexTurn;
   emit(tabId: string, event: ChatEvent): void;
@@ -1197,8 +1199,8 @@ export class SessionManager {
     if (command === "compact" || command === "review") {
       if (command === "compact" && arg) throw new MsgError("session.msg.codexControl.compactUsage");
       if (!this.canStart(tabId)) throw new MsgError("session.msg.codexControl.busy");
-      if (command === "review") {
-        const text = arg.trim() ? `/review ${arg.trim()}` : "/review";
+      {
+        const text = arg.trim() ? `/${command} ${arg.trim()}` : `/${command}`;
         const hadUser = this.hasUserMessage(s);
         this.record(s, { type: "user_message", ts: Date.now(), id: randomUUID(), text });
         if (!hadUser) this.deps.onMeta?.(tabId, { title: arg.trim() || text });
@@ -1420,6 +1422,12 @@ export class SessionManager {
     return !!s && s.status !== "idle" && s.status !== "error";
   }
 
+  /** 자동 검증은 턴 사이의 활성 목표와 대기 중인 후속 작업도 실행 소유로 취급한다. */
+  hasActiveWork(tabId: string): boolean {
+    const session = this.sessions.get(tabId);
+    return !!session && (this.isBusy(tabId) || this.goalStarts.has(session) || session.codexGoal?.status === "active" || session.controlBusy || !!session.limitWait || session.promptQueue.length > 0);
+  }
+
   private runningCount(excludeTabId?: string): number {
     let n = 0;
     for (const s of this.sessions.values()) {
@@ -1486,6 +1494,10 @@ export class SessionManager {
     const turn = s.queued;
     if (!turn) return;
     s.queued = null;
+    turn.taskBasePrompt ??= turn.prompt;
+    turn.prompt = turn.taskBasePrompt;
+    if (!turn.nativeAction && !turn.text.trim().startsWith("/") && s.cwd)
+      turn.prompt += this.deps.taskContext?.(s.tabId, s.cwd) ?? "";
     const abort = new AbortController();
     s.abort = abort;
     s.ambientStopped = false;
