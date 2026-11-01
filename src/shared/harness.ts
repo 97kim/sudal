@@ -30,12 +30,15 @@ export interface HarnessSnapshot {
   tasks: HarnessTask[]; proposal?: HarnessProposal; revision?: string;
   inspection: { path: string; found: boolean }[];
   configDraft?: HarnessConfig;
+  configError?: string;
+  configDraftImprovementId?: string;
+  configDraftToken?: string;
   improvements: HarnessImprovement[];
 }
 export type HarnessAction =
   | { type: "snapshot" }
   | { type: "enable"; enabled: boolean }
-  | { type: "configure"; config: HarnessConfig; token: string; improvementId?: string }
+  | { type: "configure"; config: HarnessConfig; token: string; improvementId?: string; draftToken?: string }
   | { type: "start"; goal: string; criteria: { description: string; method: string }[] }
   | { type: "edit"; taskId: string; criteria: { id?: string; description: string; method: string }[] }
   | { type: "status"; taskId: string; status: HarnessTaskStatus; reason?: string }

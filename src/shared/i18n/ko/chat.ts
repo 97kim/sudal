@@ -1,6 +1,8 @@
 // chat 영역의 한국어 문구.
 export const chat = {
   harness: {
+    configInvalid: "설정 파일을 읽을 수 없습니다. 프로젝트 구성을 열어 검토한 뒤 다시 저장하세요. 복구 전에는 AI에 구성이 전달되지 않습니다.",
+    completionReason: "미검증 항목을 남기고 완료하는 사유",
     configChanged: "프로젝트 구성이 변경됐습니다. 취소한 뒤 구성을 다시 열어 검토하세요.",
     taskBusy: "다른 탭에서 진행 중인 작업입니다. 해당 탭에서 먼저 보류하세요.",
     trustRequired: "프로젝트 폴더를 신뢰한 뒤 설정을 변경할 수 있습니다.",
@@ -11,7 +13,7 @@ export const chat = {
     setup: "프로젝트 구성", start: "작업 시작", goal: "작업 목표", criteria: "완료 조건 · 한 줄에 하나",
     commands: "검증 명령 · 한 줄에 하나", documents: "참고 문서 · 한 줄에 하나", procedures: "기본 절차 · 한 줄에 하나",
     save: "변경 적용", cancel: "취소", verify: "선택 항목 검증", review: "선택 항목 리뷰", confirm: "직접 확인",
-    note: "확인 내용 또는 완료 사유", complete: "작업 완료", pause: "보류", resume: "이어가기", history: "작업 기록",
+    note: "확인 내용", complete: "작업 완료", pause: "보류", resume: "이어가기", history: "작업 기록",
     proposal: "새 작업 제안", accept: "초안 검토", dismiss: "건너뛰기", passed: "확인됨", failed: "실패",
     unconfirmed: "미확인", stale: "재확인 필요", active: "진행 중", paused: "보류됨", completed: "완료",
     found: "발견됨", missing: "없음", unknown: "코드 상태 확인 불가", evidence: "확인 근거", edit: "조건 편집",

@@ -24,9 +24,28 @@ export class VerificationFeedbackStore {
   }
   save(state: VerificationFeedback) {
     try {
+      const stored = structuredClone(state);
+      let raw = JSON.stringify(stored);
+      const fits = () => raw.length <= 64 * 1024 && Buffer.byteLength(raw, "utf8") <= 128 * 1024;
+      while (!fits()) {
+        let shortened = false;
+        for (const verification of [stored.verification, stored.failure]) {
+          for (const command of verification?.commands ?? []) {
+            if (command.output?.length) {
+              const keep = Math.floor(command.output.length / 2);
+              command.output = keep ? command.output.slice(-keep) : "";
+              command.truncated = true;
+              shortened = true;
+            }
+          }
+        }
+        if (stored.detail?.length) { stored.detail = stored.detail.slice(0, Math.floor(stored.detail.length / 2)); shortened = true; }
+        raw = JSON.stringify(stored);
+        if (!shortened && !fits()) throw new Error("Feedback metadata exceeds persistence budget");
+      }
       mkdirSync(this.dir, { recursive: true });
       const file = this.path(state.tabId);
-      writeFileSync(file + ".tmp", JSON.stringify(state), "utf8");
+      writeFileSync(file + ".tmp", raw, "utf8");
       renameSync(file + ".tmp", file);
     } catch (error) { console.warn("[verification-feedback] state persistence failed", error); }
   }

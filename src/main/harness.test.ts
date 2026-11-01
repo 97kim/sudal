@@ -17,6 +17,135 @@ function fixture() {
 }
 const start = { type: "start" as const, goal: "Preserve history", criteria: [{ description: "History survives restart", method: "Integration test" }] };
 
+test("saving an edited unlinked draft consumes only the reviewed draft", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const text = '```sudal-harness\n{"version":1,"documents":[],"commands":[],"procedures":["Draft"]}\n```';
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: 1, blockId: "draft", text });
+  const state = await service.snapshot(cwd, "tab");
+  const saved = await service.mutate(cwd, "tab", { type: "configure", token: state.configToken, draftToken: state.configDraftToken, config: { ...state.configDraft!, procedures: ["Edited"] } });
+  assert.equal(saved.configDraft, undefined);
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: 2, blockId: "newer", text });
+  const preserved = await service.mutate(cwd, "tab", { type: "configure", token: saved.configToken, draftToken: state.configDraftToken, config: saved.config });
+  assert.ok(preserved.configDraft);
+});
+
+test("disabling during binding preparation rejects dispatch and invalidates existing bindings", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0];
+  await service.bind(cwd, "tab", task.id, [task.criteria[0].id], "existing");
+  assert.equal(service.bindingActive("existing", "tab"), true);
+  const pending = service.bind(cwd, "tab", task.id, [task.criteria[0].id], "pending");
+  const rejection = assert.rejects(pending, /Invalid evidence target/);
+  await service.mutate(cwd, "tab", { type: "enable", enabled: false });
+  await rejection;
+  assert.equal(service.bindingActive("existing", "tab"), false);
+  assert.equal(service.bindingActive("pending", "tab"), false);
+});
+
+test("draft updates retain explicit association but unrelated drafts never inherit it", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const state = await service.mutate(cwd, "tab", { type: "improve", problem: "Check restart" });
+  const id = state.improvements[0].id;
+  const text = '```sudal-harness\n' + JSON.stringify({ ...state.config, improvementId: id }) + '\n```';
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: 1, blockId: "draft", text });
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: 2, blockId: "draft", text: text + '\nExplanation' });
+  assert.equal((await service.snapshot(cwd, "tab")).configDraftImprovementId, id);
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: 3, blockId: "unrelated", text: '```sudal-harness\n' + JSON.stringify(state.config) + '\n```' });
+  assert.equal((await service.snapshot(cwd, "tab")).configDraftImprovementId, undefined);
+});
+
+test("invalid configuration does not remove active task context", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  await service.mutate(cwd, "tab", start);
+  writeFileSync(join(cwd, "sudal.harness.json"), "{");
+  assert.match(service.context(cwd, "tab"), /Preserve history/);
+});
+
+test("applying another improvement preserves an unrelated pending draft", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  await service.mutate(cwd, "tab", { type: "improve", problem: "First" });
+  const state = await service.mutate(cwd, "tab", { type: "improve", problem: "Second" });
+  const [first, second] = state.improvements;
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: 1, blockId: "second", text: '```sudal-harness\n' + JSON.stringify({ ...state.config, improvementId: second.id, procedures: ["Second draft"] }) + '\n```' });
+  const saved = await service.mutate(cwd, "tab", { type: "configure", token: state.configToken, config: state.config, improvementId: first.id });
+  assert.equal(saved.improvements[0].status, "applied");
+  assert.equal(saved.improvements[1].status, "proposed");
+  assert.equal(saved.configDraftImprovementId, second.id);
+  assert.deepEqual(saved.configDraft?.procedures, ["Second draft"]);
+});
+
+test("local persistence failure restores original configuration bytes", async () => {
+  const { cwd, service } = fixture();
+  const state = await service.snapshot(cwd, "tab");
+  const original = JSON.stringify(state.config);
+  writeFileSync(join(cwd, "sudal.harness.json"), original);
+  const current = await service.snapshot(cwd, "tab");
+  Object.assign(service, { save: () => { throw new Error("injected persistence failure"); } });
+  await assert.rejects(service.mutate(cwd, "tab", { type: "configure", token: current.configToken, config: { ...current.config, procedures: ["Changed"] } }), /injected/);
+  assert.equal(readFileSync(join(cwd, "sudal.harness.json"), "utf8"), original);
+});
+
+test("concurrent rejected mutation cannot discard a successful confirmation", async () => {
+  const { cwd, service, store } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const state = await service.mutate(cwd, "tab", start), task = state.tasks[0];
+  const results = await Promise.allSettled([
+    service.mutate(cwd, "tab", { type: "confirm", taskId: task.id, criterionId: task.criteria[0].id, note: "Checked" }),
+    service.mutate(cwd, "other", { type: "start", goal: "", criteria: [] }),
+  ]);
+  assert.equal(results[0].status, "fulfilled");
+  assert.equal(results[1].status, "rejected");
+  assert.equal((await service.snapshot(cwd, "tab")).tasks[0].evidence.length, 1);
+  assert.equal((await new HarnessService(store).snapshot(cwd, "tab")).tasks[0].evidence.length, 1);
+});
+
+test("configuration draft retains improvement association across restart", async () => {
+  const { cwd, service, store } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const initial = await service.mutate(cwd, "tab", { type: "improve", problem: "Missed restart check" });
+  const id = initial.improvements[0].id;
+  service.proposal(cwd, "tab", { type: "assistant_text", ts: Date.now(), blockId: "draft", text: '```sudal-harness\n' + JSON.stringify({version:1,documents:[],commands:[],procedures:["Check restart"],improvementId:id}) + '\n```' });
+  const restored = new HarnessService(store), state = await restored.snapshot(cwd, "tab");
+  assert.equal(state.configDraftImprovementId, id);
+  const applied = await restored.mutate(cwd, "tab", { type: "configure", config: state.configDraft!, token: state.configToken, improvementId: state.configDraftImprovementId });
+  assert.equal(applied.improvements[0].status, "applied");
+  assert.equal(applied.configDraftImprovementId, undefined);
+});
+
+test("invalid configuration remains recoverable with conflict protection", async () => {
+  const { cwd, service } = fixture();
+  writeFileSync(join(cwd, "sudal.harness.json"), "{");
+  const state = await service.snapshot(cwd, "tab");
+  assert.ok(state.configError);
+  await service.mutate(cwd, "tab", { type: "configure", token: state.configToken, config: state.config });
+  assert.equal((await service.snapshot(cwd, "tab")).configError, undefined);
+  await assert.rejects(service.mutate(cwd, "tab", { type: "configure", token: state.configToken, config: state.config }), /changed/);
+});
+
+test("failed persistence rolls back the in-memory mutation", async () => {
+  const { cwd, store } = fixture();
+  writeFileSync(store, "not a directory");
+  const service = new HarnessService(store);
+  await assert.rejects(service.mutate(cwd, "tab", { type: "enable", enabled: true }));
+  assert.equal((await service.snapshot(cwd, "tab")).enabled, false);
+});
+
+test("oversized serialized configuration is rejected before replacing the existing file", async () => {
+  const { cwd, service } = fixture();
+  let state = await service.snapshot(cwd, "tab");
+  state = await service.mutate(cwd, "tab", { type: "configure", config: state.config, token: state.configToken });
+  const before = readFileSync(join(cwd, "sudal.harness.json"), "utf8");
+  await assert.rejects(service.mutate(cwd, "tab", { type: "configure", token: state.configToken,
+    config: { ...state.config, procedures: Array.from({ length: 33 }, () => "x".repeat(2000)) } }), /too large/);
+  assert.equal(readFileSync(join(cwd, "sudal.harness.json"), "utf8"), before);
+  assert.deepEqual((await service.snapshot(cwd, "tab")).config, state.config);
+});
+
 test("disabled by default; configuration previews do not write files and concurrent edits are rejected", async () => {
   const { cwd, service } = fixture();
   let state = await service.snapshot(cwd, "tab");

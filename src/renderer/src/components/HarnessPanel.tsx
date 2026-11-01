@@ -22,8 +22,12 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
   const [open, setOpen] = useState(false), [mode, setMode] = useState<"config" | "task" | "edit" | null>(null);
   const [goal, setGoal] = useState(""), [criteria, setCriteria] = useState(""), [commands, setCommands] = useState("");
   const [documents, setDocuments] = useState(""), [procedures, setProcedures] = useState(""), [token, setToken] = useState("");
+  const [completionReason, setCompletionReason] = useState("");
+  const [improvementNote, setImprovementNote] = useState("");
+  const [verifyCommands, setVerifyCommands] = useState<string | null>(null);
   const [note, setNote] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string[]>([]), [history, setHistory] = useState(false);
+  const [draftToken, setDraftToken] = useState<string | undefined>();
   const [improvementId, setImprovementId] = useState<string | undefined>();
   const [autoRepair, setAutoRepair] = useState(false);
   const [improve, setImprove] = useState(false), [problem, setProblem] = useState("");
@@ -48,12 +52,15 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
     finally { setBusy(false); }
   };
   const task = snapshot?.tasks.find(task => task.tabId === tabId && task.status === "active");
-  const configure = (improvement = false) => {
+  useEffect(() => { setSelected([]); setNote(""); setCompletionReason(""); setImprovementNote(""); setAutoRepair(false); }, [task?.id]);
+  const configure = (improvement = false, linkedId = snapshot?.configDraftImprovementId) => {
     if (!snapshot) return;
-    setDocuments((snapshot.configDraft ?? snapshot.config).documents.join("\n"));
-    setCommands((snapshot.configDraft ?? snapshot.config).commands.join("\n"));
-    setProcedures((snapshot.configDraft ?? snapshot.config).procedures.join("\n"));
-    setToken(snapshot.configToken); setImprovementId(undefined); setMode("config"); setImprove(improvement); setProblem("");
+    const source = snapshot.configDraft && !improvement && snapshot.configDraftImprovementId === linkedId ? snapshot.configDraft : snapshot.config;
+    setDraftToken(source === snapshot.configDraft ? snapshot.configDraftToken : undefined);
+    setDocuments(source.documents.join("\n"));
+    setCommands(source.commands.join("\n"));
+    setProcedures(source.procedures.join("\n"));
+    setToken(snapshot.configToken); setImprovementId(improvement ? undefined : linkedId); setMode("config"); setImprove(improvement); setProblem("");
   };
   const draft = () => {
     setGoal(snapshot?.proposal?.goal ?? "");
@@ -74,13 +81,14 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
       <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || !snapshot} checked={snapshot?.enabled ?? false} onChange={event => void act({ type: "enable", enabled: event.target.checked })} />{label("enable")}</label>
       <p className="text-muted">{label("stopHint")}</p>
       {!snapshot && !error && <p>{label("loading")}</p>}
+      {snapshot?.configError && <p role="alert" className="text-danger">{label("configInvalid")}</p>}
       {error && <p role="alert" className="text-danger whitespace-pre-wrap">{error}</p>}
       {snapshot?.enabled && <>
         <div className="flex flex-wrap gap-2">
           <button className={buttonClass} disabled={busy} onClick={() => configure()}>{label("setup")}</button>
           <button className={buttonClass} disabled={busy} onClick={draft}>{label("start")}</button>
           <button className={buttonClass} onClick={() => setHistory(!history)}>{label("history")}</button>
-          <button className={buttonClass} onClick={() => configure(true)}>{label("improve")}</button>
+          <button className={buttonClass} onClick={() => configure(true, undefined)}>{label("improve")}</button>
         </div>
         {snapshot.configDraft && !mode && <button className={buttonClass} onClick={() => configure()}>{label("draftReady")}</button>}
         {snapshot.proposal && !mode && <div className="rounded border border-accent/30 p-3 space-y-2">
@@ -92,18 +100,20 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
           <div className="grid gap-1">{snapshot.inspection.map(item => <span key={item.path}>{item.path} · {label(item.found ? "found" : "missing")}</span>)}</div>
           {improve && <>{field("problem", problem, setProblem)}<p className="text-muted">{label("improveHint")}</p></>}
           <button className={buttonClass} disabled={busy} onClick={() => {
-            const prompt = `Read this project and propose a harness configuration. Do not edit files, run commands, install tools or change permissions. Use existing documents and suggest reusable verification procedures. Explain the evidence, unknowns, and proposed changes in the conversation language. Return an optional fenced sudal-harness JSON block with {version:1,documents:string[],commands:string[],procedures:string[]}. Proposals are not approval to apply changes. Current configuration: ${JSON.stringify(snapshot.config)}. ${improve ? `Problem to prevent: ${problem}. Explain the missed check and suggest targeted improvements without adding unrelated rules.` : ""}`;
+            let prompt = `Read this project and propose a harness configuration. Do not edit files, run commands, install tools or change permissions. Use existing documents and suggest reusable verification procedures. Explain the evidence, unknowns, and proposed changes in the conversation language. Return an optional fenced sudal-harness JSON block with {version:1,documents:string[],commands:string[],procedures:string[]}. Proposals are not approval to apply changes. Current configuration: ${JSON.stringify(snapshot.config)}. ${improve ? `Problem to prevent: ${problem}. Explain the missed check and suggest targeted improvements without adding unrelated rules.` : ""}`;
             setBusy(true); void (async () => {
               if (improve) {
                 const state = await window.sudal.chat.harness(tabId, { type: "improve", problem, taskId: task?.id });
-                setSnapshot(state); setImprovementId(state.improvements.at(-1)?.id);
+                const id = state.improvements.at(-1)?.id;
+                setSnapshot(state); setImprovementId(undefined);
+                prompt += ` Include improvementId: ${JSON.stringify(id)} in the sudal-harness JSON object to associate this draft with this improvement.`;
               }
               return window.sudal.chat.send(tabId, { text: prompt });
             })().then(result => { if (!result.ok) setError(result.error); else setMode(null); }).catch(error => setError(userErrorMessage(error))).finally(() => setBusy(false));
           }}>{label("suggest")}</button>
           {field("documents", documents, setDocuments)}{field("commands", commands, setCommands)}{field("procedures", procedures, setProcedures)}
           <details><summary>{label("applyConfirm")}</summary><pre className="whitespace-pre-wrap">{JSON.stringify({ version: 1, documents: lines(documents), commands: lines(commands), procedures: lines(procedures) }, null, 2)}</pre></details>
-          <div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "configure", token, improvementId, config: { version: 1, documents: lines(documents), commands: lines(commands), procedures: lines(procedures) } }).then(ok => { if (ok) setMode(null); })}>{label("save")}</button><button className={buttonClass} onClick={() => setMode(null)}>{label("cancel")}</button></div>
+          <div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "configure", token, improvementId, draftToken, config: { version: 1, documents: lines(documents), commands: lines(commands), procedures: lines(procedures) } }).then(ok => { if (ok) { setMode(null); setImprovementId(undefined); } })}>{label("save")}</button><button className={buttonClass} onClick={() => { setMode(null); setImprovementId(undefined); }}>{label("cancel")}</button></div>
         </div>}
         {(mode === "task" || mode === "edit") && <div className="grid gap-3 rounded border border-line p-3">
           {mode === "task" && field("goal", goal, setGoal)}
@@ -111,7 +121,7 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
           <div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => {
             const items = lines(criteria).map(line => { const [description, ...rest] = line.split("|"); return { description: description.trim(), method: rest.join("|").trim() }; });
             void act(mode === "edit" && task ? { type: "edit", taskId: task.id, criteria: items.map((item, index) => ({ ...item, id: task.criteria[index]?.id })) } : { type: "start", goal, criteria: items }).then(ok => { if (ok) { setMode(null); setSelected([]); } });
-          }}>{label("save")}</button><button className={buttonClass} onClick={() => setMode(null)}>{label("cancel")}</button></div>
+          }}>{label("save")}</button><button className={buttonClass} onClick={() => { setMode(null); setImprovementId(undefined); }}>{label("cancel")}</button></div>
         </div>}
         {task && <div className="space-y-3">
           <div className="flex gap-2"><strong>{task.goal}</strong><button className={buttonClass} onClick={() => { setCriteria(task.criteria.map(item => item.description + " | " + item.method).join("\n")); setMode("edit"); }}>{label("edit")}</button></div>
@@ -120,16 +130,16 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
           {task.criteria.map(item => <div key={item.id} className="space-y-1 border-l-2 border-line pl-3">
             <label className="flex items-start gap-2"><input type="checkbox" checked={selected.includes(item.id)} onChange={event => setSelected(event.target.checked ? [...selected, item.id] : selected.filter(id => id !== item.id))} /><span>{item.description} · {label(harnessCriterionStatus(task, item, snapshot.revision))}</span></label>
             <p className="text-muted">{item.method}</p>
-            <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => void act({ type: "confirm", taskId: task.id, criterionId: item.id, note })}>{label("confirm")}</button>
+            <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => void act({ type: "confirm", taskId: task.id, criterionId: item.id, note }).then(ok => { if (ok) setNote(""); })}>{label("confirm")}</button>
             {task.evidence.filter(evidence => evidence.criterionId === item.id).length > 0 && <details><summary>{label("evidence")}</summary>{task.evidence.filter(evidence => evidence.criterionId === item.id).map(evidence => <p key={evidence.id} className="break-all">{label(evidence.source)} · {label(evidence.result)} · {evidence.reference}</p>)}</details>}
           </div>)}
-          {field("commands", commands || snapshot.config.commands.join("\n"), setCommands)}
+          {field("commands", verifyCommands ?? snapshot.config.commands.join("\n"), setVerifyCommands)}
           <label className="flex gap-2"><input type="checkbox" checked={autoRepair} onChange={event => setAutoRepair(event.target.checked)} />{t("chat.feedback.enable")}</label>
-          <div className="flex gap-2"><button className={buttonClass} disabled={busy || !selected.length} onClick={() => void act({ type: "verify", autoRepair, taskId: task.id, criterionIds: selected, commands: lines(commands || snapshot.config.commands.join("\n")) })}>{label("verify")}</button><button className={buttonClass} disabled={busy || !selected.length} onClick={() => void act({ type: "review", taskId: task.id, criterionIds: selected })}>{label("review")}</button></div>
-          {field("note", note, setNote)}
-          <div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "status", taskId: task.id, status: "completed", reason: note })}>{label("complete")}</button><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "status", taskId: task.id, status: "paused" })}>{label("pause")}</button></div>
+          <div className="flex gap-2"><button className={buttonClass} disabled={busy || !selected.length} onClick={() => void act({ type: "verify", autoRepair, taskId: task.id, criterionIds: selected, commands: lines(verifyCommands ?? snapshot.config.commands.join("\n")) })}>{label("verify")}</button><button className={buttonClass} disabled={busy || !selected.length} onClick={() => void act({ type: "review", taskId: task.id, criterionIds: selected })}>{label("review")}</button></div>
+          {field("note", note, setNote)}{field("completionReason", completionReason, setCompletionReason)}
+          <div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "status", taskId: task.id, status: "completed", reason: completionReason })}>{label("complete")}</button><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "status", taskId: task.id, status: "paused" })}>{label("pause")}</button></div>
         </div>}
-        {snapshot.improvements.length > 0 && <details><summary>{label("improve")}</summary><div className="space-y-2">{snapshot.improvements.map(item => <div key={item.id} className="rounded border border-line p-2"><p>{item.problem} ? {label(item.status)}</p>{item.confirmation && <p>{item.confirmation}</p>}{item.status === "proposed" && <button className={buttonClass} onClick={() => { configure(); setImprovementId(item.id); }}>{label("draftReady")}</button>}{item.status === "applied" && <><input className={inputClass} aria-label={label("note")} value={note} onChange={event => setNote(event.target.value)} /><button className={buttonClass} disabled={busy || !note.trim()} onClick={() => void act({ type: "improvementConfirm", improvementId: item.id, note })}>{label("confirm")}</button></>}</div>)}</div></details>}
+        {snapshot.improvements.length > 0 && <details><summary>{label("improve")}</summary><div className="space-y-2">{snapshot.improvements.map(item => <div key={item.id} className="rounded border border-line p-2"><p>{item.problem} ? {label(item.status)}</p>{item.confirmation && <p>{item.confirmation}</p>}{item.status === "proposed" && <button className={buttonClass} onClick={() => configure(false, item.id)}>{label("draftReady")}</button>}{item.status === "applied" && <><input className={inputClass} aria-label={label("note")} value={improvementNote} onChange={event => setImprovementNote(event.target.value)} /><button className={buttonClass} disabled={busy || !improvementNote.trim()} onClick={() => void act({ type: "improvementConfirm", improvementId: item.id, note: improvementNote }).then(ok => { if (ok) setImprovementNote(""); })}>{label("confirm")}</button></>}</div>)}</div></details>}
         {history && <div className="space-y-2">{snapshot.tasks.filter(item => item.id !== task?.id).map(item => <div key={item.id} className="rounded border border-line p-2"><p>{item.goal} · {label(item.status)}</p>{item.completionReason && <p>{item.completionReason}</p>}<button className={buttonClass} disabled={busy} onClick={() => void act({ type: "status", taskId: item.id, status: "active" })}>{label("resume")}</button></div>)}</div>}
       </>}
     </div>}

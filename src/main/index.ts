@@ -1019,7 +1019,7 @@ function fanoutError(key: MsgKey): { error: string; errorMsg: Msg } {
  * 교차 리뷰: 이 탭의 작업 트리 diff 를 선택한 리뷰어의 새 탭에 보내고, 그 탭의 첫 답이 오면 이 탭에 review 카드로 남긴다.
  * 리뷰 탭은 화면을 빼앗지 않고(활성 탭 복원) 정책은 ask(읽기 전용에 가깝게). 결과 대기는 main 이 하므로 사용자가 탭을 옮겨도 이어진다.
  */
-async function startCrossReview(tabId: string, opts?: unknown): Promise<{ ok: true; reviewTabId: string; scope: string } | { ok: false; error: string }> {
+async function startCrossReview(tabId: string, opts?: unknown, guard?: () => boolean): Promise<{ ok: true; reviewTabId: string; scope: string } | { ok: false; error: string }> {
   const tab = workspaces.tab(tabId);
   if (!tab) return { ok: false, error: mt("main.error.tabNotFound") };
   const snap = sessions.snapshot(tabId);
@@ -1035,6 +1035,7 @@ async function startCrossReview(tabId: string, opts?: unknown): Promise<{ ok: tr
   if (changes.length === 0) return { ok: false, error: mt("main.review.noChanges") };
   const diff = await gitDiffFor(cwd, env, changes.map((c) => c.path));
   if (!diff.trim()) return { ok: false, error: mt("main.review.diffUnreadable") };
+  if (guard && !guard()) return { ok: false, error: "Invalid evidence target" };
   const originTitle = tabTitleOf(tabId);
   const prevActive = workspaces.state().model.activeTabId;
   const reviewTabId = workspaces.createTab(tab.workspaceId);
@@ -1109,7 +1110,7 @@ async function startCrossReview(tabId: string, opts?: unknown): Promise<{ ok: tr
  * 검증: 워크스페이스에 저장한 명령(없으면 commands 인자)을 탭의 cwd 에서 순서대로 돌린다. 결과는 verify 카드로 탭에 남는다.
  * commands 를 주면 그것을 저장하지는 않는다 — 저장은 렌더러가 ws.update 로 따로 한다.
  */
-async function startVerify(tabId: string, commands?: string[]): Promise<VerifyStartResult> {
+async function startVerify(tabId: string, commands?: string[], guard?: () => boolean): Promise<VerifyStartResult> {
   const tab = workspaces.tab(tabId);
   if (!tab) return { ok: false, error: mt("main.error.tabNotFound") };
   const cwd = sessions.snapshot(tabId).cwd;
@@ -1121,6 +1122,7 @@ async function startVerify(tabId: string, commands?: string[]): Promise<VerifySt
   if (list.length === 0) return { ok: false, error: mt("main.verify.noCommands") };
   const env = await cliDiscovery().buildEnv();
   if (feedbackRunner?.activeCwd(cwd)) return { ok: false, error: mt("chat.feedback.errors.busy") };
+  if (guard && !guard()) return { ok: false, error: "Invalid evidence target" };
   return verifyRunner.start({ tabId, cwd, commands: list, env });
 }
 
@@ -2253,7 +2255,8 @@ function registerIpc() {
       // Bind before dispatch; the runner can emit a final event before its start promise resolves.
       const key = `harness-pending-${randomUUID()}`;
       await harness.bind(cwd, tabId, action.taskId, action.criterionIds, key);
-      if (sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+      const guard = () => sessions.snapshot(tabId).cwd === cwd && !!workspaces.tab(tabId)?.open && harness!.bindingActive(key, tabId);
+      if (!guard()) { harness.discard(key); throw new Error("Invalid evidence target"); }
       if (action.type === "verify" && action.autoRepair) {
         if (!feedbackRunner) throw new Error("Verification is unavailable");
         if (feedbackRunner.active(tabId)) { harness.discard(key); throw new Error(mt("chat.feedback.errors.busy")); }
@@ -2262,11 +2265,11 @@ function registerIpc() {
         if (!result.ok) { harness.ownRepair(tabId, false); harness.discard(key); throw new Error(result.error); }
         await harness.rekey(key, result.id);
       } else if (action.type === "verify") {
-        const result = await startVerify(tabId, action.commands);
+        const result = await startVerify(tabId, action.commands, guard);
         if (!result.ok) { harness.discard(key); throw new Error(result.error); }
         await harness.rekey(key, result.runId);
       } else {
-        const result = await startCrossReview(tabId);
+        const result = await startCrossReview(tabId, undefined, guard);
         if (!result.ok) { harness.discard(key); throw new Error(result.error); }
         await harness.rekey(key, result.reviewTabId);
       }

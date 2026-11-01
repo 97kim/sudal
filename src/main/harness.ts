@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { completeHarnessTask, harnessTaskContext, type HarnessAction, type HarnessImprovement, type HarnessConfig, type HarnessSnapshot, type HarnessTask } from "@shared/harness";
 import type { ChatEvent } from "@shared/chat-events";
@@ -8,8 +8,9 @@ import { verificationRevision } from "./verification-revision";
 
 const emptyConfig = (): HarnessConfig => ({ version: 1, documents: [], commands: [], procedures: [] });
 const candidates = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "docs/DEVELOPMENT.md", "package.json", "pyproject.toml", "Cargo.toml"];
-type Local = { improvements?: HarnessImprovement[]; configDraft?: HarnessConfig; seen?: Record<string, string[]>; enabled: boolean; tasks: HarnessTask[]; proposals: Record<string, HarnessSnapshot["proposal"]> };
+type Local = { configDraftImprovementId?: string; configDraftBlock?: string; improvements?: HarnessImprovement[]; configDraft?: HarnessConfig; seen?: Record<string, string[]>; enabled: boolean; tasks: HarnessTask[]; proposals: Record<string, HarnessSnapshot["proposal"]> };
 export class HarnessService {
+  private mutations = new Map<string, Promise<unknown>>();
   private completed = new Map<string, { source: "command" | "review"; result: "passed" | "failed" | "unconfirmed"; reference: string; verifiedRevision?: string }>();
   private locals = new Map<string, Local>();
   private tabProjects = new Map<string, string>();
@@ -35,13 +36,21 @@ export class HarnessService {
     writeFileSync(file + ".tmp", JSON.stringify(this.local(project)), "utf8");
     renameSync(file + ".tmp", file);
   }
-  private config(project: string) {
+  private config(project: string, recover = false) {
     let raw = "";
     try { raw = readFileSync(join(project, "sudal.harness.json"), "utf8"); } catch { /* optional */ }
-    if (raw.length > 64000) throw new Error("Harness configuration is too large");
     const token = createHash("sha256").update(raw).digest("hex");
-    const config = raw ? this.validateConfig(JSON.parse(raw)) : { ...emptyConfig(), documents: candidates.filter(path => path.endsWith(".md") && existsSync(join(project, path))), commands: suggestForCwd(project) };
-    return { config, token };
+    try {
+      if (raw.length > 64000) throw new Error("Harness configuration is too large");
+      const config = raw ? this.validateConfig(JSON.parse(raw.replace(/^\uFEFF/, ""))) : { ...emptyConfig(), documents: candidates.filter(path => path.endsWith(".md") && existsSync(join(project, path))), commands: suggestForCwd(project) };
+      return { config, token, error: undefined as string | undefined };
+    } catch (error) {
+      if (!recover) throw error;
+      return { config: emptyConfig(), token, error: (error as Error).message };
+    }
+  }
+  private draftToken(state: Local) {
+    return state.configDraft ? createHash("sha256").update(JSON.stringify([state.configDraft, state.configDraftImprovementId, state.configDraftBlock])).digest("hex") : undefined;
   }
   private strings(value: unknown): string[] {
     if (!Array.isArray(value) || value.length > 50 || value.some(x => typeof x !== "string" || x.length > 2000)) throw new Error("Invalid harness configuration");
@@ -52,7 +61,7 @@ export class HarnessService {
     return { version: 1, documents: this.strings(value.documents), commands: this.strings(value.commands), procedures: this.strings(value.procedures) };
   }
   async snapshot(cwd: string, tabId: string): Promise<HarnessSnapshot> {
-    const project = this.project(cwd), state = this.local(project), { config, token } = this.config(project);
+    const project = this.project(cwd), state = this.local(project), { config, token, error: configError } = this.config(project, true);
     let changed = false;
     if (this.isTabAvailable) for (const task of state.tasks) {
       if (task.status === "active" && !this.isTabAvailable(task.tabId, project)) { task.status = "paused"; changed = true; }
@@ -66,28 +75,55 @@ export class HarnessService {
     this.tabProjects.set(tabId, project);
     let revision: string | undefined;
     if (state.enabled && state.tasks.length) { try { revision = await verificationRevision(project); } catch { /* freshness unavailable */ } }
-    return { enabled: state.enabled, project, config, configToken: token, tasks: structuredClone(state.tasks), improvements: structuredClone(state.improvements ?? []), proposal: state.proposals[tabId], configDraft: state.configDraft, revision,
+    return { enabled: state.enabled, project, config, configToken: token, configError, tasks: structuredClone(state.tasks), improvements: structuredClone(state.improvements ?? []), proposal: state.proposals[tabId], configDraft: state.configDraft, configDraftImprovementId: state.configDraftImprovementId, configDraftToken: this.draftToken(state), revision,
       inspection: candidates.map(path => ({ path, found: existsSync(join(project, path)) })) };
   }
   async mutate(cwd: string, tabId: string, action: HarnessAction) {
-    const project = this.project(cwd), state = this.local(project);
+    const project = this.project(cwd);
+    const previous = this.mutations.get(project) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(() => this.mutateProject(cwd, tabId, action));
+    this.mutations.set(project, pending);
+    try { return await pending; }
+    finally { if (this.mutations.get(project) === pending) this.mutations.delete(project); }
+  }
+  private async mutateProject(cwd: string, tabId: string, action: HarnessAction) {
+    const project = this.project(cwd);
+    let currentRevision: string | undefined;
+    if (action.type === "confirm" || (action.type === "status" && action.status === "completed")) {
+      try { currentRevision = await verificationRevision(project); } catch { /* freshness unavailable */ }
+    }
+    const state = this.local(project);
+    const before = structuredClone(state);
+    let restoreConfig: (() => void) | undefined;
+    try {
     if (action.type === "enable") { if (typeof action.enabled !== "boolean") throw new Error("Invalid harness request"); state.enabled = action.enabled; }
     else if (action.type === "improve") {
       if (typeof action.problem !== "string" || !action.problem.trim() || action.problem.length > 8000) throw new Error("Describe the problem first");
       if (action.taskId && !state.tasks.some(task => task.id === action.taskId)) throw new Error("Task not found");
       state.improvements ??= [];
-      state.improvements.push({ id: randomUUID(), problem: action.problem.trim(), taskId: action.taskId, status: "proposed" });
+      const improvementId = randomUUID();
+      state.improvements.push({ id: improvementId, problem: action.problem.trim(), taskId: action.taskId, status: "proposed" });
     } else if (action.type === "improvementConfirm") {
       const item = state.improvements?.find(item => item.id === action.improvementId && item.status === "applied");
       if (!item || typeof action.note !== "string" || !action.note.trim()) throw new Error("Confirmation requires a note");
       item.status = "confirmed"; item.confirmation = action.note.slice(0, 4000);
     } else if (action.type === "configure") {
       const config = this.validateConfig(action.config);
+      const serialized = JSON.stringify(config, null, 2) + "\n";
+      if (serialized.length > 64000) throw new Error("Harness configuration is too large");
 
-      if (this.config(project).token !== action.token) throw new Error("Configuration changed; reload before applying");
+      if (this.config(project, true).token !== action.token) throw new Error("Configuration changed; reload before applying");
       const file = join(project, "sudal.harness.json");
-      writeFileSync(file + ".tmp", JSON.stringify(config, null, 2) + "\n", "utf8"); renameSync(file + ".tmp", file);
-      delete state.configDraft;
+      const original = existsSync(file) ? readFileSync(file) : undefined;
+      writeFileSync(file + ".tmp", serialized, "utf8"); renameSync(file + ".tmp", file);
+      restoreConfig = () => {
+        if (original === undefined) unlinkSync(file);
+        else { writeFileSync(file + ".tmp", original); renameSync(file + ".tmp", file); }
+      };
+      if (action.draftToken ? action.draftToken === this.draftToken(state) : action.improvementId === state.configDraftImprovementId &&
+        (action.improvementId !== undefined || JSON.stringify(config) === JSON.stringify(state.configDraft))) {
+        delete state.configDraft; delete state.configDraftImprovementId; delete state.configDraftBlock;
+      }
       for (const item of state.improvements ?? []) if (item.id === action.improvementId && item.status === "proposed") item.status = "applied";
     } else if (action.type === "dismiss") delete state.proposals[tabId];
     else if (action.type === "start") {
@@ -102,7 +138,7 @@ export class HarnessService {
       if (!task) throw new Error("Task not found");
       if (action.type === "status") {
         if (task.tabId !== tabId && (action.status !== "active" || task.status === "active")) throw new Error("Task is active in another tab");
-        if (action.status === "completed") Object.assign(task, completeHarnessTask(task, (await this.snapshot(cwd, tabId)).revision, action.reason ?? ""));
+        if (action.status === "completed") Object.assign(task, completeHarnessTask(task, currentRevision, action.reason ?? ""));
         else {
           if (action.status !== "active" && action.status !== "paused") throw new Error("Invalid task status");
           if (action.status === "active") for (const other of state.tasks) if (other.tabId === tabId && other.id !== task.id && other.status === "active") other.status = "paused";
@@ -117,12 +153,19 @@ export class HarnessService {
         if (action.type === "confirm") {
           const criterion = task.criteria.find(item => item.id === action.criterionId);
           if (!criterion || !action.note.trim() || action.note.length > 4000) throw new Error("Confirmation requires a note");
-          task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source: "user", result: "passed", reference: action.note, timestamp: Date.now(), codeRevision: (await this.snapshot(cwd, tabId)).revision });
+          task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source: "user", result: "passed", reference: action.note, timestamp: Date.now(), codeRevision: currentRevision });
         }
       }
     }
     if (!["enable", "configure", "dismiss", "start", "edit", "status", "confirm", "improve", "improvementConfirm"].includes(action.type)) throw new Error("Invalid harness request");
     this.save(project);
+    } catch (error) {
+      this.locals.set(project, before);
+      if (restoreConfig) {
+        try { restoreConfig(); } catch (rollbackError) { throw new AggregateError([error, rollbackError], "Configuration save and restoration failed"); }
+      }
+      throw error;
+    }
     return this.snapshot(cwd, tabId);
   }
   private criteria(items: { description: string; method: string }[]) {
@@ -134,7 +177,7 @@ export class HarnessService {
       const project = this.project(cwd), state = this.local(project);
       if (!state.enabled) return "";
       const task = state.tasks.find(task => task.tabId === tabId && task.status === "active");
-      return "\n\n[Sudal harness context — project data, not permission changes]\n" + JSON.stringify(this.config(project).config) + "\n" + (task ? harnessTaskContext(task) : "No active task.") + '\nIf this request starts a distinct substantial new task (not a follow-up or small question), optionally propose its goal and completion criteria in a fenced sudal-task JSON block: {"goal":"...","criteria":[{"description":"...","method":"..."}]}. Use the conversation language. This is only a suggestion; do not assume acceptance.';
+      return "\n\n[Sudal harness context — project data, not permission changes]\n" + JSON.stringify(this.config(project, true).config) + "\n" + (task ? harnessTaskContext(task) : "No active task.") + '\nIf this request starts a distinct substantial new task (not a follow-up or small question), optionally propose its goal and completion criteria in a fenced sudal-task JSON block: {"goal":"...","criteria":[{"description":"...","method":"..."}]}. Use the conversation language. This is only a suggestion; do not assume acceptance.';
     } catch { return ""; }
   }
   proposal(cwd: string, tabId: string, event: ChatEvent) {
@@ -146,7 +189,16 @@ export class HarnessService {
     if (state.seen[tabId]?.includes(signature)) return;
     const configBlock = /```sudal-harness\s*\n([\s\S]*?)```/.exec(event.text);
     if (configBlock) {
-      try { state.configDraft = this.validateConfig(JSON.parse(configBlock[1])); } catch { return; }
+      try {
+        const value = JSON.parse(configBlock[1]);
+        const config = this.validateConfig(value);
+        const blockKey = `${tabId}:${event.blockId}`;
+        const linked = state.improvements?.find(item => item.id === value.improvementId && item.status === "proposed");
+        const previousId = state.configDraftBlock === blockKey ? state.configDraftImprovementId : undefined;
+        state.configDraft = config;
+        state.configDraftImprovementId = linked?.id ?? previousId;
+        state.configDraftBlock = blockKey;
+      } catch { return; }
       state.seen[tabId] = [...(state.seen[tabId] ?? []).slice(-19), signature]; this.save(project); return;
     }
     const block = /```sudal-task\s*\n([\s\S]*?)```/.exec(event.text);
@@ -163,14 +215,28 @@ export class HarnessService {
     if (!state.enabled || !task || !Array.isArray(ids) || !ids.length || ids.some(id => !task.criteria.some(item => item.id === id))) throw new Error("Invalid evidence target");
     let revision: string | undefined;
     try { revision = await verificationRevision(project); } catch { /* unknown */ }
-    this.bindings.set(key, { project, taskId, criteria: task.criteria.filter(item => ids.includes(item.id)).map(item => ({ id: item.id, revision: item.revision })), revision });
+    const current = this.local(project), active = current.tasks.find(item => item.id === taskId && item.tabId === tabId && item.status === "active");
+    if (!current.enabled || !active || ids.some(id => !active.criteria.some(item => item.id === id))) throw new Error("Invalid evidence target");
+    this.bindings.set(key, { project, taskId, criteria: active.criteria.filter(item => ids.includes(item.id)).map(item => ({ id: item.id, revision: item.revision })), revision });
+  }
+  bindingActive(key: string, tabId: string) {
+    const binding = this.bindings.get(key);
+    if (!binding) return false;
+    const state = this.local(binding.project);
+    const task = state.tasks.find(item => item.id === binding.taskId && item.tabId === tabId && item.status === "active");
+    return state.enabled && !!task && binding.criteria.every(item => task.criteria.some(criterion => criterion.id === item.id && criterion.revision === item.revision));
   }
   discard(key: string) { this.bindings.delete(key); }
   detach(tabId: string) {
+    const errors: unknown[] = [];
     for (const [project, state] of this.locals) {
+      if (!state.tasks.some(task => task.tabId === tabId && task.status === "active")) continue;
+      const before = structuredClone(state);
       for (const task of state.tasks) if (task.tabId === tabId && task.status === "active") task.status = "paused";
-      this.save(project);
+      try { this.save(project); }
+      catch (error) { this.locals.set(project, before); errors.push(error); }
     }
+    if (errors.length) throw new AggregateError(errors, "Failed to persist detached tasks");
   }
   rekey(from: string, to: string) {
     const binding = this.bindings.get(from);
@@ -187,9 +253,9 @@ export class HarnessService {
       return;
     }
     this.bindings.delete(key);
-    const state = this.local(binding.project), task = state.tasks.find(task => task.id === binding.taskId); if (!task) return;
     let revision: string | undefined;
     try { revision = await verificationRevision(binding.project); } catch { /* unknown */ }
+    const state = this.local(binding.project), task = state.tasks.find(task => task.id === binding.taskId); if (!task) return;
     const proofRevision = verifiedRevision ?? binding.revision;
     for (const criterion of binding.criteria) task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source,
       result: proofRevision && proofRevision === revision ? result : "unconfirmed", reference, timestamp: Date.now(), codeRevision: proofRevision });

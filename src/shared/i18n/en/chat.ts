@@ -3,6 +3,8 @@ import type { DeepPartial } from "../types";
 
 export const chat: DeepPartial<typeof ko> = {
   harness: {
+    configInvalid: "The configuration file could not be read. Review and save the project configuration to recover. Configuration is not sent to AI until recovered.",
+    completionReason: "Reason for completing with unverified criteria",
     "configChanged": "Project configuration changed. Cancel and reopen it to review the latest version.",
     "taskBusy": "This task is active in another tab. Pause it there first.",
     "trustRequired": "Trust the project folder before changing settings.",
@@ -27,7 +29,7 @@ export const chat: DeepPartial<typeof ko> = {
     "verify": "Verify selected criteria",
     "review": "Review selected criteria",
     "confirm": "Confirm manually",
-    "note": "Confirmation note or completion reason",
+    "note": "Confirmation note",
     "complete": "Complete task",
     "pause": "Pause",
     "resume": "Resume",
