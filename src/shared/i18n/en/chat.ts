@@ -2,6 +2,26 @@ import type { chat as ko } from "../ko/chat";
 import type { DeepPartial } from "../types";
 
 export const chat: DeepPartial<typeof ko> = {
+  harnessFlow: {
+    busy: "Another task request is being processed. Try again when it finishes.",
+    suggestPrompt: "Propose completion criteria and how to check them for this task: {{goal}}\nDo not implement or run commands yet. Wait until I review the criteria and start the task.",
+    criteriaChanged: "The task or its criteria changed. Reopen the editor to review the current criteria.",
+    taskChanged: "The active task changed. Reopen the current task to continue.",
+    checkMethod: "Criterion check method", commandCheck: "Command checks", manualSelection: "Select one criterion to record a manual check.",
+    proposalData: "Task proposal data", confirmationData: "Confirmation suggestion data",
+    currentTask: "Current task", noTask: "No current task", off: "Task tracking off", settings: "Project settings",
+    close: "Close", more: "More", taskDetails: "Criteria and evidence", accept: "Start with these criteria",
+    proposalHint: "All criteria start unconfirmed.", replaceHint: "Starting another task pauses your current task.",
+    confirmationSuggestion: "Confirmation found in conversation", confirmationHint: "Save this as evidence only if it describes what you personally checked. Suggestions do not pass criteria automatically.",
+    saveConfirmation: "Save as confirmation", ready: "All completion criteria are confirmed", readyShort: "Ready to complete",
+    progress: "{{count}}/{{total}} confirmed", remaining: "{{count}} awaiting confirmation", verifying: "Verifying",
+    evidenceKept: "Evidence has been kept in task history.", completionRecord: "View completed task", checkCriteria: "Choose criteria to verify",
+    suggestCriteria: "Ask AI to propose criteria", criteriaHint: "Describe each criterion and how to check it. Link evidence after checking.",
+    criterionNumber: "Criterion {{count}}", methodPlaceholder: "For example: restart the app / yarn typecheck",
+    remove: "Remove criterion", addCriterion: "Add criterion", selected: "{{count}} criteria selected", selectionHint: "Select criteria for command verification. Open one criterion to record a manual check.",
+    notePlaceholder: "Describe the behavior and result you actually checked.", commandHint: "Results are linked only to selected criteria. Review commands before running them.",
+    runCommands: "Run {{count}} verification commands", noEvidence: "No evidence saved yet.", finishWithReason: "Complete with an explanation", noHistory: "No paused or completed tasks yet.",
+  },
   harness: {
     configInvalid: "The configuration file could not be read. Review and save the project configuration to recover. Configuration is not sent to AI until recovered.",
     completionReason: "Reason for completing with unverified criteria",
@@ -320,6 +340,10 @@ export const chat: DeepPartial<typeof ko> = {
     },
     compacted: "Compacted · {{tokens}} · the conversation above was replaced by a summary",
     compactedTokensUnknown: "Token count unavailable",
+    compactHistoryCollapsed: "Earlier conversation is collapsed",
+    compactHistoryExpanded: "Viewing the earlier conversation",
+    expandCompactHistory: "Show earlier conversation",
+    collapseCompactHistory: "Collapse earlier conversation",
     compactedAuto: "Auto-compacted · {{tokens}} · the conversation above was replaced by a summary",
     loading: "Loading conversation…",
     loadOlder: "Load earlier messages",
@@ -364,6 +388,8 @@ export const chat: DeepPartial<typeof ko> = {
     jumpHint: "Click to jump to this task's card",
   },
   markdown: {
+    openPreview: "Open preview",
+    previewFailed: "Could not open preview.",
     loadRemoteImage: "Load external image · {{host}}",
     notFound: "File not found: {{path}}",
     openInEditor: "Open in editor",

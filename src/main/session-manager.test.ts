@@ -14,6 +14,34 @@ import { ZERO_USAGE, type ChatEvent } from "@shared/chat-events";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+test("history sequence fencing starts after asynchronous checkpoint preparation", async () => {
+  const events: ChatEvent[] = [];
+  let release!: () => void, sequence = 0, fenced = -1;
+  const ready = new Promise<void>(resolve => { release = resolve; });
+  const sessions = new SessionManager({
+    emit() { sequence++; }, claudeRuntime: async () => { throw Error("unused"); }, codexRuntime: async () => { throw Error("unused"); },
+    store: { appendEvent(_tab, event) { events.push(event); }, readEvents: () => events, resetThread() {}, *iterateEvents() { yield* events; }, async historyCheckpoint() { await ready; return null; } },
+  });
+  const pending = sessions.history("tab", undefined, false, () => { fenced = sequence; });
+  sessions.note("tab", { type: "user_message", id: "arrived", ts: 1, text: "arrived while indexing" });
+  release();
+  const page = await pending;
+  assert.equal(fenced, sequence);
+  assert.equal(page.state.blocks.some(block => block.id === "arrived"), true);
+  sessions.shutdown();
+});
+
+test("summary fallback records its explicit compact command and a fold boundary", () => {
+  const sessions = new SessionManager({ emit() {}, claudeRuntime: async () => { throw Error("unused"); }, codexRuntime: async () => { throw Error("unused"); } });
+  sessions.note("tab", { type: "user_message", ts: 1, id: "old", text: "old context" });
+  sessions.compactFallback("tab");
+  const events = sessions.events("tab");
+  assert.equal(events.at(-1)?.type, "compacted");
+  const command = events.at(-2);
+  assert.equal(command?.type === "user_message" && command.text, "/compact");
+  sessions.shutdown();
+});
+
 test("history pages stream persisted events without requesting the full event array", async () => {
   const events: ChatEvent[] = Array.from({ length: 450 }, (_, i) => ({ type: "user_message", id: `user-${i}`, ts: i, text: `message ${i}` }));
   const manager = new SessionManager({
@@ -37,6 +65,7 @@ test("history yields to live work and cancels cleanly when its tab closes", asyn
     } },
   });
   const pending = manager.history("tab");
+  await new Promise<void>(resolve => setImmediate(resolve));
   manager.release("tab");
   await assert.rejects(pending);
   assert.equal(closed, 2, "both restoration and cancelled history iterators release their resources");

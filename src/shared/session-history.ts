@@ -6,6 +6,7 @@ export const HISTORY_PAGE_SIZE = 200;
 export const HISTORY_PAGE_BYTES = 4 * 1024 * 1024;
 
 export interface SessionHistoryPage {
+  compactBoundary?: { id: string; before: string; hiddenCount: number };
   state: SessionState;
   /** Lightweight identities/state for older blocks, never rendered as messages. */
   prefix: Block[];
@@ -22,10 +23,35 @@ export function historyPage(state: SessionState, before?: string, size = HISTORY
   const end = found < 0 ? state.blocks.length : found;
   const start = Math.max(0, end - Math.max(1, Math.min(HISTORY_PAGE_SIZE, Math.floor(size) || HISTORY_PAGE_SIZE)));
   const blocks = state.blocks.slice(start, end);
-  return { state: { ...state, blocks }, prefix: state.blocks.slice(0, start).map(slimHistoryBlock), suffix: state.blocks.slice(end).map(slimHistoryBlock), before: blocks[0]?.id ?? null, hasMore: start > 0 };
+  const cut = compactHistoryCut(state.blocks);
+  return { state: { ...state, blocks }, prefix: state.blocks.slice(0, start).map(slimHistoryBlock), suffix: state.blocks.slice(end).map(slimHistoryBlock), before: blocks[0]?.id ?? null, hasMore: start > 0,
+    ...(cut ? { compactBoundary: { id: cut.id, before: cut.before, hiddenCount: cut.hiddenCount } } : {}) };
 }
 
-export interface HistoryState { state: SessionState; prefix: Block[] }
+export interface HistoryState { state: SessionState; prefix: Block[]; compactBoundary?: SessionHistoryPage["compactBoundary"] }
+
+export function compactHistoryCut(blocks: Block[]) {
+  const marker = blocks.findLastIndex(block => block.kind === "compacted");
+  if (marker < 0) return undefined;
+  let index = marker;
+  // Keep the explicit /compact request and its silent result visible beside the boundary.
+  for (let i = marker - 1; i >= 0; i--) {
+    if (blocks[i].kind === "turn") continue;
+    const block = blocks[i];
+    if (block.kind === "user" && /^\/compact(?:\s|$)/.test(block.text.trim())) index = i;
+    break;
+  }
+  return { index, id: blocks[marker].id, before: blocks[index].id, hiddenCount: index };
+}
+
+export function collapseCompactedHistory(history: HistoryState): HistoryState {
+  const blocks = [...history.prefix, ...history.state.blocks];
+  const cut = compactHistoryCut(blocks);
+  if (!cut) return history;
+  const start = Math.max(cut.index, history.prefix.length);
+  return { state: { ...history.state, blocks: blocks.slice(start) }, prefix: blocks.slice(0, start).map(slimHistoryBlock),
+    compactBoundary: { id: cut.id, before: cut.before, hiddenCount: cut.hiddenCount } };
+}
 
 export function initialHistoryState(): HistoryState {
   return { state: initialSessionState(), prefix: [] };
@@ -34,12 +60,17 @@ export function initialHistoryState(): HistoryState {
 /** Keep updates to unloaded cards at their original positions, without their bodies. */
 export function reduceHistoryEvent(history: HistoryState, event: ChatEvent): HistoryState {
   const { state, prefix } = history;
-  if (!prefix.length) return { state: reduceSession(state, event), prefix };
+  if (!prefix.length) {
+    const next = { ...history, state: reduceSession(state, event), prefix };
+    return event.type === "compacted" ? collapseCompactedHistory(next) : next;
+  }
   const next = reduceSession({ ...state, blocks: [...prefix, ...state.blocks] }, event);
-  return {
+  const result = {
+    ...history,
     state: { ...next, blocks: next.blocks.slice(prefix.length) },
     prefix: next.blocks.slice(0, prefix.length).map((block, index) => block === prefix[index] ? block : slimHistoryBlock(block)),
   };
+  return event.type === "compacted" ? collapseCompactedHistory(result) : result;
 }
 
 /** Replay pushes after the page's snapshot before merging it with the live tail. */
@@ -47,10 +78,10 @@ export function mergeHistoryPage(current: HistoryState, page: SessionHistoryPage
   // The reducer can route nested activity to the last running Agent when its
   // explicit parent is absent. Include the snapshot's newer card identities so
   // a partial older page cannot redirect that activity to an unrelated card.
-  let fetched: HistoryState = { state: { ...page.state, blocks: [...page.state.blocks, ...page.suffix] }, prefix: page.prefix };
+  let fetched: HistoryState = { state: { ...page.state, blocks: [...page.state.blocks, ...page.suffix] }, prefix: page.prefix, ...(page.compactBoundary ? { compactBoundary: page.compactBoundary } : {}) };
   for (const event of events) fetched = reduceHistoryEvent(fetched, event);
   return older
-    ? { state: { ...current.state, blocks: prependHistory(fetched.state.blocks.slice(0, page.state.blocks.length), current.state.blocks) }, prefix: fetched.prefix }
+    ? { ...current, state: { ...current.state, blocks: prependHistory(fetched.state.blocks.slice(0, page.state.blocks.length), current.state.blocks) }, prefix: fetched.prefix, ...(fetched.compactBoundary ? { compactBoundary: fetched.compactBoundary } : {}) }
     : fetched;
 }
 
@@ -69,10 +100,10 @@ export function replayHistory(events: Iterable<ChatEvent>, before?: string): Ses
   return replay.finish();
 }
 
-export function createHistoryReplay(before?: string) {
-  let state = initialSessionState();
+export function createHistoryReplay(before?: string, seed?: SessionState, includeCompacted = true, seedStart = 0) {
+  let state = seed ?? initialSessionState();
   let end: number | undefined;
-  let start = 0;
+  let start = seedStart;
   const slimmed = new WeakSet<Block>();
   const byteSizes = new WeakMap<Block, number>();
   const push = (event: ChatEvent) => {
@@ -103,8 +134,12 @@ export function createHistoryReplay(before?: string) {
   };
   return { push, finish(): SessionHistoryPage {
     const stop = end ?? state.blocks.length;
+    const cut = compactHistoryCut(state.blocks);
+    const floor = !includeCompacted && cut ? Math.min(stop, cut.index) : 0;
+    start = Math.max(start, floor, stop - HISTORY_PAGE_SIZE);
     const blocks = state.blocks.slice(start, stop);
-    return { state: { ...state, blocks }, prefix: state.blocks.slice(0, start), suffix: state.blocks.slice(stop), before: blocks[0]?.id ?? null, hasMore: start > 0 };
+    return { state: { ...state, blocks }, prefix: state.blocks.slice(0, start).map(b => slimmed.has(b) ? b : slimHistoryBlock(b)), suffix: state.blocks.slice(stop), before: blocks[0]?.id ?? cut?.before ?? null, hasMore: start > floor,
+      ...(cut ? { compactBoundary: { id: cut.id, before: cut.before, hiddenCount: cut.hiddenCount } } : {}) };
   } };
 }
 
@@ -122,9 +157,9 @@ function historyBlockBytes(block: Block): number {
   return bytes;
 }
 
-function slimHistoryBlock(b: Block): Block {
+export function slimHistoryBlock(b: Block): Block {
   switch (b.kind) {
-    case "user": return { ...b, text: "", images: undefined };
+    case "user": return { ...b, text: /^\/compact(?:\s|$)/.test(b.text.trim()) ? b.text.trim() : "", images: undefined };
     case "text": return { ...b, text: "" };
     case "tool": {
       const agent = readCodexAgentInput(b.input);

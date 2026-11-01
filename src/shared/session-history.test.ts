@@ -1,8 +1,57 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { historyPage, prependHistory, replayHistory, initialHistoryState, mergeHistoryPage, reduceHistoryEvent } from "./session-history";
+import { collapseCompactedHistory, createHistoryReplay, historyPage, prependHistory, replayHistory, initialHistoryState, mergeHistoryPage, reduceHistoryEvent } from "./session-history";
 import { initialSessionState, replaySession, type Block } from "./session-state";
 import { ZERO_USAGE, type ChatEvent } from "./chat-events";
+
+test("compact boundaries hide old bodies, retain the explicit command, and allow later hydration", () => {
+  const events: ChatEvent[] = [
+    { type: "user_message", ts: 1, id: "old", text: "old body" },
+    { type: "user_message", ts: 2, id: "command", text: "/compact" },
+    { type: "compacted", ts: 3, trigger: "manual" },
+    { type: "user_message", ts: 4, id: "new", text: "new body" },
+  ];
+  const replay = createHistoryReplay(undefined, undefined, false);
+  events.forEach(replay.push);
+  const page = replay.finish();
+  assert.deepEqual(replayHistory(events), historyPage(replaySession(events)));
+  assert.deepEqual(page.state.blocks.map(block => block.id).filter(id => id === "old"), []);
+  assert.equal(page.prefix.length, 1);
+  assert.equal(page.prefix[0].kind === "user" && page.prefix[0].text, "");
+  assert.equal(page.hasMore, false);
+  assert.equal(page.compactBoundary?.hiddenCount, 1);
+  const live = events.reduce(reduceHistoryEvent, initialHistoryState());
+  assert.equal(live.state.blocks.some(block => block.id === "old"), false);
+  assert.equal(live.prefix[0].kind === "user" && live.prefix[0].text, "");
+  const older = replayHistory(events, page.before!);
+  const expanded = mergeHistoryPage(live, older, true, []);
+  assert.equal(expanded.state.blocks.find(block => block.id === "old")?.kind, "user");
+  const collapsed = collapseCompactedHistory(expanded);
+  assert.deepEqual(collapsed.state.blocks, live.state.blocks);
+});
+
+test("compact focus arguments stay visible and survive a slim checkpoint", () => {
+  const events: ChatEvent[] = [
+    { type: "user_message", id: "old", ts: 1, text: "old body" },
+    { type: "user_message", id: "command", ts: 2, text: "/compact 기능 변경 위주" },
+    { type: "compacted", ts: 3, trigger: "manual" },
+  ];
+  const replay = createHistoryReplay(undefined, undefined, false);
+  events.forEach(replay.push);
+  const page = replay.finish();
+  assert.equal(page.state.blocks[0].kind === "user" && page.state.blocks[0].text, "/compact 기능 변경 위주");
+  assert.equal(page.prefix[0].kind === "user" && page.prefix[0].text, "");
+  assert.equal(page.compactBoundary?.hiddenCount, 1);
+});
+
+test("recent pages stop at the newest compaction while archive pages can pass earlier boundaries", () => {
+  const events: ChatEvent[] = [{ type: "user_message", ts: 1, id: "old", text: "old" }, { type: "compacted", ts: 2, trigger: "auto" }];
+  for (let i = 0; i < 300; i++) events.push({ type: "user_message", ts: i + 3, id: `recent-${i}`, text: "recent" });
+  const read = (before?: string, include = false) => { const replay = createHistoryReplay(before, undefined, include); events.forEach(replay.push); return replay.finish(); };
+  const first = read(); assert.equal(first.state.blocks.length, 200); assert.equal(first.hasMore, true);
+  const second = read(first.before!); assert.equal(second.state.blocks.length, 101); assert.equal(second.hasMore, false);
+  const archive = read(second.before!, true); assert.equal(archive.state.blocks[0].id, "old");
+});
 
 test("history pages keep metadata and use stable block cursors while new messages arrive", () => {
   const blocks: Block[] = Array.from({ length: 551 }, (_, i) => ({ kind: "text", id: `b${i}`, text: `message ${i}`, streaming: false }));

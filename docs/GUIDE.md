@@ -116,10 +116,14 @@ Take the input tokens in the **last assistant message** of the last turn (input 
 above the input box, and from 95% it turns red (`contextUsage` / `contextWarnLevel`, `src/shared/session-state.ts`; the same number as the context panel gauge). "Compact" leaves compaction to the provider:
 for Claude it sends `/compact` through the SDK, and the model decides what to keep. Compaction is a boundary inside the session, so the session isn't cut, and the SDK's `compact_boundary` is received and
 left in the conversation as a divider (`Compact · 39k → 6k`). If you want to say what to keep, you can type something like `/compact focus on the auth refactor and drop test debugging`
-in the input box yourself (the app doesn't intercept it and passes it along as is). Codex's app-server has no compaction, so it builds the handoff summary below and moves to a new session on the same provider.
+in the input box yourself (the app doesn't intercept it and passes it along as is). Codex uses its app-server compaction API within the same thread. Other paths without native compaction use the handoff summary below and start a new session on the same provider.
+
+Successful compaction collapses the earlier conversation by default. The `/compact` request and latest boundary remain visible. **Show earlier conversation** loads older records in pages; collapse them again when finished. Search hydrates earlier records when needed. Original history is not deleted.
+
+On reentry, a saved lightweight state and byte offset let Sudal replay events after the latest compaction. Existing histories without a cache, or damaged/invalidated caches, require a one-time source scan. Oversized caches fall back to source replay. Explicitly loading earlier pages still replays the original log.
 SDK `result.usage` is the cumulative total of API requests within a turn (every tool call resends the conversation), so using it as the context size would greatly overcount. That's why it takes the usage of a single message.
 Old records without `contextTokens` use an approximation: the cumulative total divided by the number of requests. Dismissal is remembered per tab and holds as you switch tabs; the banner returns when the context fills 5 percentage points more or goes from warn to critical,
-and resets when it falls below 80%. Compacting clears the gauge too, via a `compacted` event (fallback: `session_reset`). Codex doesn't report a context window size, so it has no warning.
+and resets when it falls below 80%. Compacting clears the gauge too, via a `compacted` event. Codex doesn't report a context window size, so it has no warning.
 
 ## Switching providers and handoff
 
@@ -508,18 +512,18 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
 - `hooks/<session id>.jsonl` — hook log for the terminal-mode permission-waiting hint (deleted when the CLI exits)
 # Project harness
 
-Open **Work environment** above the conversation to enable the harness for a project. It is off by default. Disabling preserves configuration and task history; standalone verification and cross-review remain available.
+Use the **Project settings** gear above the conversation to enable **Use harness** for a project. It is off by default. Disabling preserves configuration and task history; standalone verification and cross-review remain available. The top bar shows the current task and pending checks; open it to inspect criteria in a popover without moving the conversation.
 
 **Project configuration** discovers existing guidance, development documents and verification commands. Discovery does not confirm that a tool works or that guidance was applied. Review references, commands and procedures before saving `sudal.harness.json` at the project root. Share this file through Git; enablement, tasks and evidence remain in local app data. Concurrent configuration changes require reloading the draft.
 
 **Ask AI for a configuration draft** sends an explicit request through the current session, using its existing provider and permission policy. Suggested commands and configuration changes are never automatically executed or applied.
 
-Use **Start task** to enter a goal and completion criteria, one `description | verification method` per line. Starting a task pauses the previous one in that tab. AI responses may also propose a task for explicit acceptance or dismissal. Task context is added when the next ordinary conversation turn actually starts, including after compaction or provider changes. Slash commands retain their original semantics.
+Use **Start task** to enter a goal, individual completion criteria and their check methods, or ask AI to propose criteria. Task proposals appear as conversation cards: choose **Start with these criteria**, edit the criteria, or skip. All criteria start unconfirmed. Starting a task pauses the previous one in that tab. Task context is added when the next ordinary conversation turn actually starts, including after compaction or provider changes. Slash commands retain their original semantics.
 
-Select criteria and run **Verify selected criteria** or **Review selected criteria**. Evidence is associated with the original task even if another task starts. Review completion and AI assertions do not automatically pass criteria. Manual confirmation requires a note. Code or criterion changes retain old evidence while requiring rechecking. Unavailable Git fingerprints are shown as unknown code freshness.
+Open a criterion to see **Criteria and evidence** on the right. Switch between evidence, manual confirmation and command checks. Select criteria and review the commands before running them. Evidence is associated with the original task even if another task starts. Review completion and AI assertions do not automatically pass criteria. Manual confirmation requires selecting one criterion and entering a note. If you describe a check you personally performed in conversation, AI may quote that message as a suggested confirmation; it becomes evidence only after **Save as confirmation**. Code or criterion changes retain old evidence while requiring rechecking. Unavailable Git fingerprints are shown as unknown code freshness.
 
 Automatic repair is a separate opt-in, with at most two repair attempts and the existing time, permission and cancellation limits. Disabling stops only harness-owned repair. Standalone checks, reviews and normal conversation continue. Restart restores records without automatically resuming execution.
 
-Tasks with failed or unconfirmed criteria may be completed with a reason; completion does not mean verification passed. **Task history** allows resuming paused or completed tasks.
+Once all criteria are confirmed, choose **Complete task** on the conversation card. Existing evidence does not need to be entered again. **More** in the detail panel offers pausing, editing criteria, and completing with an explanation for unconfirmed or failed criteria. Completion does not mean verification passed. The clock icon opens **Task history**, with evidence and options to resume paused or completed tasks.
 
 **Prevent recurrence** records a problem and requests targeted configuration improvements. Proposed, applied and user-confirmed operation are separate states. Code and regression-test edits remain separate tasks, and problem descriptions are not silently appended to project rules.

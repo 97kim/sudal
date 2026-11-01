@@ -10,6 +10,38 @@ async function get(url: string, init?: RequestInit) {
   return { status: r.status, type: r.headers.get("content-type"), cache: r.headers.get("cache-control"), body: await r.text() };
 }
 
+test("explicit artifact previews expose only .sudal/previews and retain hidden-file and symlink boundaries", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sudal-artifact-preview-")));
+  const directory = join(root, ".sudal", "previews");
+  mkdirSync(join(directory, "assets"), { recursive: true });
+  mkdirSync(join(directory, ".hidden"));
+  writeFileSync(join(directory, "index.html"), '<script src="assets/main.js"></script>');
+  writeFileSync(join(directory, "assets", "main.js"), "window.preview = true;");
+  writeFileSync(join(directory, ".env"), "SECRET=private");
+  writeFileSync(join(directory, ".hidden", "index.html"), "private");
+  writeFileSync(join(root, ".sudal", "gh-auth.cjs"), "private auth helper");
+  writeFileSync(join(root, ".sudal", "secret.html"), "private html");
+  symlinkSync(join(root, ".sudal"), join(directory, "escape"), process.platform === "win32" ? "junction" : "dir");
+  const server = new PreviewServer();
+  try {
+    assert.equal(await server.urlFor(root, join(directory, "index.html")), null);
+    const url = await server.artifactUrlFor(root, join(directory, "index.html"));
+    assert.ok(url);
+    assert.equal((await get(url)).status, 200);
+    assert.equal((await get(new URL("assets/main.js", url).href)).body, "window.preview = true;");
+    for (const file of [".env", ".hidden/index.html", "escape/secret.html", "..%2Fgh-auth.cjs", "..%2Fsecret.html"]) assert.equal((await get(new URL(file, url).href)).status, 404, file);
+    assert.equal(await server.artifactUrlFor(root, join(root, ".sudal", "secret.html")), null);
+    assert.equal(await server.artifactUrlFor(root, join(directory, "escape", "secret.html")), null);
+    assert.equal(await server.artifactUrlFor(root, join(directory, "assets", "main.js")), null);
+    assert.equal(await server.artifactUrlFor(root, join(directory, ".hidden", "index.html")), null);
+  } finally {
+    server.close();
+    assert.equal(root.startsWith(realpathSync(tmpdir())), true);
+    assert.equal(root.includes("sudal-artifact-preview-"), true);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("PreviewServer: 루트 안 파일만 토큰 경로로 서비스하고, 밖·추측 경로·심링크 탈출은 404", async () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "wb-preview-")));
   const outside = realpathSync(mkdtempSync(join(tmpdir(), "wb-outside-")));
@@ -22,7 +54,7 @@ test("PreviewServer: 루트 안 파일만 토큰 경로로 서비스하고, 밖�
   mkdirSync(join(dir, ".git"));
   writeFileSync(join(dir, ".git", "config"), "[remote]");
   writeFileSync(join(outside, "other.html"), "<p>other</p>");
-  symlinkSync(join(outside, "secret.txt"), join(dir, "site", "leak.txt"));
+  symlinkSync(outside, join(dir, "site", "escape"), process.platform === "win32" ? "junction" : "dir");
   const srv = new PreviewServer();
   try {
     const url = await srv.urlFor(dir, join(dir, "site", "index.html"));
@@ -45,7 +77,7 @@ test("PreviewServer: 루트 안 파일만 토큰 경로로 서비스하고, 밖�
     // 루트 밖 파일은 URL 자체를 안 만든다
     assert.equal(await srv.urlFor(dir, join(outside, "secret.txt")), null);
     // 루트 밖을 가리키는 심링크·.. 탈출·틀린 토큰·없는 파일
-    assert.equal((await get(url!.replace("index.html", "leak.txt"))).status, 404);
+    assert.equal((await get(url!.replace("index.html", "escape/secret.txt"))).status, 404);
     assert.equal((await get(url!.replace("site/index.html", "..%2F..%2Fetc%2Fpasswd"))).status, 404);
     assert.equal((await get(url!.replace(/\/p\/[0-9a-f]{32}\//, "/p/" + "0".repeat(32) + "/"))).status, 404);
     assert.equal((await get(url!.replace("index.html", "missing.html"))).status, 404);

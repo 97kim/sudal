@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import { readJsonl } from "./jsonl-reader";
+import { HistoryCheckpoints, historyFileStamp } from "./history-checkpoint";
 import path from "node:path";
 import { isInsideRel } from "./path-within";
 import type { ChatEvent } from "@shared/chat-events";
@@ -32,7 +33,9 @@ export class Store {
   private readonly threadsDir: string;
   private readonly attentionPath: string;
   private readonly buffers = new Map<string, string[]>();
+  private readonly compactedBuffers = new Set<string>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private checkpoints = new HistoryCheckpoints(id => this.threadPath(id));
 
   constructor(private readonly dir: string) {
     this.modelPath = path.join(dir, "workspaces.json");
@@ -186,6 +189,7 @@ export class Store {
 
   /** 이벤트를 버퍼에 쌓고 잠시 뒤 한 번에 append 한다 (text_delta 가 초당 수십 개라서). */
   appendEvent(tabId: string, event: ChatEvent): void {
+    if (event.type === "compacted") this.compactedBuffers.add(tabId);
     const buf = this.buffers.get(tabId) ?? [];
     buf.push(JSON.stringify(event));
     this.buffers.set(tabId, buf);
@@ -201,7 +205,9 @@ export class Store {
     fs.mkdirSync(this.threadsDir, { recursive: true });
     for (const [tabId, lines] of this.buffers) {
       try {
+        const before = historyFileStamp(this.threadPath(tabId));
         fs.appendFileSync(this.threadPath(tabId), `${lines.join("\n")}\n`, "utf8");
+        this.checkpoints.advance(tabId, before, this.compactedBuffers.delete(tabId));
       } catch (e) {
         console.error(`[store] thread append 실패 (${tabId}):`, e);
       }
@@ -224,12 +230,15 @@ export class Store {
     return [...this.iterateEvents(tabId)];
   }
 
-  *iterateEvents(tabId: string): Generator<ChatEvent> {
+  async historyCheckpoint(tabId: string) { if (this.buffers.has(tabId)) this.flush(); return this.checkpoints.ensure(tabId); }
+  currentHistoryCheckpoint(tabId: string) { if (this.buffers.has(tabId)) this.flush(); return this.checkpoints.current(tabId); }
+
+  *iterateEvents(tabId: string, offset = 0): Generator<ChatEvent> {
     // 아직 디스크에 안 내려간 버퍼가 있으면 먼저 내린다.
     if (this.buffers.has(tabId)) this.flush();
     const p = this.threadPath(tabId);
     if (!fs.existsSync(p)) return;
-    for (const { line } of readJsonl(p)) {
+    for (const { line } of readJsonl(p, true, offset)) {
       if (!line.trim()) continue;
       try {
         yield JSON.parse(line) as ChatEvent;
@@ -269,6 +278,8 @@ export class Store {
    * 대기 중인 지시·인계서·첨부는 진행 중이던 상태라 함께 버린다(첨부 이미지의 dataUrl 은 보관본에 있다).
    */
   resetThread(tabId: string): void {
+    this.compactedBuffers.delete(tabId);
+    this.checkpoints.invalidate(tabId);
     this.buffers.delete(tabId);
     try {
       const live = this.threadPath(tabId);

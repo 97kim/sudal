@@ -187,6 +187,10 @@ src/main/       Electron main. cli-discovery / claude-adapter + claude-events / 
 src/preload/    contextBridge → window.sudal
 src/renderer/   React + Tailwind. views/ChatView, views/SettingsView, components/*
 ```
+# Conversation history
+
+History loading uses `src/main/history-checkpoint.ts` to cache a checksummed projection and byte offset at the end of the indexed log, keeping the bounded recent page and lightweight identities for earlier blocks. Source size, timestamps and file identity must match; Store appends advance only the small metadata file. Clear/reset invalidates the cache, and a build racing with source changes is discarded. Cache files are optional and limited to 16 MiB, with at most eight in-memory entries. Prefix block identities, reducer counters/totals and restoration metadata retain late-update and stale-run behavior without old message bodies. `readJsonl` resumes on saved line boundaries. Older pages intentionally use full source replay. The renderer collapses prior bodies, fences in-flight pages when a new compaction arrives, and can hydrate archived search hits.
+
 # Harness implementation
 
 `src/main/harness.ts` owns project configuration, local tasks, suggestions and evidence associations. Shared task criteria keep completion separate from verification. The session manager appends the current task context at execution time, preserving user history and skipping native/slash commands. Queued-turn retries reuse the original prompt before applying fresh context.

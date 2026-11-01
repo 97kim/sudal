@@ -105,6 +105,18 @@ export class PreviewServer {
     return `http://127.0.0.1:${port}/p/${token}/${relUrl}`;
   }
 
+  /** Explicit preview controls can serve artifacts, scoped to .sudal/previews rather than the hidden project tree. */
+  async artifactUrlFor(root: string, filePath: string): Promise<string | null> {
+    try {
+      const project = await fs.realpath(root);
+      const directory = await fs.realpath(join(project, ".sudal", "previews"));
+      if (relative(project, directory).split(sep).join("/") !== ".sudal/previews") return null;
+      const file = await fs.realpath(filePath);
+      if (!isWithin(directory, file) || !/\.html?$/i.test(file) || !(await fs.stat(file)).isFile()) return null;
+      return this.urlFor(directory, file);
+    } catch { return null; }
+  }
+
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const deny = (code: number, msg: string) => {
       res.writeHead(code, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });

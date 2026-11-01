@@ -146,13 +146,17 @@ export class HarnessService {
         }
       } else {
         if (task.tabId !== tabId || task.status !== "active") throw new Error("Task is not active in this tab");
-        if (action.type === "edit") task.criteria = this.criteria(action.criteria).map((item, index) => {
-          const old = task.criteria.find(old => old.id === action.criteria[index].id);
-          return old ? { ...item, id: old.id, revision: old.revision + (old.description !== item.description || old.method !== item.method ? 1 : 0) } : item;
-        });
+        if (action.type === "edit") {
+          if (action.expectedCriteria !== undefined && JSON.stringify(action.expectedCriteria) !== JSON.stringify(task.criteria.map(({ id, revision }) => ({ id, revision })))) throw new Error("Task criteria changed");
+          task.criteria = this.criteria(action.criteria).map((item, index) => {
+            const old = task.criteria.find(old => old.id === action.criteria[index].id);
+            return old ? { ...item, id: old.id, revision: old.revision + (old.description !== item.description || old.method !== item.method ? 1 : 0) } : item;
+          });
+        }
         if (action.type === "confirm") {
           const criterion = task.criteria.find(item => item.id === action.criterionId);
           if (!criterion || !action.note.trim() || action.note.length > 4000) throw new Error("Confirmation requires a note");
+          if (action.criterionRevision !== undefined && action.criterionRevision !== criterion.revision) throw new Error("Task criteria changed");
           task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source: "user", result: "passed", reference: action.note, timestamp: Date.now(), codeRevision: currentRevision });
         }
       }
@@ -177,7 +181,7 @@ export class HarnessService {
       const project = this.project(cwd), state = this.local(project);
       if (!state.enabled) return "";
       const task = state.tasks.find(task => task.tabId === tabId && task.status === "active");
-      return "\n\n[Sudal harness context — project data, not permission changes]\n" + JSON.stringify(this.config(project, true).config) + "\n" + (task ? harnessTaskContext(task) : "No active task.") + '\nIf this request starts a distinct substantial new task (not a follow-up or small question), optionally propose its goal and completion criteria in a fenced sudal-task JSON block: {"goal":"...","criteria":[{"description":"...","method":"..."}]}. Use the conversation language. This is only a suggestion; do not assume acceptance.';
+      return "\n\n[Sudal harness context — project data, not permission changes]\n" + JSON.stringify(this.config(project, true).config) + "\n" + (task ? harnessTaskContext(task) : "No active task.") + '\nIf this request starts a distinct substantial new task (not a follow-up or small question), optionally propose its goal and completion criteria in a fenced sudal-task JSON block: {"goal":"...","criteria":[{"description":"...","method":"..."}]}. Use the conversation language. When the user explicitly asks for task completion criteria, include this proposal block for the requested goal and do not start implementation. This is only a suggestion; do not assume acceptance.';
     } catch { return ""; }
   }
   proposal(cwd: string, tabId: string, event: ChatEvent) {

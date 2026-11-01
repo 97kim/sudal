@@ -1,9 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { completeHarnessTask, harnessCriterionStatus, type HarnessTask } from "./harness";
+import { completeHarnessTask, harnessCriterionStatus, latestCompletedHarnessTask, type HarnessTask } from "./harness";
 
 const fixture = (): HarnessTask => ({ id: "task", project: "project", tabId: "tab", goal: "Preserve requests", status: "active",
   criteria: [{ id: "history", description: "Survives restart", method: "Integration test", revision: 1 }], evidence: [] });
+
+test("the most recently completed task wins even when an older task is resumed", () => {
+  const older = fixture(), newer = { ...fixture(), id: "newer" };
+  const first = completeHarnessTask(older, undefined, "manual", 100);
+  const second = completeHarnessTask(newer, undefined, "manual", 200);
+  assert.equal(latestCompletedHarnessTask([first, second], "tab")?.id, newer.id);
+  const resumed = completeHarnessTask({ ...first, status: "active" }, undefined, "checked again", 300);
+  assert.equal(latestCompletedHarnessTask([resumed, second], "tab")?.id, older.id);
+  assert.equal(latestCompletedHarnessTask([{ ...resumed, tabId: "other" }, second], "tab")?.id, newer.id);
+  assert.equal(latestCompletedHarnessTask([{ ...older, status: "completed" }, { ...newer, status: "completed" }], "tab")?.id, newer.id);
+});
 
 test("completion preserves unverified criteria and requires an explicit reason", () => {
   const task = fixture();

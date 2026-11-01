@@ -6,6 +6,7 @@ import { intlLocale, type Locale } from "@shared/i18n/locale";
 import { msgText } from "@shared/i18n/msg";
 import type { Provider } from "@shared/ipc";
 import type { Block, ReviewBlock } from "@shared/session-state";
+import type { SessionHistoryPage } from "@shared/session-history";
 import { Icon } from "./Icon";
 import { ProviderLogo } from "./ProviderLogo";
 import { Logo } from "./Logo";
@@ -40,6 +41,11 @@ export function MessageList({
   onLoadOlder,
   historyError = null,
   onReload,
+  onHarnessSlot,
+  compactBoundary,
+  compactedExpanded = false,
+  onExpandCompacted,
+  onCollapseCompacted,
 }: {
   tabId: string;
   blocks: Block[];
@@ -68,6 +74,11 @@ export function MessageList({
   onLoadOlder?: () => Promise<void>;
   historyError?: string | null;
   onReload?: () => void;
+  onHarnessSlot?: (element: HTMLDivElement | null) => void;
+  compactBoundary?: SessionHistoryPage["compactBoundary"];
+  compactedExpanded?: boolean;
+  onExpandCompacted?: () => Promise<void>;
+  onCollapseCompacted?: () => void;
 }) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,7 +92,10 @@ export function MessageList({
     if (!blockId) return;
     const block = blocks.find((b) => b.id === blockId);
     if (!block) {
-      if (hasMore && !loadingOlder && !historyError) void onLoadOlder?.();
+      if (!loadingOlder && !historyError) {
+        if (hasMore) void onLoadOlder?.();
+        else if (compactBoundary && !compactedExpanded) void onExpandCompacted?.();
+      }
       return;
     }
     release();
@@ -96,7 +110,7 @@ export function MessageList({
       setTimeout(() => el.classList.remove("reveal-flash"), 1600);
     });
     return () => cancelAnimationFrame(frame);
-  }, [tabId, blocks, revealTick, hasMore, loadingOlder, historyError, onLoadOlder]);
+  }, [tabId, blocks, revealTick, hasMore, loadingOlder, historyError, onLoadOlder, compactBoundary, compactedExpanded, onExpandCompacted]);
   // 자동 스크롤: 사용자가 맨 아래에 있을 때만 따라간다. 위로 올려 읽는 중이면 새 블록(툴카드·응답)이 와도 끌어내리지 않는다 —
   // 자동으로 내려가는데 사람이 올리면 위아래로 튀기 때문. 예외는 사용자가 방금 보낸 메시지(자기 메시지는 보고 싶으니 맨 아래로).
   // 내용 높이가 바뀔 때(스트리밍·이미지·코드 하이라이트)도 같은 규칙으로 따라간다. "맨 아래로" pill 로 언제든 복귀.
@@ -224,14 +238,16 @@ export function MessageList({
   // 응답 중에 보낸 것은 대기열에만 들어가 목록에 아직 없다 — 대기열이 늘어난 것도 보낸 것으로 본다.
   // 그 밖의 새 블록은 붙어 있을 때만 따라간다.
   const prevUserId = useRef(lastUserId);
+  const prevLastBlock = useRef(blocks.at(-1)?.id);
   const prevQueued = useRef(queuedCount);
   useEffect(() => {
     if (lastUserId !== prevUserId.current) {
       prevUserId.current = lastUserId;
-      if (lastUserId && !pendingReveal(tabId)) follow();
+      if (lastUserId && blocks.at(-1)?.id !== prevLastBlock.current && !pendingReveal(tabId)) follow();
     }
     if (queuedCount > prevQueued.current) follow();
     prevQueued.current = queuedCount;
+    prevLastBlock.current = blocks.at(-1)?.id;
     if (stickToBottom.current) scrollToBottom();
   }, [blocks, thinking, lastUserId, queuedCount]);
   // 내용 높이(스트리밍·이미지·하이라이트)나 목록 영역 높이(입력창이 커지거나 권한 요청이 뜸)가 바뀌어도 따라 내려간다.
@@ -275,6 +291,15 @@ export function MessageList({
       data-history-count={blocks.length}
     >
       <div ref={contentRef} className="mx-auto flex max-w-[820px] flex-col gap-5">
+        {compactBoundary && compactBoundary.hiddenCount > 0 && blocks.some(block => block.id === compactBoundary.id) && <div className="flex flex-wrap items-center justify-center gap-3 py-2 text-xs text-muted" data-compact-history={compactedExpanded ? "expanded" : "collapsed"}>
+          <Icon name="list" size={13} />
+          <span>{t(loadingOlder ? "chat.messages.loading" : compactedExpanded ? "chat.messages.compactHistoryExpanded" : "chat.messages.compactHistoryCollapsed")}</span>
+          <button type="button" className="rounded-lg border border-line bg-panel px-3 py-1.5 hover:text-fg disabled:opacity-50" disabled={loadingOlder && !compactedExpanded} aria-busy={loadingOlder} aria-expanded={compactedExpanded} onClick={() => {
+            release();
+            if (compactedExpanded) { clearReveal(); onCollapseCompacted?.(); }
+            else void onExpandCompacted?.();
+          }}>{t(compactedExpanded ? "chat.messages.collapseCompactHistory" : loadingOlder ? "chat.messages.loading" : "chat.messages.expandCompactHistory")}</button>
+        </div>}
         {(hasMore || historyError) && <div className="flex flex-col gap-2 py-1 text-xs text-muted" data-older-history>
           {historyError && <p className="text-center text-err" role="alert">{historyError}</p>}
           <div className="flex items-center gap-3">
@@ -311,6 +336,7 @@ export function MessageList({
         <VirtualRows rows={groups.map((g, i) => ({ key: `${g.blocks[0].kind}:${g.blocks[0].id}`, gap: groups[i + 1]?.continued ? 4 : 20, estimate: g.kind === "assistant" ? 100 : 72 }))}
           container={containerRef} following={stickToBottom} api={virtualApi}
           render={(index) => <HistoryRowContext.Provider value={`${tabId}:${groups[index].blocks[0].id}`}><Group group={groups[index]} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} /></HistoryRowContext.Provider>} />
+        <div ref={onHarnessSlot} className="empty:hidden" data-harness-conversation-slot />
         {thinking && (
           <Thinking
             withAvatar={groups[groups.length - 1]?.kind !== "assistant"}

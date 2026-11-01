@@ -1835,9 +1835,9 @@ function bootstrap() {
       if (harnessCwd && harness) {
         try { harness.proposal(harnessCwd, tabId, event); } catch { /* diagnostics must not break a provider stream */ }
         if (event.type === "verify" && event.status !== "running" && !event.partial)
-          void harness.record(event.runId, "command", event.status === "passed" ? "passed" : event.status === "failed" ? "failed" : "unconfirmed", event.runId).catch(() => {});
+          void harness.record(event.runId, "command", event.status === "passed" ? "passed" : event.status === "failed" ? "failed" : "unconfirmed", event.runId).then(() => sendAll(IPC.harnessChanged)).catch(() => {});
         if (event.type === "review" && event.status !== "requested")
-          void harness.record(event.reviewTabId, "review", event.status === "failed" ? "failed" : "unconfirmed", event.reviewTabId).catch(() => {});
+          void harness.record(event.reviewTabId, "review", event.status === "failed" ? "failed" : "unconfirmed", event.reviewTabId).then(() => sendAll(IPC.harnessChanged)).catch(() => {});
       }
       const sequence = (chatSequences.get(tabId) ?? 0) + 1;
       chatSequences.set(tabId, sequence);
@@ -2275,7 +2275,9 @@ function registerIpc() {
       }
       return harness.snapshot(cwd, tabId);
     }
-    return harness.mutate(cwd, tabId, action);
+    const state = await harness.mutate(cwd, tabId, action);
+    sendAll(IPC.harnessChanged);
+    return state;
   });
   ipcMain.on(IPC.controlOpenReady, (event) => {
     const win = liveMainWindow();
@@ -2593,7 +2595,7 @@ function registerIpc() {
       sendAll(IPC.feedbackChanged, state);
       if (harness?.ownsRepair(state.tabId) && ["passed", "failed", "stopped", "stale"].includes(state.phase)) {
         harness.ownRepair(state.tabId, false);
-        void harness.record(state.id, "command", state.phase === "passed" ? "passed" : state.phase === "failed" ? "failed" : "unconfirmed", state.verification?.runId ?? state.id, state.revision).catch(() => {});
+        void harness.record(state.id, "command", state.phase === "passed" ? "passed" : state.phase === "failed" ? "failed" : "unconfirmed", state.verification?.runId ?? state.id, state.revision).then(() => sendAll(IPC.harnessChanged)).catch(() => {});
       }
     },
     load: tabId => feedbackStore.load(tabId),
@@ -2839,10 +2841,11 @@ function registerIpc() {
     sessions.snapshot(tabId),
   );
   ipcMain.handle(IPC.chatEvents, (_e, tabId: string) => sessions.events(tabId));
-  ipcMain.handle(IPC.chatHistory, async (_e, tabId: string, before?: string) => {
+  ipcMain.handle(IPC.chatHistory, async (_e, tabId: string, before?: string, includeCompacted?: boolean) => {
     if (typeof tabId !== "string" || (before !== undefined && typeof before !== "string")) throw new Error(mt("main.error.badArgs"));
-    const sequence = chatSequences.get(tabId) ?? 0;
-    return { ...await sessions.history(tabId, before), sequence };
+    let sequence = chatSequences.get(tabId) ?? 0;
+    const page = await sessions.history(tabId, before, includeCompacted === true, () => { sequence = chatSequences.get(tabId) ?? 0; });
+    return { ...page, sequence };
   });
   ipcMain.handle(IPC.chatClear, async (_e, tabId: string) => { await feedbackRunner?.stop(tabId); return sessions.clear(tabId); });
   ipcMain.handle(IPC.chatCodexControl, async (event, tabId: unknown, command: unknown, arg: unknown) => {
@@ -3097,11 +3100,12 @@ function registerIpc() {
   ipcMain.handle(IPC.controlInstallCli, () => installCliShim(true));
   ipcMain.handle(IPC.controlInstallSkill, (_e, agent?: unknown) => installSkillStub(agent === "claude" || agent === "codex" || agent === "agy" ? agent : undefined));
   ipcMain.handle(IPC.controlInstallStatus, () => installStatus());
-  ipcMain.handle(IPC.previewUrl, async (_e, cwd: string, path: string) => {
+  ipcMain.handle(IPC.previewUrl, async (_e, cwd: string, path: string, artifact?: boolean) => {
     if (typeof cwd !== "string" || typeof path !== "string") return { ok: false, error: mt("main.error.badArgs") };
     if (!isKnownCwd(cwd)) return { ok: false, error: unknownCwd() };
     const root = await repoRoot(cwd, await cliDiscovery().buildEnv());
-    const url = await previewServer.urlFor(root, isAbsolute(path) ? path : resolve(cwd, path));
+    const file = isAbsolute(path) ? path : resolve(cwd, path);
+    const url = await previewServer.urlFor(root, file) ?? (artifact === true ? await previewServer.artifactUrlFor(root, file) : null);
     return url ? { ok: true, url } : { ok: false, error: mt("main.error.previewRepoOnly") };
   });
   ipcMain.handle(IPC.backgroundJobs, () => allBackgroundJobs());

@@ -256,6 +256,7 @@ export const IPC = {
   cliSetOverride: "cli:set-override",
   cliRefresh: "cli:refresh",
   harness: "chat:harness",
+  harnessChanged: "chat:harness-changed",
   chatSend: "chat:send",
   chatAbort: "chat:abort",
   chatPermission: "chat:permission",
@@ -922,6 +923,7 @@ export interface SudalApi {
   };
   chat: {
     harness(tabId: string, action: HarnessAction): Promise<HarnessSnapshot>;
+    onHarnessChanged(listener: () => void): () => void;
     send(tabId: string, payload: ChatSendDto): Promise<ChatSendResult>;
     abort(tabId: string): Promise<boolean>;
     answerPermission(
@@ -954,7 +956,7 @@ export interface SudalApi {
     fanoutCleanup(tabId: string, fanoutId: string): Promise<{ ok: true } | { ok: false; error: string }>;
     /** 지금까지의 이벤트 로그 (화면 재구성용). */
     events(tabId: string): Promise<ChatEvent[]>;
-    history(tabId: string, before?: string): Promise<SessionHistoryPage>;
+    history(tabId: string, before?: string, includeCompacted?: boolean): Promise<SessionHistoryPage>;
     clear(tabId: string): Promise<SessionSnapshotDto>;
     /**
      * 컨텍스트를 줄인다. Claude 는 provider 에게 맡기고(`/compact`) 세션이 그대로 이어진다 —
@@ -1094,7 +1096,7 @@ export interface SudalApi {
     /** 기본 브라우저로 연다(http/https/mailto 만). 인앱 브라우저 탭은 렌더러의 <webview> 가 맡는다. */
     openExternal(url: string): Promise<boolean>;
     /** 에디터의 HTML 을 인앱 브라우저로 볼 로컬 미리보기 URL(저장소 루트를 서비스하는 127.0.0.1 서버). 루트 밖이면 error. */
-    previewUrl(cwd: string, path: string): Promise<{ ok: true; url: string } | { ok: false; error: string }>;
+    previewUrl(cwd: string, path: string, artifact?: boolean): Promise<{ ok: true; url: string } | { ok: false; error: string }>;
     /** 이 브라우저 탭(webview 의 webContents id)에서 최근 실패한 요청. 진단 첨부가 읽고 비운다. */
     /** 이 채팅 탭에서 지금 보고 있는 브라우저를 main 에 알린다(에이전트 조작용). 없어지면 null. */
     register(tabId: string, webContentsId: number | null, url: string): void;

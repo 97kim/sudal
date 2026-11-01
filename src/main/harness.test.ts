@@ -17,6 +17,25 @@ function fixture() {
 }
 const start = { type: "start" as const, goal: "Preserve history", criteria: [{ description: "History survives restart", method: "Integration test" }] };
 
+test("stale editors and confirmation drafts cannot overwrite newer criteria", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0];
+  const expectedCriteria = task.criteria.map(({ id, revision }) => ({ id, revision }));
+  const updated = { ...task.criteria[0], description: "Updated criterion" };
+  await service.mutate(cwd, "tab", { type: "edit", taskId: task.id, criteria: [updated], expectedCriteria });
+  await assert.rejects(service.mutate(cwd, "tab", { type: "edit", taskId: task.id, criteria: task.criteria, expectedCriteria }), /Task criteria changed/);
+  await assert.rejects(service.mutate(cwd, "tab", { type: "confirm", taskId: task.id, criterionId: updated.id, criterionRevision: 1, note: "Checked the old criterion" }), /Task criteria changed/);
+  let current = (await service.snapshot(cwd, "tab")).tasks[0];
+  assert.equal(current.criteria[0].description, "Updated criterion");
+  assert.equal(current.evidence.length, 0);
+  await service.mutate(cwd, "tab", { type: "confirm", taskId: task.id, criterionId: updated.id, criterionRevision: 2, note: "Checked the updated criterion" });
+  const second = (await service.mutate(cwd, "tab", { ...start, goal: "Second task" })).tasks[1];
+  await assert.rejects(service.mutate(cwd, "tab", { type: "edit", taskId: task.id, criteria: task.criteria, expectedCriteria }), /not active/);
+  current = (await service.snapshot(cwd, "tab")).tasks[1];
+  assert.deepEqual(current.criteria, second.criteria);
+});
+
 test("saving an edited unlinked draft consumes only the reviewed draft", async () => {
   const { cwd, service } = fixture();
   await service.mutate(cwd, "tab", { type: "enable", enabled: true });

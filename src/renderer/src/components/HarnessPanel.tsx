@@ -4,7 +4,10 @@ import { harnessCriterionStatus, type HarnessAction, type HarnessSnapshot } from
 import { userErrorMessage } from "@shared/error-message";
 
 const lines = (value: string) => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
+export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
+  tabId: string; cwd: string; settingsOnly?: boolean;
+  controller?: { snapshot: HarnessSnapshot | null; dispatch: (action: HarnessAction) => Promise<HarnessSnapshot> };
+}) {
   const { t } = useTranslation();
   const label = (key: string) => t(`chat.harness.${key}` as never) as string;
   const describeError = (error: unknown) => {
@@ -18,8 +21,9 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
     if (message.includes("Describe the problem")) return label("problemRequired");
     return message;
   };
-  const [snapshot, setSnapshot] = useState<HarnessSnapshot | null>(null);
-  const [open, setOpen] = useState(false), [mode, setMode] = useState<"config" | "task" | "edit" | null>(null);
+  const [localSnapshot, setSnapshot] = useState<HarnessSnapshot | null>(null);
+  const snapshot = controller ? controller.snapshot : localSnapshot;
+  const [open, setOpen] = useState(settingsOnly), [mode, setMode] = useState<"config" | "task" | "edit" | null>(null);
   const [goal, setGoal] = useState(""), [criteria, setCriteria] = useState(""), [commands, setCommands] = useState("");
   const [documents, setDocuments] = useState(""), [procedures, setProcedures] = useState(""), [token, setToken] = useState("");
   const [completionReason, setCompletionReason] = useState("");
@@ -32,8 +36,9 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
   const [autoRepair, setAutoRepair] = useState(false);
   const [improve, setImprove] = useState(false), [problem, setProblem] = useState("");
   useEffect(() => {
+    if (controller) return;
     let alive = true, pending = false;
-    setSnapshot(null); setMode(null); setSelected([]); setOpen(false); setError(""); setAutoRepair(false);
+    setSnapshot(null); setMode(null); setSelected([]); setOpen(settingsOnly); setError(""); setAutoRepair(false);
     const refresh = async () => {
       if (pending || document.visibilityState === "hidden") return;
       pending = true;
@@ -44,10 +49,10 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
     void refresh();
     const timer = window.setInterval(() => { if (document.hasFocus()) void refresh(); }, 10000);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [tabId, cwd]);
+  }, [tabId, cwd, !!controller]);
   const act = async (action: HarnessAction) => {
     setBusy(true); setError("");
-    try { const state = await window.sudal.chat.harness(tabId, action); setSnapshot(state); return true; }
+    try { const state = await (controller ? controller.dispatch(action) : window.sudal.chat.harness(tabId, action)); setSnapshot(state); return true; }
     catch (error) { setError(describeError(error)); return false; }
     finally { setBusy(false); }
   };
@@ -72,11 +77,11 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
   const field = (name: string, value: string, change: (value: string) => void) => <label className="grid gap-1">{label(name)}<textarea className={inputClass} rows={3} value={value} onChange={event => change(event.target.value)} /></label>;
   if (!cwd) return null;
   return <section className="shrink-0 border-b border-line bg-panel text-xs" data-harness-panel>
-    <div className="flex items-center gap-2 px-4 py-2">
+    {!settingsOnly && <div className="flex items-center gap-2 px-4 py-2">
       <button className="text-muted hover:text-fg" aria-expanded={open} onClick={() => setOpen(!open)}>{label("title")}</button>
       {snapshot?.enabled && task && <span className="truncate text-muted">{task.goal} · {task.criteria.filter(item => harnessCriterionStatus(task, item, snapshot.revision) === "passed").length}/{task.criteria.length}</span>}
       {snapshot?.enabled && !task && <span className="text-muted">{label(snapshot.proposal ? "proposal" : "empty")}</span>}
-    </div>
+    </div>}
     {open && <div className="max-h-[45vh] space-y-3 overflow-y-auto border-t border-line px-4 py-3">
       <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || !snapshot} checked={snapshot?.enabled ?? false} onChange={event => void act({ type: "enable", enabled: event.target.checked })} />{label("enable")}</label>
       <p className="text-muted">{label("stopHint")}</p>
@@ -86,12 +91,12 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
       {snapshot?.enabled && <>
         <div className="flex flex-wrap gap-2">
           <button className={buttonClass} disabled={busy} onClick={() => configure()}>{label("setup")}</button>
-          <button className={buttonClass} disabled={busy} onClick={draft}>{label("start")}</button>
-          <button className={buttonClass} onClick={() => setHistory(!history)}>{label("history")}</button>
+          {!settingsOnly && <button className={buttonClass} disabled={busy} onClick={draft}>{label("start")}</button>}
+          {!settingsOnly && <button className={buttonClass} onClick={() => setHistory(!history)}>{label("history")}</button>}
           <button className={buttonClass} onClick={() => configure(true, undefined)}>{label("improve")}</button>
         </div>
         {snapshot.configDraft && !mode && <button className={buttonClass} onClick={() => configure()}>{label("draftReady")}</button>}
-        {snapshot.proposal && !mode && <div className="rounded border border-accent/30 p-3 space-y-2">
+        {!settingsOnly && snapshot.proposal && !mode && <div className="rounded border border-accent/30 p-3 space-y-2">
           <p>{label("proposal")} · {snapshot.proposal.goal}</p>
           <button className={buttonClass} onClick={draft}>{label("accept")}</button>{" "}<button className={buttonClass} onClick={() => void act({ type: "dismiss" })}>{label("dismiss")}</button>
         </div>}
@@ -103,7 +108,8 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
             let prompt = `Read this project and propose a harness configuration. Do not edit files, run commands, install tools or change permissions. Use existing documents and suggest reusable verification procedures. Explain the evidence, unknowns, and proposed changes in the conversation language. Return an optional fenced sudal-harness JSON block with {version:1,documents:string[],commands:string[],procedures:string[]}. Proposals are not approval to apply changes. Current configuration: ${JSON.stringify(snapshot.config)}. ${improve ? `Problem to prevent: ${problem}. Explain the missed check and suggest targeted improvements without adding unrelated rules.` : ""}`;
             setBusy(true); void (async () => {
               if (improve) {
-                const state = await window.sudal.chat.harness(tabId, { type: "improve", problem, taskId: task?.id });
+                const action: HarnessAction = { type: "improve", problem, taskId: task?.id };
+                const state = await (controller ? controller.dispatch(action) : window.sudal.chat.harness(tabId, action));
                 const id = state.improvements.at(-1)?.id;
                 setSnapshot(state); setImprovementId(undefined);
                 prompt += ` Include improvementId: ${JSON.stringify(id)} in the sudal-harness JSON object to associate this draft with this improvement.`;
@@ -123,7 +129,7 @@ export function HarnessPanel({ tabId, cwd }: { tabId: string; cwd: string }) {
             void act(mode === "edit" && task ? { type: "edit", taskId: task.id, criteria: items.map((item, index) => ({ ...item, id: task.criteria[index]?.id })) } : { type: "start", goal, criteria: items }).then(ok => { if (ok) { setMode(null); setSelected([]); } });
           }}>{label("save")}</button><button className={buttonClass} onClick={() => { setMode(null); setImprovementId(undefined); }}>{label("cancel")}</button></div>
         </div>}
-        {task && <div className="space-y-3">
+        {!settingsOnly && task && <div className="space-y-3">
           <div className="flex gap-2"><strong>{task.goal}</strong><button className={buttonClass} onClick={() => { setCriteria(task.criteria.map(item => item.description + " | " + item.method).join("\n")); setMode("edit"); }}>{label("edit")}</button></div>
           {!snapshot.revision && <p className="text-muted">{label("unknown")}</p>}
           <p className="text-muted">{label("select")}</p>
