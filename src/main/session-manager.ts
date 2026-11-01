@@ -1199,8 +1199,8 @@ export class SessionManager {
     if (command === "compact" || command === "review") {
       if (command === "compact" && arg) throw new MsgError("session.msg.codexControl.compactUsage");
       if (!this.canStart(tabId)) throw new MsgError("session.msg.codexControl.busy");
-      if (command === "review") {
-        const text = arg.trim() ? `/review ${arg.trim()}` : "/review";
+      {
+        const text = arg.trim() ? `/${command} ${arg.trim()}` : `/${command}`;
         const hadUser = this.hasUserMessage(s);
         this.record(s, { type: "user_message", ts: Date.now(), id: randomUUID(), text });
         if (!hadUser) this.deps.onMeta?.(tabId, { title: arg.trim() || text });

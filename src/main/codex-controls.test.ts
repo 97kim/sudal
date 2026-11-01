@@ -140,6 +140,11 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     assert.equal(turn.params.collaborationMode.settings.model,"fixture");
     assert.equal(turn.params.collaborationMode.settings.developer_instructions,null);
     await manager.codexControl("tab", "compact", ""); await idle();
+    const compactUsers = manager.events("tab").filter(e => e.type === "user_message" && e.text === "/compact");
+    assert.equal(compactUsers.length, 1, '수동 압축 명령을 사용자 메시지로 한 번 기록한다');
+    const usersBeforeInvalidCompact = manager.events("tab").filter(e => e.type === "user_message").length;
+    await assert.rejects(manager.codexControl("tab", "compact", "invalid"));
+    assert.equal(manager.events("tab").filter(e => e.type === "user_message").length, usersBeforeInvalidCompact, '거절된 압축 명령은 기록하지 않는다');
     await manager.codexControl("tab", "review", ""); await idle();
     assert.equal(requests().filter(r=>r.method==='turn/start').length,1);
     assert.equal(requests().find(r=>r.method==='thread/compact/start').params.threadId,'parent');
