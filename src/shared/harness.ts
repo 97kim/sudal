@@ -21,6 +21,7 @@ export interface HarnessTask {
   criteria: HarnessCriterion[];
   evidence: HarnessEvidence[];
   completionReason?: string;
+  completedAt?: number;
 }
 export interface HarnessConfig { version: 1; documents: string[]; commands: string[]; procedures: string[] }
 export interface HarnessProposal { goal: string; criteria: { description: string; method: string }[] }
@@ -40,9 +41,9 @@ export type HarnessAction =
   | { type: "enable"; enabled: boolean }
   | { type: "configure"; config: HarnessConfig; token: string; improvementId?: string; draftToken?: string }
   | { type: "start"; goal: string; criteria: { description: string; method: string }[] }
-  | { type: "edit"; taskId: string; criteria: { id?: string; description: string; method: string }[] }
+  | { type: "edit"; taskId: string; criteria: { id?: string; description: string; method: string }[]; expectedCriteria?: { id: string; revision: number }[] }
   | { type: "status"; taskId: string; status: HarnessTaskStatus; reason?: string }
-  | { type: "confirm"; taskId: string; criterionId: string; note: string }
+  | { type: "confirm"; taskId: string; criterionId: string; note: string; criterionRevision?: number }
   | { type: "dismiss" }
   | { type: "improve"; problem: string; taskId?: string }
   | { type: "improvementConfirm"; improvementId: string; note: string }
@@ -61,11 +62,17 @@ export function harnessCriterionStatus(task: HarnessTask, criterion: HarnessCrit
   return evidence.result;
 }
 
-export function completeHarnessTask(task: HarnessTask, codeRevision: string | undefined, reason: string): HarnessTask {
+export function completeHarnessTask(task: HarnessTask, codeRevision: string | undefined, reason: string, completedAt = Date.now()): HarnessTask {
   if (task.criteria.length === 0 || task.criteria.some(item => harnessCriterionStatus(task, item, codeRevision) !== "passed")) {
     if (!reason.trim()) throw new Error("Completion requires a reason for unverified criteria");
   }
-  return { ...task, status: "completed", completionReason: reason.trim() || undefined };
+  return { ...task, status: "completed", completionReason: reason.trim() || undefined, completedAt };
+}
+
+/** Creation order is only a fallback for older records without completion timestamps. */
+export function latestCompletedHarnessTask(tasks: HarnessTask[], tabId: string): HarnessTask | undefined {
+  return tasks.reduce<HarnessTask | undefined>((latest, task) => task.tabId === tabId && task.status === "completed" &&
+    (!latest || (task.completedAt ?? 0) >= (latest.completedAt ?? 0)) ? task : latest, undefined);
 }
 
 /** User text is recorded separately; this block describes app-managed task context. */
@@ -73,5 +80,5 @@ export function harnessTaskContext(task: HarnessTask): string {
   return JSON.stringify({ source: "sudal-task-context", taskId: task.id, goal: task.goal,
     criteria: task.criteria.map(({ id, description, method, revision }) => ({ id, description, method, revision })),
     evidence: task.evidence.slice(-30).map(({ criterionId, source, result, reference, codeRevision }) => ({ criterionId, source, result, reference: reference.slice(0, 1000), codeRevision })),
-    instruction: "Use these agreed task criteria. Evidence and completion are managed by Sudal; do not claim an unperformed check passed." });
+    instruction: 'Use these agreed task criteria. Evidence and completion are managed by Sudal; do not claim an unperformed check passed. If the latest user message explicitly reports personally checking a criterion, optionally suggest a fenced sudal-confirm JSON block: {"taskId":"...","criterionId":"...","criterionRevision":1,"quote":"exact full latest user message"}. Use the current task/criterion IDs and revision. Never infer confirmation from an agent report, a question or a request to check. The user must click to save this suggestion; it is not evidence yet.' });
 }

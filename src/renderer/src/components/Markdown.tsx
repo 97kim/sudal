@@ -16,6 +16,33 @@ import { relativeAny } from "@shared/any-path";
 import { loadMarkdownImage, markdownUrlTransform } from "../markdown-image";
 import { IS_WIN } from "../platform";
 import { useHistoryRowState } from "../hooks/useHistoryRowState";
+import { prepareVisualizeMarkdown } from "../visualize-ref";
+import { rehypeVisualizeRefs } from "../rehype-visualize";
+
+function VisualizeRef({ path, children }: { path: string; children?: ReactNode }) {
+  const { t } = useTranslation();
+  const { cwd } = useLocateFile();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = async () => {
+    if (!cwd || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.sudal.browser.previewUrl(cwd, path, true);
+      if (!result.ok) throw new Error(result.error);
+      if (!await window.sudal.browser.openExternal(result.url)) throw new Error(t("chat.markdown.previewFailed"));
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  return <span className="inline-flex max-w-full flex-col gap-1" data-visualize-ref={path}>
+    <button type="button" disabled={!cwd || busy} onClick={() => void open()} title={path}
+      className="inline-flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-sm text-fg hover:bg-panel-2 disabled:opacity-50">
+      <Icon name="externalLink" size={14} />{children || t("chat.markdown.openPreview")}
+    </button>
+    {error && <span role="alert" className="text-xs text-muted">{error}</span>}
+  </span>;
+}
 
 // ===== 답변 속 파일 참조("ProductByPoController.kt:63") → 에디터로 열기 =====
 // rehype 단계에서 모양이 파일 참조인 텍스트·인라인 코드에 data-file-* 를 달아 두고, FileRef 가 렌더될 때 main 의 file:locate 로
@@ -35,6 +62,7 @@ function rehypeFileRefs() {
     for (let i = 0; i < kids.length; i++) {
       const c = kids[i];
       if (c.type === "element") {
+        if (c.properties?.dataVisualizePath) continue;
         if (c.tagName === "pre" || c.tagName === "a") continue;
         if (c.tagName === "code") {
           // 인라인 코드 전체가 참조 하나면 code 자체를 링크로
@@ -187,6 +215,8 @@ function stripRef<T extends RefAttrs & { node?: unknown }>(props: T) {
 }
 
 function MdSpan(props: React.HTMLAttributes<HTMLSpanElement> & RefAttrs & { node?: unknown }) {
+  const preview = (props as Record<string, unknown>)["data-visualize-path"];
+  if (typeof preview === "string") return <VisualizeRef path={preview}>{props.children}</VisualizeRef>;
   const ref = refOf(props);
   const rest = stripRef(props);
   if (!ref) return <span {...rest} />;
@@ -297,6 +327,16 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
   const copy = () => void navigator.clipboard.writeText(code().replace(/\n$/, "")).then(() => setCopied(true), () => {});
   const btn =
     "flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-muted shadow-sm hover:text-fg";
+  // Harness controls live in the conversation; keep their structured payload inspectable without dominating the reply.
+  if (/\blanguage-sudal-(?:task|confirm)\b/.test(lang ?? "")) {
+    const readText = (node: ElementContent): string => node.type === "text" ? node.value : node.type === "element" ? node.children.map(readText).join("") : "";
+    const raw = (props.node as Element | undefined)?.children.map(readText).join("") ?? "";
+    try {
+      const data = JSON.parse(raw);
+      const valid = lang?.includes("sudal-task") ? typeof data?.goal === "string" && Array.isArray(data.criteria) : typeof data?.taskId === "string" && typeof data?.criterionId === "string" && typeof data?.quote === "string";
+      if (valid) return <details className="my-2 text-xs text-muted" data-harness-payload><summary>{t(lang?.includes("sudal-task") ? "chat.harnessFlow.proposalData" : "chat.harnessFlow.confirmationData")}</summary><pre>{children}</pre></details>;
+    } catch { /* Incomplete and malformed blocks remain visible as ordinary code. */ }
+  }
   return (
     <div className="group relative" {...(shell ? { "data-shell-block": "" } : {})}>
       <pre ref={ref} {...rest}>
@@ -405,7 +445,6 @@ function MdChatImg(props: React.ImgHTMLAttributes<HTMLImageElement> & { node?: u
 }
 
 const REMARK_PLUGINS: Options["remarkPlugins"] = [[remarkGfm, { singleTilde: false }]];
-const CHAT_REHYPE: Options["rehypePlugins"] = [rehypeHighlight, rehypeFileRefs];
 // 문서(README 등)는 HTML 도 그린다 — <p align>·<img width>·배지. 정리(sanitize)는 하이라이트 전에 둬야 hljs 클래스가 남는다.
 // 기본 정리는 href 의 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내므로 그 스킴만 더한다.
 const DOC_SANITIZE = { ...defaultSchema, protocols: { ...defaultSchema.protocols, href: [...(defaultSchema.protocols?.href ?? []), "file"] } };
@@ -416,18 +455,19 @@ const DOC_COMPONENTS: Options["components"] = { ...CHAT_COMPONENTS, img: MdImg }
 /** variant "doc": 파일 미리보기처럼 문서 한 편을 읽는 화면. 채팅보다 큰 제목·넉넉한 간격·읽기 좋은 폭(styles.css .md-doc). */
 export const Markdown = memo(function Markdown({ text, variant, base }: { text: string; variant?: "doc"; base?: DocBase }) {
   const doc = variant === "doc";
+  const prepared = doc ? { text, replacements: [] } : prepareVisualizeMarkdown(text);
   return (
     <DocBaseContext.Provider value={base ?? null}>
     <div className={doc ? "md md-doc" : "md"}>
       <ReactMarkdown
         // 물결표 하나는 취소선으로 보지 않는다 — "80~180px · 200~320px" 처럼 범위를 두 번 쓰면 그 사이가 줄 그어졌다. ~~두 개~~ 는 그대로 취소선.
         remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={doc ? DOC_REHYPE : CHAT_REHYPE}
+        rehypePlugins={doc ? DOC_REHYPE : [[rehypeVisualizeRefs, prepared.replacements], rehypeHighlight, rehypeFileRefs]}
         components={doc ? DOC_COMPONENTS : CHAT_COMPONENTS}
         // 기본 정리는 file: 을 지운다. 로컬 파일 링크는 MdLink 가 에디터로만 보내고 이동은 하지 않으므로 그 스킴만 남긴다.
         urlTransform={markdownUrlTransform}
       >
-        {text}
+        {prepared.text}
       </ReactMarkdown>
     </div>
     </DocBaseContext.Provider>

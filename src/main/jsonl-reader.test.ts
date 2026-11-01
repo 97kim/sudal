@@ -16,6 +16,7 @@ test("JSONL reads span chunks, keep UTF-8 and exact resume offsets, and defer un
     assert.deepEqual(records.map((r) => r.line), lines);
     assert.equal(records[0].end, Buffer.byteLength(lines[0] + "\r\n"));
     assert.equal(records[1].end, Buffer.byteLength(lines.slice(0, 2).join("\r\n") + "\r\n"));
+    assert.deepEqual([...readJsonl(file, true, records[0].end)].map(record => record.line), lines.slice(1));
     assert.deepEqual([...readJsonl(file, false)].map((r) => r.line), lines.slice(0, 2));
     const reader = readJsonl(file);
     reader.next();

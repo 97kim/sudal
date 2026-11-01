@@ -27,6 +27,7 @@ import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmA
 import { randomUUID } from "node:crypto";
 import { readJsonl } from "./jsonl-reader";
 import { createHistoryReplay, type SessionHistoryPage } from "@shared/session-history";
+import type { HistoryCheckpoint } from "./history-checkpoint";
 import {
   isUsageLimitText,
   USAGE_LIMIT_MAX_RETRIES,
@@ -189,7 +190,9 @@ function closeProviderSessions(tabId: string) {
 export interface SessionStore {
   appendEvent(tabId: string, event: ChatEvent): void;
   readEvents(tabId: string): ChatEvent[];
-  iterateEvents?(tabId: string): Iterable<ChatEvent>;
+  iterateEvents?(tabId: string, offset?: number): Iterable<ChatEvent>;
+  historyCheckpoint?(tabId: string): Promise<HistoryCheckpoint | null>;
+  currentHistoryCheckpoint?(tabId: string): HistoryCheckpoint | null;
   resetThread(tabId: string): void;
   /** 프롬프트 큐 영속화(선택). 없으면 큐는 메모리에만 산다. */
   savePromptQueue?(tabId: string, items: PendingPrompt[]): void;
@@ -1154,15 +1157,19 @@ export class SessionManager {
 
   private historyReads = new Map<string, symbol>();
 
-  async history(tabId: string, before?: string): Promise<SessionHistoryPage> {
+  async history(tabId: string, before?: string, includeCompacted = false, onSnapshot?: () => void): Promise<SessionHistoryPage> {
     const s = this.ensure(tabId);
-    this.restoreHistory(s);
     const token = Symbol();
     this.historyReads.set(tabId, token);
-    const events = this.deps.store?.iterateEvents?.(tabId) ?? this.events(tabId);
-    const replay = createHistoryReplay(before);
     let count = 0;
     try {
+      const checkpoint = !before && !includeCompacted ? await this.deps.store?.historyCheckpoint?.(tabId) : null;
+      if (this.sessions.get(tabId) !== s || this.historyReads.get(tabId) !== token) throw new MsgError("session.msg.sessionEnded");
+      this.restoreHistory(s);
+      const events = this.deps.store?.iterateEvents?.(tabId, checkpoint?.offset ?? 0) ?? this.events(tabId).slice();
+      const replay = createHistoryReplay(before, checkpoint?.state, includeCompacted, checkpoint?.loadedStart);
+      // Pair the sequence fence with the actual disk snapshot, after asynchronous cache preparation.
+      onSnapshot?.();
       for (const event of events) {
         replay.push(event);
         if (++count % 128 === 0) {
@@ -1338,11 +1345,14 @@ export class SessionManager {
   /** provider 가 압축을 못 할 때의 대비책: 지금까지를 요약해 같은 provider 의 새 세션으로 넘긴다. */
   compactFallback(tabId: string): SessionSnapshot {
     const s = this.ensure(tabId);
-    return this.switchProvider(tabId, {
+    const snapshot = this.switchProvider(tabId, {
       provider: s.provider,
       model: s.model,
       preserveContext: true,
     });
+    this.record(s, { type: "user_message", id: randomUUID(), ts: Date.now(), text: "/compact" });
+    this.record(s, { type: "compacted", ts: Date.now(), trigger: "manual" });
+    return snapshot;
   }
 
   /** 전환 모달 미리보기: 지금까지의 이벤트로 요약과 통계를 만든다. */
@@ -2020,7 +2030,9 @@ export class SessionManager {
   private restoreHistory(s: Session): void {
     if (s.historyRestored) return;
     s.historyRestored = true;
-    const events = this.deps.store?.iterateEvents?.(s.tabId) ?? this.deps.store?.readEvents(s.tabId) ?? s.events ?? [];
+    const checkpoint = this.deps.store?.currentHistoryCheckpoint?.(s.tabId);
+    const tail = this.deps.store?.iterateEvents?.(s.tabId, checkpoint?.offset ?? 0) ?? this.deps.store?.readEvents(s.tabId) ?? s.events ?? [];
+    const events = checkpoint ? (function* () { yield* checkpoint.restore; yield* tail; })() : tail;
     const tracked = (function* (manager: SessionManager) {
       for (const event of events) { manager.rememberEvent(s, event); yield event; }
     })(this);

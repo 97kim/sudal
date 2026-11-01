@@ -151,6 +151,11 @@ const api: SudalApi = {
   },
   chat: {
     harness: (tabId, action) => ipcRenderer.invoke(IPC.harness, tabId, action),
+    onHarnessChanged: listener => {
+      const handler = () => listener();
+      ipcRenderer.on(IPC.harnessChanged, handler);
+      return () => ipcRenderer.removeListener(IPC.harnessChanged, handler);
+    },
     send: (tabId: string, payload: ChatSendDto) =>
       ipcRenderer.invoke(IPC.chatSend, tabId, payload),
     abort: (tabId: string) => ipcRenderer.invoke(IPC.chatAbort, tabId),
@@ -179,7 +184,7 @@ const api: SudalApi = {
     fanoutAdopt: (tabId: string, fanoutId: string, variantTabId: string) => ipcRenderer.invoke(IPC.chatFanoutAdopt, tabId, fanoutId, variantTabId),
     fanoutCleanup: (tabId: string, fanoutId: string) => ipcRenderer.invoke(IPC.chatFanoutCleanup, tabId, fanoutId),
     events: (tabId: string) => ipcRenderer.invoke(IPC.chatEvents, tabId),
-    history: (tabId: string, before?: string) => ipcRenderer.invoke(IPC.chatHistory, tabId, before),
+    history: (tabId: string, before?: string, includeCompacted?: boolean) => ipcRenderer.invoke(IPC.chatHistory, tabId, before, includeCompacted),
     clear: (tabId: string) => ipcRenderer.invoke(IPC.chatClear, tabId),
     compact: (tabId: string, focus?: string) =>
       ipcRenderer.invoke(IPC.chatCompact, tabId, focus),
@@ -347,7 +352,7 @@ const api: SudalApi = {
   },
   browser: {
     openExternal: (url: string) => ipcRenderer.invoke(IPC.openExternal, url),
-    previewUrl: (cwd: string, path: string) => ipcRenderer.invoke(IPC.previewUrl, cwd, path),
+    previewUrl: (cwd: string, path: string, artifact?: boolean) => ipcRenderer.invoke(IPC.previewUrl, cwd, path, artifact),
     register: (tabId: string, webContentsId: number | null, url: string) =>
       ipcRenderer.send(IPC.browserRegister, tabId, webContentsId, url),
     favicon: (url: string) => ipcRenderer.invoke(IPC.browserFavicon, url),

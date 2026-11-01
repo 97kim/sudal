@@ -1,4 +1,4 @@
-import { HarnessPanel } from "../components/HarnessPanel";
+import { HarnessWorkspace } from "../components/HarnessWorkspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { intlLocale, type Locale } from "@shared/i18n/locale";
@@ -126,7 +126,9 @@ export function ChatView({
 }) {
   const { t } = useTranslation();
   const tabId = tab.id;
-  const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError } = useSession(tabId);
+  const [harnessConversationSlot, setHarnessConversationSlot] = useState<HTMLDivElement | null>(null);
+  const [harnessDetailSlot, setHarnessDetailSlot] = useState<HTMLDivElement | null>(null);
+  const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, compactBoundary, compactedExpanded, expandCompacted, collapseCompacted } = useSession(tabId);
   const [switching, setSwitching] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [commandPanel, setCommandPanel] = useState<{ name: string; data?: unknown; argument?: string } | null>(null);
@@ -372,7 +374,7 @@ export function ChatView({
       const r = await window.sudal.chat.compact(tabId);
       if (!r.ok) setAttachError(r.error);
       else if (r.config) setConfig(r.config);
-      // 네이티브 압축이면 compacted 이벤트가, 폴백이면 session_reset 이 게이지를 정리한다.
+      // 네이티브·요약 폴백 모두 compacted 이벤트가 게이지와 이전 대화 표시를 정리한다.
     } catch (e) {
       setAttachError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -995,10 +997,15 @@ export function ChatView({
               }
             />}
 
-            <HarnessPanel key={`${tabId}:${config?.cwd ?? ""}`} tabId={tabId} cwd={config?.cwd ?? ""} />
+            <HarnessWorkspace key={`${tabId}:${config?.cwd ?? ""}`} tabId={tabId} cwd={config?.cwd ?? ""} blocks={state.blocks} conversationSlot={harnessConversationSlot} detailSlot={harnessDetailSlot} />
             {feedback && <VerificationFeedbackPanel state={feedback} onStop={stopFeedback} />}
-            <div className="min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1">
               <MessageList
+                onHarnessSlot={setHarnessConversationSlot}
+                compactBoundary={compactBoundary}
+                compactedExpanded={compactedExpanded}
+                onExpandCompacted={expandCompacted}
+                onCollapseCompacted={collapseCompacted}
                 tabId={tabId}
                 blocks={state.blocks}
                 loading={!loaded}
@@ -1018,6 +1025,7 @@ export function ChatView({
                 sessionId={config?.sessionId ?? null}
                 queuedCount={config?.pendingPrompts.length ?? 0}
               />
+              <div ref={setHarnessDetailSlot} className="pointer-events-none absolute inset-y-0 right-0 z-30 flex max-w-full" data-harness-detail-slot />
             </div>
             </div>
 
