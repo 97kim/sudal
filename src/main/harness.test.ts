@@ -19,6 +19,29 @@ function fixture() {
 }
 const start = { type: "start" as const, goal: "Preserve history", criteria: [{ description: "History survives restart", method: "Integration test" }] };
 
+test("archived conversation confirmation keeps its original time and cannot overwrite current failure", async () => {
+  const { cwd, store, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0], criterion = task.criteria[0];
+  const action = { type: "confirm" as const, taskId: task.id, criterionId: criterion.id, criterionRevision: 1, note: "checked old code", confirmationBlockId: "source", afterBlockId: "current-message" };
+  const original = { type: "user_message" as const, id: "u", ts: 10, text: action.note };
+  await assert.rejects(service.mutate(cwd, "tab", action), /Invalid confirmation source/);
+  writeFileSync(join(cwd, "value.txt"), "new code");
+  const codeRevision = await verificationRevision(cwd);
+  await service.mutate(cwd, "tab", { type: "linkVerification", taskId: task.id, runId: "failure", criteria: [{ id: criterion.id, revision: 1 }] }, { type: "verify", runId: "failure", ts: 20, status: "failed", cwd, head: null, codeRevision, commands: [{ cmd: "check", status: "failed", exitCode: 1 }] });
+  let state = await service.mutate(cwd, "tab", action, undefined, original);
+  const archived = state.tasks[0].evidence.at(-1)!;
+  assert.equal(archived.timestamp, 10); assert.equal(archived.result, "unconfirmed"); assert.equal(archived.codeRevision, undefined);
+  assert.equal(archived.afterBlockId, "current-message"); assert.ok(archived.recordedAt! > 20);
+  assert.equal(harnessCriterionStatus(state.tasks[0], criterion, state.revision), "failed");
+  assert.equal(harnessCriterionStatus({ ...state.tasks[0], evidence: state.tasks[0].evidence.map(item => item.confirmationBlockId ? { ...item, timestamp: 20 } : item) }, criterion, state.revision), "failed", "equal timestamps must not let an archived quote mask a real failure");
+  await service.mutate(cwd, "tab", action, undefined, original);
+  state = await new HarnessService(store).snapshot(cwd, "tab");
+  assert.equal(state.tasks[0].evidence.length, 2); assert.equal(state.tasks[0].evidence[1].confirmationBlockId, "source");
+  state = await service.mutate(cwd, "tab", { type: "confirm", taskId: task.id, criterionId: criterion.id, criterionRevision: 1, note: "checked current code now" });
+  assert.equal(harnessCriterionStatus(state.tasks[0], criterion, state.revision), "passed");
+});
+
 test("existing verification linking validates its source, target revisions, ownership and duplicates", async () => {
   const { cwd, service } = fixture();
   await service.mutate(cwd, "tab", { type: "enable", enabled: true });
@@ -122,10 +145,11 @@ test("completion with failed and unconfirmed criteria preserves the reason and e
   await service.record("failed-run", "command", "failed", "expected true, received false");
   await assert.rejects(service.mutate(cwd, "tab", { type: "status", taskId: task.id, status: "completed" }), /reason/);
   const reason = "Known command failure and restart check deferred for a follow-up";
-  await service.mutate(cwd, "tab", { type: "status", taskId: task.id, status: "completed", reason });
+  await service.mutate(cwd, "tab", { type: "status", taskId: task.id, status: "completed", reason, afterBlockId: "completion-source" });
   const restored = await new HarnessService(store).snapshot(cwd, "tab"), completed = restored.tasks[0];
   assert.equal(completed.status, "completed");
   assert.equal(completed.completionReason, reason);
+  assert.equal(completed.completedAfterBlockId, "completion-source");
   assert.equal(completed.evidence.length, 1);
   assert.equal(completed.evidence[0].reference, "expected true, received false");
   assert.equal(harnessCriterionStatus(completed, completed.criteria[0], restored.revision), "failed");
@@ -323,12 +347,14 @@ test("evidence remains attached to original task even after another task starts"
 });
 
 test("suggestions cannot mutate tasks or configurations without user acceptance", async () => {
-  const { cwd, service } = fixture();
+  const { cwd, service, store } = fixture();
   await service.mutate(cwd, "tab", { type: "enable", enabled: true });
   const event = { type: "assistant_text" as const, blockId: "block", ts: 1, text: '```sudal-task\n' + JSON.stringify({ goal: start.goal, criteria: start.criteria }) + '\n```' };
   service.proposal(cwd, "tab", event);
   let state = await service.snapshot(cwd, "tab");
   assert.equal(state.tasks.length, 0); assert.equal(state.proposal?.goal, start.goal);
+  assert.equal(state.proposal?.blockId, "block");
+  assert.equal((await new HarnessService(store).snapshot(cwd, "tab")).proposal?.blockId, "block");
   await service.mutate(cwd, "tab", { type: "dismiss" }); service.proposal(cwd, "tab", event);
   assert.equal((await service.snapshot(cwd, "tab")).proposal, undefined);
   service.proposal(cwd, "tab", { ...event, text: '```sudal-task\n{"goal":"bad","criteria":[]}\n```' });

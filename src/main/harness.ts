@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { completeHarnessTask, harnessTaskContext, type HarnessAction, type HarnessImprovement, type HarnessConfig, type HarnessSnapshot, type HarnessTask } from "@shared/harness";
-import type { ChatEvent, VerifyEvent } from "@shared/chat-events";
+import type { ChatEvent, VerifyEvent, UserMessageEvent } from "@shared/chat-events";
 import { suggestForCwd } from "./verify";
 import { verificationRevision } from "./verification-revision";
 
@@ -78,18 +78,18 @@ export class HarnessService {
     return { enabled: state.enabled, project, config, configToken: token, configError, tasks: structuredClone(state.tasks), improvements: structuredClone(state.improvements ?? []), proposal: state.proposals[tabId], configDraft: state.configDraft, configDraftImprovementId: state.configDraftImprovementId, configDraftToken: this.draftToken(state), revision,
       inspection: candidates.map(path => ({ path, found: existsSync(join(project, path)) })) };
   }
-  async mutate(cwd: string, tabId: string, action: HarnessAction, verification?: VerifyEvent) {
+  async mutate(cwd: string, tabId: string, action: HarnessAction, verification?: VerifyEvent, confirmation?: UserMessageEvent) {
     const project = this.project(cwd);
     const previous = this.mutations.get(project) ?? Promise.resolve();
-    const pending = previous.catch(() => {}).then(() => this.mutateProject(cwd, tabId, action, verification));
+    const pending = previous.catch(() => {}).then(() => this.mutateProject(cwd, tabId, action, verification, confirmation));
     this.mutations.set(project, pending);
     try { return await pending; }
     finally { if (this.mutations.get(project) === pending) this.mutations.delete(project); }
   }
-  private async mutateProject(cwd: string, tabId: string, action: HarnessAction, verification?: VerifyEvent) {
+  private async mutateProject(cwd: string, tabId: string, action: HarnessAction, verification?: VerifyEvent, confirmation?: UserMessageEvent) {
     const project = this.project(cwd);
     let currentRevision: string | undefined;
-    if (action.type === "confirm" || (action.type === "status" && action.status === "completed")) {
+    if (action.type === "confirm" && !action.confirmationBlockId || (action.type === "status" && action.status === "completed")) {
       try { currentRevision = await verificationRevision(project); } catch { /* freshness unavailable */ }
     }
     const state = this.local(project);
@@ -138,7 +138,10 @@ export class HarnessService {
       if (!task) throw new Error("Task not found");
       if (action.type === "status") {
         if (task.tabId !== tabId && (action.status !== "active" || task.status === "active")) throw new Error("Task is active in another tab");
-        if (action.status === "completed") Object.assign(task, completeHarnessTask(task, currentRevision, action.reason ?? ""));
+        if (action.status === "completed") {
+          Object.assign(task, completeHarnessTask(task, currentRevision, action.reason ?? ""));
+          task.completedAfterBlockId = typeof action.afterBlockId === "string" && action.afterBlockId.length <= 500 ? action.afterBlockId : undefined;
+        }
         else {
           if (action.status !== "active" && action.status !== "paused") throw new Error("Invalid task status");
           if (action.status === "active") for (const other of state.tasks) if (other.tabId === tabId && other.id !== task.id && other.status === "active") other.status = "paused";
@@ -157,7 +160,12 @@ export class HarnessService {
           const criterion = task.criteria.find(item => item.id === action.criterionId);
           if (!criterion || !action.note.trim() || action.note.length > 4000) throw new Error("Confirmation requires a note");
           if (action.criterionRevision !== undefined && action.criterionRevision !== criterion.revision) throw new Error("Task criteria changed");
-          task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source: "user", result: "passed", reference: action.note, timestamp: Date.now(), codeRevision: currentRevision });
+          if (action.confirmationBlockId !== undefined && (!state.enabled || !action.confirmationBlockId || !Number.isInteger(action.criterionRevision) || !confirmation || confirmation.text !== action.note || !Number.isFinite(confirmation.ts))) throw new Error("Invalid confirmation source");
+          if (!action.confirmationBlockId || !task.evidence.some(item => item.confirmationBlockId === action.confirmationBlockId && item.criterionId === criterion.id && item.criterionRevision === criterion.revision)) {
+            task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source: "user", result: action.confirmationBlockId ? "unconfirmed" : "passed", reference: action.note,
+              timestamp: action.confirmationBlockId ? confirmation!.ts : Date.now(), codeRevision: action.confirmationBlockId ? undefined : currentRevision, confirmationBlockId: action.confirmationBlockId,
+              recordedAt: Date.now(), afterBlockId: typeof action.afterBlockId === "string" ? action.afterBlockId.slice(0, 500) : undefined });
+          }
         }
         if (action.type === "linkVerification") {
           if (!state.enabled || !verification || verification.runId !== action.runId || verification.partial || verification.status === "running" ||
@@ -168,7 +176,7 @@ export class HarnessService {
           for (const criterion of action.criteria) {
             if (task.evidence.some(item => item.source === "command" && item.reference === action.runId && item.criterionId === criterion.id && item.criterionRevision === criterion.revision)) continue;
             task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source: "command", result,
-              reference: action.runId, timestamp: verification.ts, codeRevision: verification.codeRevision });
+              reference: action.runId, timestamp: verification.ts, codeRevision: verification.codeRevision, recordedAt: Date.now(), afterBlockId: typeof action.afterBlockId === "string" ? action.afterBlockId.slice(0, 500) : undefined });
           }
         }
       }
@@ -223,7 +231,7 @@ export class HarnessService {
       const value = JSON.parse(block[1]);
       if (typeof value.goal !== "string" || !value.goal.trim() || value.goal.length > 8000) return;
       const criteria = this.criteria(value.criteria);
-      state.proposals[tabId] = { goal: value.goal, criteria }; state.seen[tabId] = [...(state.seen[tabId] ?? []).slice(-19), signature]; this.save(project);
+      state.proposals[tabId] = { goal: value.goal, criteria, blockId: event.blockId }; state.seen[tabId] = [...(state.seen[tabId] ?? []).slice(-19), signature]; this.save(project);
     } catch { /* malformed suggestions never affect chat */ }
   }
   async bind(cwd: string, tabId: string, taskId: string, ids: string[], key: string) {
@@ -274,7 +282,7 @@ export class HarnessService {
     const state = this.local(binding.project), task = state.tasks.find(task => task.id === binding.taskId); if (!task) return;
     const proofRevision = verifiedRevision === undefined ? binding.revision : verifiedRevision ?? undefined;
     for (const criterion of binding.criteria) task.evidence.push({ id: randomUUID(), criterionId: criterion.id, criterionRevision: criterion.revision, source,
-      result: proofRevision && proofRevision === revision ? result : "unconfirmed", reference, timestamp: Date.now(), codeRevision: proofRevision });
+      result: proofRevision && proofRevision === revision ? result : "unconfirmed", reference, timestamp: Date.now(), recordedAt: Date.now(), codeRevision: proofRevision });
     this.save(binding.project);
   }
 }

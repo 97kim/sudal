@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { clearReveal, onReveal, pendingReveal } from "../reveal";
 import type { ForkPoint, SessionStatus } from "@shared/chat-events";
@@ -74,7 +74,7 @@ export function MessageList({
   onLoadOlder?: () => Promise<void>;
   historyError?: string | null;
   onReload?: () => void;
-  onHarnessSlot?: (element: HTMLDivElement | null) => void;
+  onHarnessSlot?: (blockId: string, element: HTMLDivElement | null) => void;
   compactBoundary?: SessionHistoryPage["compactBoundary"];
   compactedExpanded?: boolean;
   onExpandCompacted?: () => Promise<void>;
@@ -335,8 +335,7 @@ export function MessageList({
           ))}
         <VirtualRows rows={groups.map((g, i) => ({ key: `${g.blocks[0].kind}:${g.blocks[0].id}`, gap: groups[i + 1]?.continued ? 4 : 20, estimate: g.kind === "assistant" ? 100 : 72 }))}
           container={containerRef} following={stickToBottom} api={virtualApi}
-          render={(index) => <HistoryRowContext.Provider value={`${tabId}:${groups[index].blocks[0].id}`}><Group group={groups[index]} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} /></HistoryRowContext.Provider>} />
-        <div ref={onHarnessSlot} className="empty:hidden" data-harness-conversation-slot />
+          render={(index) => <HistoryRowContext.Provider value={`${tabId}:${groups[index].blocks[0].id}`}><Group group={groups[index]} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} /><HarnessConversationSlot blockId={groups[index].blocks.at(-1)!.id} onSlot={onHarnessSlot} /></HistoryRowContext.Provider>} />
         {thinking && (
           <Thinking
             withAvatar={groups[groups.length - 1]?.kind !== "assistant"}
@@ -471,6 +470,11 @@ const ASSISTANT: Record<Provider, { label: string }> = {
 
 function Avatar({ provider }: { provider: Provider }) {
   return <ProviderLogo provider={provider} size={32} className="mt-0.5" />;
+}
+
+function HarnessConversationSlot({ blockId, onSlot }: { blockId: string; onSlot?: (id: string, element: HTMLDivElement | null) => void }) {
+  const ref = useCallback((element: HTMLDivElement | null) => onSlot?.(blockId, element), [blockId, onSlot]);
+  return <div ref={ref} className="content-indent space-y-4 empty:hidden [&:not(:empty)]:mt-4" data-harness-conversation-slot={blockId} />;
 }
 
 type GroupKind = "user" | "assistant" | "compacted" | "error" | "notice" | "review" | "verify" | "fanout" | "orchestration";

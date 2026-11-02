@@ -199,7 +199,13 @@ Project configuration uses `sudal.harness.json` with schema version 1. The IPC h
 
 `e2e/check-harness.cjs` runs a separate Electron profile, real Git project and verification command with a fake Codex App Server. Run after `yarn build`; it checks UI task creation, evidence ownership, context injection, unchanged user history, stale revisions and restored task history without accessing a real account.
 
+하네스 대화 카드는 메시지별 슬롯에 표시한다. 작업 제안은 저장된 원본 블록 ID, 완료 기록은 완료 시 저장한 직전 블록 ID를 사용한다. 해당 블록이 아직 로드되지 않았거나 압축되어 있으면 카드를 최신 대화 끝으로 옮기지 않는다. 확인·결과 연결 제안은 원본 응답 위치를 사용하고, 다음 사용자 메시지가 왔다는 이유로 미처리 제안을 제거하지 않는다.
+
+카드 변경 시에는 제안/완료 → 후속 대화 → 화면 재진입 → 앱 재시작 순서로 원본 위치와 중복 여부를 확인한다. 일반 창과 좁은 창에서 본문 시작선·오른쪽 경계·가로 넘침도 확인한다. `e2e/check-harness.cjs`에 이 흐름을 유지하며, 설정 화면은 활성화 스위치·구성 편집·취소·저장·복원을 함께 확인한다.
+
 ## 하네스 완료 조건 검증
+
+대화 확인 제안은 실제 탭 로그의 `assistant_text`와 직전 `user_message`를 서버에서 대조한다. 저장 시 원본 사용자 메시지 시각을 보존하고, 당시 코드 지문이 없는 확인은 `unconfirmed`로 기록한다. 현재 상태를 새로 확인하는 수동 확인과 구분하며, 오래된 기록을 늦게 저장해 최신 실패를 덮어쓰지 않는다. `recordedAt`/`afterBlockId`는 카드 위치만 정하고 상태 판정에는 쓰지 않는다. 동일 검증 결과의 정정 제안은 최신 유효 조건을 사용하며, 제안 닫기 상태는 원본 응답별로 구분한다.
 
 기존 구현을 다시 확인할 때는 아래 대응표를 기준으로 검증 범위를 선택한다. 모든 결과는 실행한 변경본과 함께 기록하고, 테스트 응답과 실계정 모델의 확인 결과를 구분한다.
 
