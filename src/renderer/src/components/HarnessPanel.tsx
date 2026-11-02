@@ -76,13 +76,13 @@ export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
   const buttonClass = "rounded border border-line px-2 py-1 text-xs hover:bg-panel-2 disabled:opacity-40";
   const field = (name: string, value: string, change: (value: string) => void) => <label className="grid gap-1">{label(name)}<textarea className={inputClass} rows={3} value={value} onChange={event => change(event.target.value)} /></label>;
   if (!cwd) return null;
-  return <section className="shrink-0 border-b border-line bg-panel text-xs" data-harness-panel>
+  return <section className={settingsOnly ? "text-xs" : "shrink-0 border-b border-line bg-panel text-xs"} data-harness-panel>
     {!settingsOnly && <div className="flex items-center gap-2 px-4 py-2">
       <button className="text-muted hover:text-fg" aria-expanded={open} onClick={() => setOpen(!open)}>{label("title")}</button>
       {snapshot?.enabled && task && <span className="truncate text-muted">{task.goal} · {task.criteria.filter(item => harnessCriterionStatus(task, item, snapshot.revision) === "passed").length}/{task.criteria.length}</span>}
       {snapshot?.enabled && !task && <span className="text-muted">{label(snapshot.proposal ? "proposal" : "empty")}</span>}
     </div>}
-    {open && <div className="max-h-[45vh] space-y-3 overflow-y-auto border-t border-line px-4 py-3">
+    {open && <div className={settingsOnly ? "space-y-4" : "max-h-[45vh] space-y-3 overflow-y-auto border-t border-line px-4 py-3"}>
       <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || !snapshot} checked={snapshot?.enabled ?? false} onChange={event => void act({ type: "enable", enabled: event.target.checked })} />{label("enable")}</label>
       <p className="text-muted">{label("stopHint")}</p>
       {!snapshot && !error && <p>{label("loading")}</p>}
