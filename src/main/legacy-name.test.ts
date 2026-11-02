@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -11,14 +11,24 @@ const write = (p: string, text = "x") => {
   fs.writeFileSync(p, text);
 };
 
-test("migrateUserData: 옛 폴더의 항목을 새 폴더로 옮기고 빈 옛 폴더를 지운다", () => {
+// SingletonLock symlinks are a Unix Electron artifact. On Windows, emulate
+// readlink's payload while still testing migration/cleanup on real files.
+function singletonLock(t: TestContext, dir: string, target: string) {
+  const file = path.join(dir, "SingletonLock");
+  if (process.platform !== "win32") { fs.symlinkSync(target, file); return; }
+  write(file, target);
+  const readlink = fs.readlinkSync;
+  t.mock.method(fs, "readlinkSync", (name: fs.PathLike) => name === file ? target : readlink(name));
+}
+
+test("migrateUserData: 옛 폴더의 항목을 새 폴더로 옮기고 빈 옛 폴더를 지운다", (t) => {
   const appData = tmp();
   const prev = path.join(appData, "Atelier");
   const next = path.join(appData, "Sudal");
   write(path.join(prev, "workspaces.json"), "{}");
   write(path.join(prev, "threads", "a.jsonl"), "t");
   write(path.join(prev, "control.json"));
-  fs.symlinkSync("host-999999", path.join(prev, "SingletonLock"));
+  singletonLock(t, prev, "host-999999");
   // Electron 이 먼저 만들어 둔 것은 덮어쓰지 않는다
   write(path.join(next, "Preferences"), "new");
   write(path.join(prev, "Preferences"), "old");
@@ -51,11 +61,11 @@ test("migrateUserData: userData 를 따로 지정해 띄웠으면 쓰던 데이�
   assert.equal(fs.existsSync(elsewhere), false);
 });
 
-test("migrateUserData: 옛 앱이 실행 중이면 옮기지 않고 알린다", () => {
+test("migrateUserData: 옛 앱이 실행 중이면 옮기지 않고 알린다", (t) => {
   const appData = tmp();
   const prev = path.join(appData, "Atelier");
   write(path.join(prev, "workspaces.json"), "{}");
-  fs.symlinkSync("host-4242", path.join(prev, "SingletonLock"));
+  singletonLock(t, prev, "host-4242");
   const r = migrateUserData(path.join(appData, "Sudal"), appData, (pid) => pid === 4242);
   assert.deepEqual(r, { kind: "running", from: prev });
   assert.equal(fs.existsSync(path.join(prev, "workspaces.json")), true);
@@ -75,10 +85,10 @@ test("migrateUserData: 더 옛 이름(ai-workbench)도 넘겨받고, 둘 다 있
   assert.equal(fs.readFileSync(path.join(both, "Sudal", "workspaces.json"), "utf8"), "recent");
 });
 
-test("legacyInstanceRunning: 잠금 파일이 없거나 pid 가 죽었으면 false", () => {
+test("legacyInstanceRunning: 잠금 파일이 없거나 pid 가 죽었으면 false", (t) => {
   const dir = tmp();
   assert.equal(legacyInstanceRunning(dir, () => true), false);
-  fs.symlinkSync("my-host.local-123", path.join(dir, "SingletonLock"));
+  singletonLock(t, dir, "my-host.local-123");
   assert.equal(legacyInstanceRunning(dir, () => false), false);
   assert.equal(legacyInstanceRunning(dir, (pid) => pid === 123), true);
 });

@@ -512,6 +512,12 @@ scanned incrementally after 2 seconds (using `claude` in a terminal usually show
 - `hooks/<session id>.jsonl` — hook log for the terminal-mode permission-waiting hint (deleted when the CLI exits)
 # Project harness
 
+The usual flow is **task proposal in chat → review criteria and start → implement and verify → Link verification result in chat → complete the task**. Review the commands and output, then select the criteria the result checks. Standalone Sudal verification cards can be linked too; use **Link an existing result** in the right-hand **Work** tab to find recent results. Checkboxes select verification or linking targets; checking one does not complete a criterion.
+
+When the AI proposes target criteria, their names appear on the card. Review them and click **Link verification result**, or use **Choose criteria this result checks** to change the targets. A proposal alone changes nothing. Proposals without a real result card or with outdated criterion revisions are not applied.
+
+New verification results record the code fingerprint when it matches before and after execution. Older results without that information remain unconfirmed; a different current fingerprint requires a recheck. Select criteria and use **Verify again and link** to check the current code and save the result against them. Linking keeps the original verification time and does not duplicate a result for the same criterion. Ordinary terminal output or an agent's pass claim never automatically passes criteria.
+
 Use the **Project settings** gear above the conversation to enable **Use harness** for a project. It is off by default. Disabling preserves configuration and task history; standalone verification and cross-review remain available. The top bar shows the current task and pending checks; open it to inspect criteria in a popover without moving the conversation.
 
 **Project configuration** discovers existing guidance, development documents and verification commands. Discovery does not confirm that a tool works or that guidance was applied. Review references, commands and procedures before saving `sudal.harness.json` at the project root. Share this file through Git; enablement, tasks and evidence remain in local app data. Concurrent configuration changes require reloading the draft.

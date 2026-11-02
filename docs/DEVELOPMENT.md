@@ -198,3 +198,23 @@ History loading uses `src/main/history-checkpoint.ts` to cache a checksummed pro
 Project configuration uses `sudal.harness.json` with schema version 1. The IPC harness endpoint derives the directory from the real tab, requires project trust for mutation, and never accepts a renderer-supplied path. Suggestions use optional `sudal-task` and `sudal-harness` fenced JSON; malformed output is ignored without altering chat history. Valid suggestions require explicit acceptance.
 
 `e2e/check-harness.cjs` runs a separate Electron profile, real Git project and verification command with a fake Codex App Server. Run after `yarn build`; it checks UI task creation, evidence ownership, context injection, unchanged user history, stale revisions and restored task history without accessing a real account.
+
+## 하네스 완료 조건 검증
+
+기존 구현을 다시 확인할 때는 아래 대응표를 기준으로 검증 범위를 선택한다. 모든 결과는 실행한 변경본과 함께 기록하고, 테스트 응답과 실계정 모델의 확인 결과를 구분한다.
+
+| 완료 조건 | 반복 가능한 확인 방법 |
+| --- | --- |
+| 프로젝트별 설정·활성화·보존 | `src/main/harness.test.ts`에서 같은 저장소 서비스를 사용하는 두 프로젝트의 설정·활성화·작업 분리와 서비스 재시작·비활성화 후 보존을 확인한다. UI E2E에서는 설정 폼 접기·재펼치기와 화면 재진입 후 구성을 확인한다. |
+| 제안 검토·수정·수락·거절 | 서비스 테스트에서 제안만으로 작업·구성이 바뀌지 않는지, 거절·잘못된 제안이 적용되지 않는지 확인한다. UI E2E에서 작업 제안 수락·조건 편집 및 오래된 편집 거부를 확인한다. |
+| 에이전트별 작업 맥락 | `src/main/session-task-context.test.ts`는 Claude·Codex·Antigravity의 공통 실행 경로에서 컨텍스트 생성 호출과 원본 사용자 기록 보존, 슬래시 명령 제외를 확인한다. 이 테스트는 런타임 준비를 모의 실패시키므로 실제 CLI 수신이나 모델의 지시 준수까지 증명하지 않는다. Codex UI E2E는 모의 App Server가 받은 프롬프트를 별도로 검사한다. |
+| 조건별 검증·리뷰·직접 확인 | 서비스·공통 모델 테스트에서 실행 결과의 작업/조건 소유권, 실패·미확인·코드 및 조건 변경 후 재확인을 확인한다. UI E2E에서는 실제 검증 명령, 확인 내용 오연결 차단, 자동 수정 중단과 재검증을 확인한다. |
+| 완료와 검증 상태 분리 | 공통 모델과 서비스 테스트에서 실패·미확인 조건이 있을 때 완료 사유를 요구하고, 완료 뒤에도 원래 상태·근거·사유가 재시작 후 남는지 확인한다. |
+| 재발 방지 구성 | 서비스 테스트와 UI E2E에서 문제 기록 → 초안 검토 → 취소 시 기존 구성 보존 → 해당 문제에 연결해 적용 → 별도 동작 확인 → 재진입 후 보존을 확인한다. 구성을 적용했다는 사실만으로 재발 방지가 검증됐다고 표시하지 않는다. |
+| UI 간섭·오류 복구 | UI E2E에서 초기 조회 실패·복구, 검증 모드와 다중 선택 유지, 상단 팝오버/검색/최대화 편집기의 Esc, 폼 보존, 저장 후 작업 화면 복귀를 확인한다. 분할 화면과 OS별 실기기 동작은 별도로 확인한다. |
+
+기본 검증은 `yarn typecheck`, `yarn test`, `yarn build` 순으로 실행한다. 빌드 후 `node e2e/check-harness.cjs`와 `node e2e/check-verification-feedback.cjs`로 하네스 및 검증 피드백 흐름을 확인한다. E2E는 별도 임시 사용자 데이터와 프로젝트를 사용하며 실제 사용자의 작업 근거나 프로젝트 설정을 수정하지 않는다.
+
+실계정 확인은 사용 가능한 각 CLI에서 일반 요청을 보내 활성 목표·조건을 참조하는지 확인하고, 입력한 원문이 대화 기록에 유지되는지 비교한다. 구독·설치·모델 한도로 실행하지 못한 제공자는 미검증으로 남긴다. 모의 테스트 통과를 실계정 확인으로 대신 기록하거나, 에이전트 보고를 사용자의 직접 확인으로 저장하지 않는다.
+
+Windows에서 `yarn` 실행 파일 없이 Corepack만 설치돼 있다면 위 명령을 `corepack yarn typecheck`, `corepack yarn test`, `corepack yarn build`로 실행한다. 테스트를 위해 관리자 권한이나 개발자 모드를 요구하지 않는다. 폴더 신뢰 테스트의 디렉터리 링크는 Windows에서 junction을 사용하며, Unix Electron의 `SingletonLock` 링크 형식은 Windows 테스트에서 `readlink` 응답으로 모의하고 실제 파일 이동·정리는 그대로 검사한다. 백그라운드 감시 테스트는 한글 경로 확인을 유지하되 임시 폴더 전체를 생성한 상위 경로에서 정리한다. 이는 로컬 Node.js 24.13.0에서 한글 하위 경로를 `rmSync`의 시작 경로로 지정할 때 재현된 네이티브 종료를 피하면서 임시 상위 폴더도 남기지 않기 위한 것이다.

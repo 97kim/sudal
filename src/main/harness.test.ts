@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { HarnessService } from "./harness";
 import { harnessCriterionStatus } from "@shared/harness";
+import type { VerifyEvent } from "@shared/chat-events";
+import { verificationRevision } from "./verification-revision";
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "sudal-harness-test-")), cwd = join(root, "project"), store = join(root, "store");
@@ -16,6 +18,119 @@ function fixture() {
   return { cwd, store, service: new HarnessService(store) };
 }
 const start = { type: "start" as const, goal: "Preserve history", criteria: [{ description: "History survives restart", method: "Integration test" }] };
+
+test("existing verification linking validates its source, target revisions, ownership and duplicates", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0];
+  const action = { type: "linkVerification" as const, taskId: task.id, runId: "run", criteria: task.criteria.map(({ id, revision }) => ({ id, revision })) };
+  const result: VerifyEvent = { type: "verify", ts: Date.now(), runId: "run", status: "passed", cwd, head: null, codeRevision: await verificationRevision(cwd), commands: [{ cmd: "check", status: "passed", exitCode: 0 }] };
+  await assert.rejects(service.mutate(cwd, "tab", action), /Invalid verification/);
+  await assert.rejects(service.mutate(cwd, "other", action, result), /not active/);
+  await assert.rejects(service.mutate(cwd, "tab", action, { ...result, status: "running" }), /Invalid verification/);
+  await assert.rejects(service.mutate(cwd, "tab", { ...action, criteria: [{ id: task.criteria[0].id, revision: 99 }] }, result), /criteria changed/);
+  let state = await service.mutate(cwd, "tab", action, result);
+  assert.equal(harnessCriterionStatus(state.tasks[0], state.tasks[0].criteria[0], state.revision), "passed");
+  state = await service.mutate(cwd, "tab", action, result);
+  assert.equal(state.tasks[0].evidence.length, 1);
+  await service.mutate(cwd, "tab", { type: "enable", enabled: false });
+  await assert.rejects(service.mutate(cwd, "tab", action, result), /Invalid verification/);
+});
+
+test("linking old results keeps original time and cannot turn unknown or changed code into a pass", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0];
+  const action = { type: "linkVerification" as const, taskId: task.id, runId: "legacy", criteria: task.criteria.map(({ id, revision }) => ({ id, revision })) };
+  const result: VerifyEvent = { type: "verify", ts: 10, runId: "legacy", status: "passed", cwd, head: null, commands: [{ cmd: "check", status: "passed", exitCode: 0 }] };
+  let state = await service.mutate(cwd, "tab", action, result);
+  assert.equal(harnessCriterionStatus(state.tasks[0], state.tasks[0].criteria[0], state.revision), "unconfirmed");
+  const codeRevision = await verificationRevision(cwd);
+  state = await service.mutate(cwd, "tab", { ...action, runId: "new-failure" }, { ...result, runId: "new-failure", ts: 30, codeRevision, status: "failed", commands: [{ cmd: "check", status: "failed", exitCode: 1 }] });
+  state = await service.mutate(cwd, "tab", { ...action, runId: "old-pass" }, { ...result, runId: "old-pass", ts: 20, codeRevision });
+  assert.equal(harnessCriterionStatus(state.tasks[0], state.tasks[0].criteria[0], state.revision), "failed", "linking an older pass must not overwrite newer failure");
+  writeFileSync(join(cwd, "value.txt"), "changed after verification");
+  state = await service.mutate(cwd, "tab", { ...action, runId: "changed" }, { ...result, runId: "changed", ts: 40, codeRevision });
+  assert.equal(harnessCriterionStatus(state.tasks[0], state.tasks[0].criteria[0], state.revision), "stale");
+});
+
+test("edited criteria can explicitly accept old results without older-revision evidence masking them", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0];
+  const criterion = task.criteria[0];
+  const result: VerifyEvent = { type: "verify", ts: 10, runId: "run", status: "passed", cwd, head: null, codeRevision: await verificationRevision(cwd), commands: [{ cmd: "check", status: "passed", exitCode: 0 }] };
+  const action = { type: "linkVerification" as const, taskId: task.id, runId: "run", criteria: [{ id: criterion.id, revision: 1 }] };
+  await service.mutate(cwd, "tab", action, result);
+  await service.mutate(cwd, "tab", { type: "confirm", taskId: task.id, criterionId: criterion.id, note: "Later confirmation" });
+  await service.mutate(cwd, "tab", { type: "edit", taskId: task.id, criteria: [{ ...criterion, description: "Clarified condition" }] });
+  const state = await service.mutate(cwd, "tab", { ...action, criteria: [{ id: criterion.id, revision: 2 }] }, result);
+  assert.equal(state.tasks[0].evidence.length, 3);
+  assert.equal(harnessCriterionStatus(state.tasks[0], state.tasks[0].criteria[0], state.revision), "passed");
+});
+
+test("bound verification with an explicitly unknown execution revision stays unconfirmed", async () => {
+  const { cwd, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", start)).tasks[0];
+  await service.bind(cwd, "tab", task.id, [task.criteria[0].id], "run");
+  await service.record("run", "command", "passed", "run", null);
+  const state = await service.snapshot(cwd, "tab");
+  assert.equal(state.tasks[0].evidence[0].codeRevision, undefined);
+  assert.equal(harnessCriterionStatus(state.tasks[0], state.tasks[0].criteria[0], state.revision), "unconfirmed");
+});
+
+test("project configuration and enablement remain isolated across restart and disable", async () => {
+  const { cwd, store, service } = fixture(), other = join(cwd, "..", "other-project");
+  mkdirSync(other);
+  const config = { version: 1 as const, documents: ["README.md"], commands: ["node check.cjs"], procedures: ["Check restart before completion"] };
+  let state = await service.mutate(cwd, "first", { type: "enable", enabled: true });
+  await service.mutate(cwd, "first", { type: "configure", token: state.configToken, config });
+  const task = (await service.mutate(cwd, "first", start)).tasks[0];
+  const untouched = await service.snapshot(other, "second");
+  assert.equal(untouched.enabled, false);
+  assert.equal(untouched.tasks.length, 0);
+  assert.notDeepEqual(untouched.config, config);
+  const otherConfig = { version: 1 as const, documents: [], commands: [], procedures: ["Different project procedure"] };
+  await service.mutate(other, "second", { type: "configure", token: untouched.configToken, config: otherConfig });
+  await service.mutate(other, "second", { type: "enable", enabled: true });
+  const restored = new HarnessService(store);
+  state = await restored.snapshot(cwd, "first");
+  assert.equal(state.enabled, true);
+  assert.deepEqual(state.config, config);
+  assert.equal(state.tasks[0].id, task.id);
+  await restored.mutate(cwd, "first", { type: "enable", enabled: false });
+  const restarted = new HarnessService(store);
+  const disabled = await restarted.snapshot(cwd, "first"), independent = await restarted.snapshot(other, "second");
+  assert.equal(disabled.enabled, false);
+  assert.deepEqual(disabled.config, config);
+  assert.equal(disabled.tasks[0].id, task.id);
+  assert.equal(restarted.context(cwd, "first"), "");
+  assert.equal(independent.enabled, true);
+  assert.deepEqual(independent.config, otherConfig);
+  assert.equal(independent.tasks.length, 0);
+});
+
+test("completion with failed and unconfirmed criteria preserves the reason and evidence after restart", async () => {
+  const { cwd, store, service } = fixture();
+  await service.mutate(cwd, "tab", { type: "enable", enabled: true });
+  const task = (await service.mutate(cwd, "tab", { ...start, criteria: [
+    { description: "Command passes", method: "Run check" },
+    { description: "Restart checked", method: "Manual restart" },
+  ] })).tasks[0];
+  await service.bind(cwd, "tab", task.id, [task.criteria[0].id], "failed-run");
+  await service.record("failed-run", "command", "failed", "expected true, received false");
+  await assert.rejects(service.mutate(cwd, "tab", { type: "status", taskId: task.id, status: "completed" }), /reason/);
+  const reason = "Known command failure and restart check deferred for a follow-up";
+  await service.mutate(cwd, "tab", { type: "status", taskId: task.id, status: "completed", reason });
+  const restored = await new HarnessService(store).snapshot(cwd, "tab"), completed = restored.tasks[0];
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.completionReason, reason);
+  assert.equal(completed.evidence.length, 1);
+  assert.equal(completed.evidence[0].reference, "expected true, received false");
+  assert.equal(harnessCriterionStatus(completed, completed.criteria[0], restored.revision), "failed");
+  assert.equal(harnessCriterionStatus(completed, completed.criteria[1], restored.revision), "unconfirmed");
+});
 
 test("stale editors and confirmation drafts cannot overwrite newer criteria", async () => {
   const { cwd, service } = fixture();

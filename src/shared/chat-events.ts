@@ -242,6 +242,8 @@ export interface VerifyEvent extends Base {
   cwd: string;
   /** 실행 시점의 HEAD. 레포가 아니면 null. dirty = 커밋 안 된 변경이 있었다. */
   head: { sha: string; branch: string | null; dirty: boolean } | null;
+  /** Finished run with matching working tree fingerprints before and after execution. */
+  codeRevision?: string;
   commands: VerifyCommandResult[];
   /** 출력 스트리밍 등 중간 상태 — 기록하지 않는다. */
   partial?: boolean;

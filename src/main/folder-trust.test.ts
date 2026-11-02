@@ -83,7 +83,7 @@ test("folder-trust: 신뢰된 폴더 아래 저장소는 .git 이 깨졌거나 �
   fs.writeFileSync(path.join(broken, ".git", "config"), "[[[ 깨진 설정");
   const linked = path.join(t.base, "plain", "linked");
   fs.mkdirSync(linked);
-  fs.symlinkSync(path.join(t.repo, ".git"), path.join(linked, ".git"));
+  fs.symlinkSync(path.join(t.repo, ".git"), path.join(linked, ".git"), process.platform === "win32" ? "junction" : "dir");
   t.cliTrust(path.join(t.base, "plain"));
   initFolderTrust(t.sudal, t.cli);
   assert.equal(await isFolderTrusted(broken), false);

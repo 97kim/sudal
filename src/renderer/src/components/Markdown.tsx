@@ -328,13 +328,13 @@ function MdPre(props: React.HTMLAttributes<HTMLPreElement> & { node?: unknown })
   const btn =
     "flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-muted shadow-sm hover:text-fg";
   // Harness controls live in the conversation; keep their structured payload inspectable without dominating the reply.
-  if (/\blanguage-sudal-(?:task|confirm)\b/.test(lang ?? "")) {
+  if (/\blanguage-sudal-(?:task|confirm|evidence)\b/.test(lang ?? "")) {
     const readText = (node: ElementContent): string => node.type === "text" ? node.value : node.type === "element" ? node.children.map(readText).join("") : "";
     const raw = (props.node as Element | undefined)?.children.map(readText).join("") ?? "";
     try {
       const data = JSON.parse(raw);
-      const valid = lang?.includes("sudal-task") ? typeof data?.goal === "string" && Array.isArray(data.criteria) : typeof data?.taskId === "string" && typeof data?.criterionId === "string" && typeof data?.quote === "string";
-      if (valid) return <details className="my-2 text-xs text-muted" data-harness-payload><summary>{t(lang?.includes("sudal-task") ? "chat.harnessFlow.proposalData" : "chat.harnessFlow.confirmationData")}</summary><pre>{children}</pre></details>;
+      const valid = lang?.includes("sudal-task") ? typeof data?.goal === "string" && Array.isArray(data.criteria) : lang?.includes("sudal-evidence") ? typeof data?.taskId === "string" && typeof data?.runId === "string" && Array.isArray(data.criteria) : typeof data?.taskId === "string" && typeof data?.criterionId === "string" && typeof data?.quote === "string";
+      if (valid) return <details className="my-2 text-xs text-muted" data-harness-payload><summary>{t(lang?.includes("sudal-task") ? "chat.harnessFlow.proposalData" : lang?.includes("sudal-evidence") ? "chat.harnessFlow.verificationLinkData" : "chat.harnessFlow.confirmationData")}</summary><pre>{children}</pre></details>;
     } catch { /* Incomplete and malformed blocks remain visible as ordinary code. */ }
   }
   return (

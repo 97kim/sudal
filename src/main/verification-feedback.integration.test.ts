@@ -28,7 +28,7 @@ function project() {
   return { dir, cleanup };
 }
 
-test("실제 명령 실패 → 진단 전달 → 파일 수정 → 같은 명령 통과와 상태 복원을 확인한다", { timeout: 15000 }, async () => {
+test("실제 명령 실패 → 진단 전달 → 파일 수정 → 같은 명령 통과와 상태 복원을 확인한다", { timeout: 45000 }, async () => {
   const { dir, cleanup } = project();
   const events: VerifyEvent[] = [];
   const store = new VerificationFeedbackStore(join(dir, "state"));
@@ -59,7 +59,9 @@ test("실제 명령 실패 → 진단 전달 → 파일 수정 → 같은 명령
   });
   try {
     assert.equal(runner.start("tab", { commands: ["node check.cjs"], maxAttempts: 2 }).ok, true);
-    const end = Date.now() + 10000;
+    // Real verification now fingerprints before and after both runs; allow Windows
+    // process startup under the full parallel suite without dropping assertions.
+    const end = Date.now() + 30000;
     while (runner.active("tab") && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(runner.snapshot("tab")?.phase, "passed", JSON.stringify(runner.snapshot("tab")));
     assert.deepEqual(events.map(event => event.status), ["failed", "passed"]);

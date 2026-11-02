@@ -4,6 +4,13 @@ import type { DeepPartial } from "../types";
 export const chat: DeepPartial<typeof ko> = {
   harnessFlow: {
     criteriaTitle: "Completion criteria",
+    linkResult: "Link verification result", existingResult: "Link an existing result", chooseLinkCriteria: "Choose criteria this result checks",
+    linkHint: "This verification ran in the conversation. Choose the criteria it checks to save it as evidence. Criteria do not change until you link the result.",
+    noLinkResults: "No completed verification results in the loaded conversation.", resultOutput: "View verification output", changeResult: "Choose another result",
+    linkStaleHint: "We cannot confirm this result matches the current code. Linking it will not mark criteria as passed. Use ‘Verify again and link’ to check the current code.",
+    alreadyLinked: "Linked", rerunAndLink: "Verify again and link",
+    linkProposalHint: "The AI suggests linking this result to these criteria. Review them before linking.", verificationLinkData: "Verification link proposal data",
+    resultPassed: "Verification passed", resultFailed: "Verification failed", resultAborted: "Verification aborted",
     busy: "Another task request is being processed. Try again when it finishes.",
     suggestPrompt: "Propose completion criteria and how to check them for this task: {{goal}}\nDo not implement or run commands yet. Wait until I review the criteria and start the task.",
     criteriaChanged: "The task or its criteria changed. Reopen the editor to review the current criteria.",
@@ -19,7 +26,7 @@ export const chat: DeepPartial<typeof ko> = {
     evidenceKept: "Evidence has been kept in task history.", completionRecord: "View completed task", checkCriteria: "Choose criteria to verify",
     suggestCriteria: "Ask AI to propose criteria", criteriaHint: "Describe each criterion and how to check it. Link evidence after checking.",
     criterionNumber: "Criterion {{count}}", methodPlaceholder: "For example: restart the app / yarn typecheck",
-    remove: "Remove criterion", addCriterion: "Add criterion", selected: "{{count}} criteria selected", selectionHint: "Select criteria for command verification. Open one criterion to record a manual check.",
+    remove: "Remove criterion", addCriterion: "Add criterion", selected: "{{count}} criteria selected", selectionHint: "Select criteria for command verification.", evidenceSelection: "Select a criterion to view its linked evidence.",
     notePlaceholder: "Describe the behavior and result you actually checked.", commandHint: "Results are linked only to selected criteria. Review commands before running them.",
     runCommands: "Run {{count}} verification commands", noEvidence: "No evidence saved yet.", finishWithReason: "Complete with an explanation", noHistory: "No paused or completed tasks yet.",
   },

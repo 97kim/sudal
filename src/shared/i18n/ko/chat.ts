@@ -2,6 +2,13 @@
 export const chat = {
   harnessFlow: {
     criteriaTitle: "완료 조건",
+    linkResult: "검증 결과 연결", existingResult: "기존 검증 결과 연결", chooseLinkCriteria: "이 결과로 확인할 조건 선택",
+    linkHint: "대화에서 실행한 검증 결과입니다. 이 결과가 확인하는 조건을 선택해 근거로 연결하세요. 연결 전에는 조건 상태가 바뀌지 않습니다.",
+    noLinkResults: "현재 불러온 대화에 완료된 검증 결과가 없습니다.", resultOutput: "검증 출력 보기", changeResult: "다른 결과 선택",
+    linkStaleHint: "검증 당시와 현재 코드가 같은지 확인할 수 없습니다. 연결해도 확인됨으로 처리하지 않습니다. 현재 코드로 확인하려면 ‘다시 검증하고 연결’을 누르세요.",
+    alreadyLinked: "연결됨", rerunAndLink: "다시 검증하고 연결",
+    linkProposalHint: "AI가 이 결과를 다음 조건에 연결하도록 제안했습니다. 조건을 확인한 뒤 연결하세요.", verificationLinkData: "검증 결과 연결 제안 데이터",
+    resultPassed: "검증 통과", resultFailed: "검증 실패", resultAborted: "검증 중단",
     busy: "다른 작업 환경 요청을 처리 중입니다. 완료 후 다시 시도하세요.",
     suggestPrompt: "다음 작업의 완료 조건과 확인 방법을 제안해 줘: {{goal}}\n아직 구현하거나 명령을 실행하지 말고, 내가 조건을 확인하고 시작할 때까지 기다려 줘.",
     criteriaChanged: "작업이나 완료 조건이 변경됐습니다. 편집을 다시 열어 현재 조건을 확인하세요.",
@@ -17,7 +24,7 @@ export const chat = {
     evidenceKept: "확인한 근거를 작업 기록에 보관했어요.", completionRecord: "완료 기록 보기", checkCriteria: "검증할 조건 선택",
     suggestCriteria: "AI에 완료 조건 제안받기", criteriaHint: "완료 조건과 확인 방법을 따로 적어 주세요. 실제 확인 후 근거를 연결합니다.",
     criterionNumber: "완료 조건 {{count}}", methodPlaceholder: "예: 앱 재시작 후 확인 / yarn typecheck",
-    remove: "조건 삭제", addCriterion: "조건 추가", selected: "{{count}}개 조건 선택됨", selectionHint: "명령으로 검증할 조건을 선택하세요. 직접 확인은 조건 하나를 눌러 기록합니다.",
+    remove: "조건 삭제", addCriterion: "조건 추가", selected: "{{count}}개 조건 선택됨", selectionHint: "명령으로 검증할 조건을 선택하세요.", evidenceSelection: "조건을 선택하면 연결된 확인 근거를 볼 수 있습니다.",
     notePlaceholder: "실제로 확인한 동작과 결과를 적어 주세요.", commandHint: "실행 결과는 선택한 조건에만 연결됩니다. 명령 실행 전 내용을 확인해 주세요.",
     runCommands: "명령 검증 {{count}}개 실행", noEvidence: "아직 저장된 근거가 없습니다.", finishWithReason: "미확인 사유를 남기고 완료", noHistory: "보류하거나 완료한 작업이 없습니다.",
   },
