@@ -1,6 +1,7 @@
 // chat 영역의 한국어 문구.
 export const chat = {
   harnessFlow: {
+    criteriaTitle: "완료 조건",
     busy: "다른 작업 환경 요청을 처리 중입니다. 완료 후 다시 시도하세요.",
     suggestPrompt: "다음 작업의 완료 조건과 확인 방법을 제안해 줘: {{goal}}\n아직 구현하거나 명령을 실행하지 말고, 내가 조건을 확인하고 시작할 때까지 기다려 줘.",
     criteriaChanged: "작업이나 완료 조건이 변경됐습니다. 편집을 다시 열어 현재 조건을 확인하세요.",

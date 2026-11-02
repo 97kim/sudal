@@ -3,7 +3,7 @@ import type { DeepPartial } from "../types";
 
 export const panel: DeepPartial<typeof ko> = {
   right: {
-    tabs: { context: "Context", files: "Files" },
+    tabs: { context: "Context", files: "Files", task: "Work" },
     expand: "Expand {{name}}",
     resize: "Drag to resize",
     collapse: "Collapse panel",

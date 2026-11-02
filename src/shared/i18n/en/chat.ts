@@ -3,6 +3,7 @@ import type { DeepPartial } from "../types";
 
 export const chat: DeepPartial<typeof ko> = {
   harnessFlow: {
+    criteriaTitle: "Completion criteria",
     busy: "Another task request is being processed. Try again when it finishes.",
     suggestPrompt: "Propose completion criteria and how to check them for this task: {{goal}}\nDo not implement or run commands yet. Wait until I review the criteria and start the task.",
     criteriaChanged: "The task or its criteria changed. Reopen the editor to review the current criteria.",

@@ -128,6 +128,10 @@ export function ChatView({
   const tabId = tab.id;
   const [harnessConversationSlot, setHarnessConversationSlot] = useState<HTMLDivElement | null>(null);
   const [harnessDetailSlot, setHarnessDetailSlot] = useState<HTMLDivElement | null>(null);
+  const [harnessPanelRequest, setHarnessPanelRequest] = useState(0);
+  const [harnessContextRequest, setHarnessContextRequest] = useState(0);
+  const [harnessDetailActive, setHarnessDetailActive] = useState(false);
+  const [harnessHomeRequest, setHarnessHomeRequest] = useState(0);
   const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, compactBoundary, compactedExpanded, expandCompacted, collapseCompacted } = useSession(tabId);
   const [switching, setSwitching] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -997,7 +1001,7 @@ export function ChatView({
               }
             />}
 
-            <HarnessWorkspace key={`${tabId}:${config?.cwd ?? ""}`} tabId={tabId} cwd={config?.cwd ?? ""} blocks={state.blocks} conversationSlot={harnessConversationSlot} detailSlot={harnessDetailSlot} />
+            <HarnessWorkspace key={`${tabId}:${config?.cwd ?? ""}`} tabId={tabId} cwd={config?.cwd ?? ""} blocks={state.blocks} conversationSlot={harnessConversationSlot} detailSlot={harnessDetailSlot} detailActive={harnessDetailActive && !editorMaximized} homeRequest={harnessHomeRequest} onOpenDetails={() => setHarnessPanelRequest(n => n + 1)} onCloseDetails={() => setHarnessContextRequest(n => n + 1)} />
             {feedback && <VerificationFeedbackPanel state={feedback} onStop={stopFeedback} />}
             <div className="relative min-h-0 flex-1">
               <MessageList
@@ -1025,7 +1029,6 @@ export function ChatView({
                 sessionId={config?.sessionId ?? null}
                 queuedCount={config?.pendingPrompts.length ?? 0}
               />
-              <div ref={setHarnessDetailSlot} className="pointer-events-none absolute inset-y-0 right-0 z-30 flex max-w-full" data-harness-detail-slot />
             </div>
             </div>
 
@@ -1243,6 +1246,12 @@ export function ChatView({
           <div className={editorMaximized ? "hidden" : "contents"} data-right-panel-wrap>
           <RightPanel
             cwd={cwd}
+            taskRequest={harnessPanelRequest}
+            contextRequest={harnessContextRequest}
+            onTaskActiveChange={setHarnessDetailActive}
+            onTaskTabSelected={() => setHarnessHomeRequest(n => n + 1)}
+            visible={!editorMaximized}
+            task={<div ref={setHarnessDetailSlot} className="h-full min-h-0" data-harness-detail-slot />}
             context={
               <ContextPanel
                 state={state}

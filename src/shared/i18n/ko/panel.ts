@@ -2,7 +2,7 @@
 // `_one`/`_other` 는 개수에 따라 영어 문장이 달라지는 문구다(한국어는 둘이 같다).
 export const panel = {
   right: {
-    tabs: { context: "컨텍스트", files: "파일" },
+    tabs: { context: "컨텍스트", files: "파일", task: "작업" },
     expand: "{{name}} 펼치기",
     resize: "드래그해서 너비 조절",
     collapse: "패널 접기",
