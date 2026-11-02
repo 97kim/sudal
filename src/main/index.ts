@@ -1835,7 +1835,7 @@ function bootstrap() {
       if (harnessCwd && harness) {
         try { harness.proposal(harnessCwd, tabId, event); } catch { /* diagnostics must not break a provider stream */ }
         if (event.type === "verify" && event.status !== "running" && !event.partial)
-          void harness.record(event.runId, "command", event.status === "passed" ? "passed" : event.status === "failed" ? "failed" : "unconfirmed", event.runId).then(() => sendAll(IPC.harnessChanged)).catch(() => {});
+          void harness.record(event.runId, "command", event.status === "passed" ? "passed" : event.status === "failed" ? "failed" : "unconfirmed", event.runId, event.codeRevision ?? null).then(() => sendAll(IPC.harnessChanged)).catch(() => {});
         if (event.type === "review" && event.status !== "requested")
           void harness.record(event.reviewTabId, "review", event.status === "failed" ? "failed" : "unconfirmed", event.reviewTabId).then(() => sendAll(IPC.harnessChanged)).catch(() => {});
       }
@@ -2244,6 +2244,20 @@ function registerIpc() {
     if (action.type === "snapshot") return harness.snapshot(cwd, tabId);
     if (!await isFolderTrusted(cwd)) throw new Error("Project must be trusted before changing harness settings");
     if (sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+    if (action.type === "linkVerification") {
+      if (typeof action.runId !== "string" || action.runId.length > 200) throw new Error("Invalid verification evidence");
+      let verification: VerifyEvent | undefined, count = 0;
+      for (const event of store.iterateEvents(tabId)) {
+        if (event.type === "verify" && event.runId === action.runId && !event.partial) verification = event;
+        if (++count % 128 === 0) await new Promise<void>(resolve => setImmediate(resolve));
+      }
+      if (!workspaces.tab(tabId)?.open || sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+      if (!await isFolderTrusted(cwd)) throw new Error("Project must be trusted before linking evidence");
+      if (!workspaces.tab(tabId)?.open || sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+      const state = await harness.mutate(cwd, tabId, action, verification);
+      sendAll(IPC.harnessChanged);
+      return state;
+    }
     if (action.type === "enable" && !action.enabled) {
       for (const other of workspaces.state().model.tabs) {
         const path = workspaces.resolveConfig(other.id)?.cwd;

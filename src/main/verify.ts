@@ -11,6 +11,7 @@ import { sanitizeCliEnv } from "./cli-env";
 import { appMsg, mt } from "./i18n";
 import { IS_WIN, killProcessTree } from "./win-proc";
 import { sameCwdOrNull } from "@shared/any-path";
+import { verificationRevision } from "./verification-revision";
 
 export interface VerifyRunOptions {
   tabId: string;
@@ -28,6 +29,9 @@ interface Run {
   child: ChildProcess | null;
   aborted: boolean;
   done: Promise<void>;
+  startRevision?: string;
+  codeRevision?: string;
+  revisionAbort: AbortController;
 }
 
 /** 진행 중 출력 스트리밍(partial) 을 화면에 흘리는 간격. */
@@ -99,6 +103,7 @@ export class VerifyRunner {
       child: null,
       aborted: false,
       done: Promise.resolve(),
+      revisionAbort: new AbortController(),
     };
     // 자리를 먼저 잡는다 — 아래 await 동안 같은 탭의 두 번째 요청이 들어와도 중복 검사에 걸리게
     this.runs.set(runId, run);
@@ -106,6 +111,9 @@ export class VerifyRunner {
       run.head = await gitHead(o.cwd, env);
     } catch {
       run.head = null;
+    }
+    if (!run.aborted) {
+      try { run.startRevision = await verificationRevision(o.cwd, run.revisionAbort.signal); } catch { /* unknown freshness */ }
     }
     if (run.aborted) {
       this.runs.delete(runId);
@@ -122,6 +130,7 @@ export class VerifyRunner {
     const run = runId ? this.runs.get(runId) : undefined;
     if (!run) return false;
     run.aborted = true;
+    run.revisionAbort.abort();
     this.killTree(run.child);
     return true;
   }
@@ -130,6 +139,7 @@ export class VerifyRunner {
   dispose() {
     for (const r of this.runs.values()) {
       r.aborted = true;
+      r.revisionAbort.abort();
       this.killTree(r.child);
     }
   }
@@ -159,6 +169,7 @@ export class VerifyRunner {
       status,
       cwd: run.cwd,
       head: run.head,
+      ...(run.codeRevision ? { codeRevision: run.codeRevision } : {}),
       commands: run.commands.map((c) => ({ ...c })),
       ...(partial ? { partial: true } : {}),
     });
@@ -195,6 +206,13 @@ export class VerifyRunner {
         break;
       }
     }
+    if (run.startRevision && !run.aborted) {
+      try {
+        const after = await verificationRevision(run.cwd, run.revisionAbort.signal);
+        if (after === run.startRevision && !run.aborted) run.codeRevision = after;
+      } catch { /* missing fingerprint must not turn into verified evidence */ }
+    }
+    if (run.aborted && run.commands.at(-1)?.status === "passed") run.commands.at(-1)!.status = "aborted";
     this.emit(run, false);
   }
 

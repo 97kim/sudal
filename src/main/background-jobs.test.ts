@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { BackgroundJobWatcher } from "./background-jobs";
 import { jobRunningLabel, jobsSummaryLabel, mergeJobs, parseBackgroundJob, type BackgroundJobDto } from "@shared/background-jobs";
 import { createI18n } from "@shared/i18n";
@@ -111,7 +111,8 @@ test("BackgroundJobWatcher: 시작 때 이미 끝난 작업은 알리지 않고,
 
 test("BackgroundJobWatcher: 시작 때 없던 디렉토리에 나중에 생긴 작업도 잡는다", async (t) => {
   // 감시자는 없는 디렉토리에 못 붙는다 — 주기적으로 다시 읽지 않으면 영영 못 본다(e2e 에서 실제로 놓쳤던 경우).
-  const root = join(mkdtempSync(join(tmpdir(), "wb-jobs3-")), "아직-없음");
+  const base = mkdtempSync(join(tmpdir(), "wb-jobs3-"));
+  const root = join(base, "아직-없음");
   const seen: BackgroundJobDto[][] = [];
   const w = watching({ onChanged: (j) => seen.push(j), onFinished: () => {} }, root, t);
   await w.start();
@@ -128,7 +129,12 @@ test("BackgroundJobWatcher: 시작 때 없던 디렉토리에 나중에 생긴 �
   );
   assert.ok(seen.length >= 1);
   w.stop();
-  rmSync(root, { recursive: true, force: true });
+  // Keep Unicode coverage, but remove the whole fixture through its ASCII base.
+  // Node 24.13 on Windows can native-crash when rmSync receives the Unicode
+  // child as its root; deleting the base also avoids leaving its directory behind.
+  assert.equal(dirname(resolve(base)), resolve(tmpdir()));
+  assert.ok(basename(base).startsWith("wb-jobs3-"));
+  rmSync(base, { recursive: true, force: true });
 });
 
 test("BackgroundJobWatcher: 깨진 JSON·없는 디렉토리에도 죽지 않는다", async (t) => {

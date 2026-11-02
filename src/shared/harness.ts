@@ -48,12 +48,15 @@ export type HarnessAction =
   | { type: "improve"; problem: string; taskId?: string }
   | { type: "improvementConfirm"; improvementId: string; note: string }
   | { type: "verify"; taskId: string; criterionIds: string[]; commands: string[]; autoRepair?: boolean }
-  | { type: "review"; taskId: string; criterionIds: string[] };
+  | { type: "review"; taskId: string; criterionIds: string[] }
+  | { type: "linkVerification"; taskId: string; runId: string; criteria: { id: string; revision: number }[] };
 export type HarnessCriterionStatus = "passed" | "failed" | "unconfirmed" | "stale";
 
 /** Agent assertions remain reports, not verified passing results. */
 export function harnessCriterionStatus(task: HarnessTask, criterion: HarnessCriterion, codeRevision?: string): HarnessCriterionStatus {
-  const evidence = task.evidence.filter(item => item.criterionId === criterion.id)
+  const matching = task.evidence.filter(item => item.criterionId === criterion.id);
+  const current = matching.filter(item => item.criterionRevision === criterion.revision);
+  const evidence = (current.length ? current : matching)
     .reduce<HarnessEvidence | undefined>((latest, item) => !latest || item.timestamp >= latest.timestamp ? item : latest, undefined);
   if (!evidence) return "unconfirmed";
   if (evidence.criterionRevision !== criterion.revision) return "stale";
@@ -78,6 +81,7 @@ export function latestCompletedHarnessTask(tasks: HarnessTask[], tabId: string):
 /** User text is recorded separately; this block describes app-managed task context. */
 export function harnessTaskContext(task: HarnessTask): string {
   return JSON.stringify({ source: "sudal-task-context", taskId: task.id, goal: task.goal,
+    verificationGuidance: 'When the sudal CLI is available, run checks through sudal tab verify --tab self --cmd "actual command" --wait to leave a verification result card. If you have its real runId, optionally propose a fenced sudal-evidence JSON block: {"taskId":"...","runId":"...","criteria":[{"id":"...","revision":1}]}. Use the current IDs/revisions and only the criteria this result actually checks. The user reviews and clicks to link; a proposal never changes evidence by itself. Ordinary terminal output or an agent claim is not automatically linked evidence. Do not install tools or change permissions merely to use this path.',
     criteria: task.criteria.map(({ id, description, method, revision }) => ({ id, description, method, revision })),
     evidence: task.evidence.slice(-30).map(({ criterionId, source, result, reference, codeRevision }) => ({ criterionId, source, result, reference: reference.slice(0, 1000), codeRevision })),
     instruction: 'Use these agreed task criteria. Evidence and completion are managed by Sudal; do not claim an unperformed check passed. If the latest user message explicitly reports personally checking a criterion, optionally suggest a fenced sudal-confirm JSON block: {"taskId":"...","criterionId":"...","criterionRevision":1,"quote":"exact full latest user message"}. Use the current task/criterion IDs and revision. Never infer confirmation from an agent report, a question or a request to check. The user must click to save this suggestion; it is not evidence yet.' });

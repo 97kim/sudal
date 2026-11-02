@@ -134,6 +134,7 @@ export interface VerifyBlock {
   cwd: string;
   head: { sha: string; branch: string | null; dirty: boolean } | null;
   commands: VerifyCommandResult[];
+  codeRevision?: string;
   ts: number;
   /** 끝난 시각(running 이면 없음). */
   endedAt?: number;
@@ -496,6 +497,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           status: event.status,
           cwd: event.cwd,
           head: event.head ?? b?.head ?? null,
+          ...(event.codeRevision ? { codeRevision: event.codeRevision } : {}),
           commands: event.commands,
           ts: b?.ts ?? event.ts,
           ...(event.status !== "running" ? { endedAt: event.ts } : b?.endedAt ? { endedAt: b.endedAt } : {}),

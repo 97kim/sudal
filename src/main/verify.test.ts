@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { verificationRevision } from "./verification-revision";
 import type { VerifyEvent } from "@shared/chat-events";
 import { VerifyRunner, suggestForCwd } from "./verify";
 
@@ -17,6 +19,25 @@ const waitDone = (events: VerifyEvent[], runId: string, ms = 10_000) =>
     };
     tick();
   });
+
+test("verification fingerprints prove an unchanged tree, never a tree changed by the command", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "verify-revision-"));
+  const git = (...args: string[]) => execFileSync("git", ["-c", "core.hooksPath=" + cwd, "-c", "commit.gpgsign=false", ...args], { cwd, windowsHide: true, stdio: "ignore" });
+  git("init", "-q"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");
+  writeFileSync(join(cwd, "value.txt"), "initial"); git("add", "."); git("commit", "-qm", "fixture");
+  const events: VerifyEvent[] = [], runner = new VerifyRunner((_tab, event) => events.push(event));
+  try {
+    const stable = await runner.start({ tabId: "stable", cwd, commands: ["echo checked"], env: { ...process.env } });
+    assert.ok(stable.ok); if (!stable.ok) return;
+    const stableResult = await waitDone(events, stable.runId);
+    assert.equal(stableResult.codeRevision, await verificationRevision(cwd));
+    const changed = await runner.start({ tabId: "changed", cwd, commands: ['node -e "require(\'node:fs\').writeFileSync(\'value.txt\',\'changed\')"'], env: { ...process.env } });
+    assert.ok(changed.ok); if (!changed.ok) return;
+    const changedResult = await waitDone(events, changed.runId);
+    assert.equal(changedResult.status, "passed");
+    assert.equal(changedResult.codeRevision, undefined);
+  } finally { runner.dispose(); }
+});
 
 test("VerifyRunner: 명령을 순서대로 돌리고 실패하면 뒤는 건너뛴다; 출력 꼬리·exit code 기록", async () => {
   const events: VerifyEvent[] = [];
