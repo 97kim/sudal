@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Children, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { harnessCriterionStatus, latestCompletedHarnessTask, type HarnessAction, type HarnessSnapshot, type HarnessTask } from "@shared/harness";
+import { harnessCriterionStatus, type HarnessAction, type HarnessSnapshot, type HarnessTask } from "@shared/harness";
 import type { Block, VerifyBlock } from "@shared/session-state";
 import { userErrorMessage } from "@shared/error-message";
-import { conversationConfirmations, conversationVerificationLinks } from "../harness-conversation";
+import { conversationConfirmations, conversationVerificationLinks, harnessBlockBefore, harnessProposalBlock, harnessReadyBlock } from "../harness-conversation";
 import { Icon } from "./Icon";
 import { HarnessPanel } from "./HarnessPanel";
 import { VerifyCard } from "./VerifyCard";
@@ -19,7 +19,7 @@ const input = "w-full rounded-md border border-line bg-inset px-2.5 py-2 text-xs
 
 /** One controller owns the bar, conversation actions and task detail panel. */
 export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailSlot, detailActive, homeRequest, onOpenDetails, onCloseDetails }: {
-  tabId: string; cwd: string; blocks: Block[]; conversationSlot: HTMLElement | null; detailSlot: HTMLElement | null; detailActive: boolean; homeRequest: number; onOpenDetails: () => void; onCloseDetails: () => void;
+  tabId: string; cwd: string; blocks: Block[]; conversationSlot: ReadonlyMap<string, HTMLElement>; detailSlot: HTMLElement | null; detailActive: boolean; homeRequest: number; onOpenDetails: () => void; onCloseDetails: () => void;
 }) {
   const { t } = useTranslation();
   const label = (key: string) => t(`chat.harness.${key}` as never) as string;
@@ -45,7 +45,11 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
   const [actionError, setError] = useState("");
   const [refreshError, setRefreshError] = useState("");
   const error = actionError || refreshError;
-  const [hiddenSuggestions, setHiddenSuggestions] = useState<string[]>([]);
+  const hiddenKey = `sudal:harness-hidden:${tabId}:${cwd}`;
+  const [hiddenSuggestions, setHiddenSuggestions] = useState<string[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem(hiddenKey) ?? "[]"); return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string").slice(-100) : []; } catch { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem(hiddenKey, JSON.stringify(hiddenSuggestions.slice(-100))); } catch { /* UI preferences must not prevent task actions. */ } }, [hiddenKey, hiddenSuggestions]);
   const controller = useRef({ alive: true, sequence: 0, mutating: false, refreshing: false, refreshAgain: false });
   const top = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -85,7 +89,7 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
     owner.mutating = true; owner.sequence++;
     setBusy(true); setError("");
     try {
-      const value = await window.sudal.chat.harness(tabId, action);
+      const value = await window.sudal.chat.harness(tabId, (action.type === "status" && action.status === "completed" || action.type === "confirm" || action.type === "linkVerification") ? { ...action, afterBlockId: blocks.at(-1)?.id } : action);
       if (owner.alive) { setSnapshot(value); setRefreshError(""); }
       return value;
     } catch (err) {
@@ -110,22 +114,25 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
   const noteCriterion = selected.length === 1 ? task?.criteria.find(item => item.id === selected[0]) : undefined;
   const noteValid = !!task && !!noteCriterion && noteTarget?.taskId === task.id && noteTarget.criterionId === noteCriterion.id && noteTarget.revision === noteCriterion.revision;
   const editConflict = view === "edit" && (!task || task.id !== editTarget?.taskId || JSON.stringify(task.criteria.map(({ id, revision }) => ({ id, revision }))) !== JSON.stringify(editTarget.criteria));
-  const completed = snapshot && !task ? latestCompletedHarnessTask(snapshot.tasks, tabId) : undefined;
+  const completions = snapshot?.tasks.filter(item => item.tabId === tabId && item.status === "completed") ?? [];
   const liveVerify = blocks.findLast((block): block is VerifyBlock => block.kind === "verify" && block.status === "running");
   const statusOf = (item: NonNullable<typeof task>["criteria"][number], owner = shownTask!) => harnessCriterionStatus(owner, item, snapshot?.revision);
   const passed = task?.criteria.filter(item => statusOf(item) === "passed").length ?? 0;
   const allPassed = !!task && passed === task.criteria.length && task.criteria.length > 0;
-  const suggestions = task ? conversationConfirmations(blocks, task).filter(item => !hiddenSuggestions.includes(`${item.blockId}:${item.criterionId}`)) : [];
+  const confirmationCandidates = useMemo(() => task ? conversationConfirmations(blocks, task) : [], [blocks, task]);
+  const suggestions = confirmationCandidates.filter(item => !hiddenSuggestions.includes(`${item.blockId}:${item.criterionId}`));
   const verifications = blocks.filter((block): block is VerifyBlock => block.kind === "verify" && block.status !== "running" && sameCwdOrNull(block.cwd, cwd)).slice(-10).reverse();
   const latestVerification = verifications[0];
-  const recommendation = task ? conversationVerificationLinks(blocks, task, cwd).findLast(item => item.runId === latestVerification?.id && !hiddenSuggestions.includes(`verification:${item.runId}`)) : undefined;
-  const candidate = task && !liveVerify && latestVerification && !hiddenSuggestions.includes(`verification:${latestVerification.id}`) &&
+  const linkCandidates = useMemo(() => task ? conversationVerificationLinks(blocks, task, cwd) : [], [blocks, task, cwd]);
+  const recommendation = linkCandidates.findLast(item => item.runId === latestVerification?.id);
+  const verificationKey = latestVerification ? `verification:${latestVerification.id}:${recommendation?.blockId ?? "result"}` : undefined;
+  const candidate = task && !liveVerify && latestVerification && !hiddenSuggestions.includes(verificationKey!) &&
     (recommendation || !snapshot?.tasks.some(owner => owner.evidence.some(item => item.source === "command" && item.reference === latestVerification.id))) ? latestVerification : undefined;
-  const hideVerifications = () => setHiddenSuggestions(previous => [...new Set([...previous, ...verifications.map(run => `verification:${run.id}`)])]);
+  const hideVerifications = () => { if (verificationKey) setHiddenSuggestions(previous => [...new Set([...previous, verificationKey])]); };
   const candidateProposal = candidate && recommendation?.runId === candidate.id ? recommendation : undefined;
   const linkRun = verifications.find(block => block.id === linkTarget?.runId);
   const linkConflict = !!linkTarget && (!task || task.id !== linkTarget.taskId || JSON.stringify(task.criteria.map(({ id, revision }) => ({ id, revision }))) !== JSON.stringify(linkTarget.criteria));
-  useEffect(() => { setSelected([]); setNote(""); setReason(""); setCommands(null); setAutoRepair(false); setHiddenSuggestions([]); }, [shownTask?.id]);
+  useEffect(() => { setSelected([]); setNote(""); setReason(""); setCommands(null); setAutoRepair(false); }, [shownTask?.id]);
   const showTask = () => { setView("task"); setError(""); void refresh(); };
   const closePanel = () => {
     focusRequested.current = false;
@@ -194,7 +201,7 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
       if (await act({ type: "edit", taskId: editTarget.taskId, criteria, expectedCriteria: editTarget.criteria })) { setSelected([]); showTask(); }
     } else if (view === "start" && await act({ type: "start", goal, criteria })) showTask();
   };
-  const card = "space-y-4 rounded-xl border border-line bg-panel p-5 text-sm";
+  const card = "min-w-0 space-y-4 rounded-xl border border-line bg-panel p-4 text-sm [overflow-wrap:anywhere]";
   const taskRows = (owner: HarnessTask, selectable = false, inline = false) => owner.criteria.map(item => {
     const status = statusOf(item, owner);
     return <div key={item.id}><div className={`-mx-2 flex items-start gap-2.5 rounded-md px-2 py-2.5 transition-colors ${selected.includes(item.id) ? "bg-panel-2" : "hover:bg-panel-2/50"}`}>
@@ -210,8 +217,8 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
     </div>}
     </div>;
   });
-  const conversation = snapshot?.enabled && !!(snapshot.proposal || suggestions.length || candidate || allPassed || completed || error) && <div className="space-y-4" data-harness-conversation>
-    {candidate && <section className={card} data-harness-link-suggestion>
+  const conversation = snapshot?.enabled && !!(snapshot.proposal || suggestions.length || candidate || allPassed || completions.length || error) && <div className="space-y-4" data-harness-conversation>
+    {candidate && <section className={card} data-harness-link-suggestion data-harness-anchor={candidateProposal?.blockId ?? candidate.id}>
       <span className="text-xs text-muted">{ui("linkResult")}</span>
       <h3 className="font-medium">{resultLabel(candidate.status)}</h3>
       <p className="mono break-words text-xs text-muted">{candidate.commands.map(command => command.cmd).join(" · ")}</p>
@@ -223,10 +230,10 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
         <button className={secondary} onClick={hideVerifications}>{label("dismiss")}</button>
       </div>
     </section>}
-    {snapshot.proposal && <section className={card} data-harness-proposal><span className="text-xs text-accent">{label("proposal")}</span><h3 className="font-medium">{snapshot.proposal.goal}</h3><ul className="space-y-2 text-xs text-muted">{snapshot.proposal.criteria.map((item, i) => <li key={i} className="flex gap-2"><span>○</span><span>{item.description}</span></li>)}</ul><div className="flex flex-wrap gap-2"><button className={primary} disabled={busy} onClick={() => void act({ type: "start", ...snapshot.proposal! })}>{ui("accept")}</button><button className={secondary} disabled={busy} onClick={() => startEditor()}>{label("edit")}</button><button className="px-2 text-xs text-muted hover:text-fg" disabled={busy} onClick={() => void act({ type: "dismiss" })}>{label("dismiss")}</button></div><p className="text-xs text-muted">{task ? ui("replaceHint") : ui("proposalHint")}</p></section>}
-    {suggestions.map(item => <section className={card} key={`${item.blockId}:${item.criterionId}`} data-harness-confirmation><span className="text-xs text-accent">{ui("confirmationSuggestion")}</span><h3>{task!.criteria.find(c => c.id === item.criterionId)?.description}</h3><blockquote className="border-l-2 border-accent/40 pl-3 text-sm text-muted whitespace-pre-wrap">{item.quote}</blockquote><p className="text-xs text-muted">{ui("confirmationHint")}</p><div className="flex gap-2"><button className={primary} disabled={busy} onClick={() => void act({ type: "confirm", taskId: task!.id, criterionId: item.criterionId, criterionRevision: item.criterionRevision, note: item.quote })}>{ui("saveConfirmation")}</button><button className={secondary} onClick={() => setHiddenSuggestions([...hiddenSuggestions, `${item.blockId}:${item.criterionId}`])}>{label("dismiss")}</button></div></section>)}
-    {allPassed && <section className={card} data-harness-ready><div className="flex gap-2 text-ok"><Icon name="check" size={17} /><h3>{ui("ready")}</h3></div><p className="text-xs text-muted">{task.goal} · {ui("progress", { count: passed, total: task.criteria.length })}</p><div className="flex gap-2"><button className={primary} disabled={busy} onClick={() => void finish()}>{label("complete")}</button><button className={secondary} onClick={openEvidence}>{label("evidence")}</button></div></section>}
-    {completed && <section className={`${card} text-muted`} data-harness-completed><span className="flex items-center gap-2 text-xs"><Icon name="check" size={14} />{label("completed")}</span><h3 className="text-fg">{completed.goal}</h3><p className="text-xs">{ui("evidenceKept")}</p>{completed.completionReason && <p className="text-xs whitespace-pre-wrap">{completed.completionReason}</p>}<button className={secondary} onClick={() => openPanel("history")}>{ui("completionRecord")}</button></section>}
+    {snapshot.proposal && <section className={card} data-harness-proposal data-harness-anchor={harnessProposalBlock(blocks, snapshot.proposal)}><span className="text-xs text-accent">{label("proposal")}</span><h3 className="font-medium">{snapshot.proposal.goal}</h3><ul className="space-y-2 text-xs text-muted">{snapshot.proposal.criteria.map((item, i) => <li key={i} className="flex gap-2"><span>○</span><span>{item.description}</span></li>)}</ul><div className="flex flex-wrap gap-2"><button className={primary} disabled={busy} onClick={() => void act({ type: "start", ...snapshot.proposal! })}>{ui("accept")}</button><button className={secondary} disabled={busy} onClick={() => startEditor()}>{label("edit")}</button><button className="px-2 text-xs text-muted hover:text-fg" disabled={busy} onClick={() => void act({ type: "dismiss" })}>{label("dismiss")}</button></div><p className="text-xs text-muted">{task ? ui("replaceHint") : ui("proposalHint")}</p></section>}
+    {suggestions.map(item => <section className={card} key={`${item.blockId}:${item.criterionId}`} data-harness-confirmation data-harness-anchor={item.blockId}><span className="text-xs text-accent">{ui("confirmationSuggestion")}</span><h3>{task!.criteria.find(c => c.id === item.criterionId)?.description}</h3><blockquote className="border-l-2 border-accent/40 pl-3 text-sm text-muted whitespace-pre-wrap">{item.quote}</blockquote><p className="text-xs text-muted">{ui("confirmationHint")}</p><div className="flex gap-2"><button className={primary} disabled={busy} onClick={() => void act({ type: "confirm", taskId: task!.id, criterionId: item.criterionId, criterionRevision: item.criterionRevision, note: item.quote, confirmationBlockId: item.blockId })}>{ui("saveConfirmation")}</button><button className={secondary} onClick={() => setHiddenSuggestions([...hiddenSuggestions, `${item.blockId}:${item.criterionId}`])}>{label("dismiss")}</button></div></section>)}
+    {allPassed && <section className={card} data-harness-ready data-harness-anchor={harnessReadyBlock(blocks, task)}><div className="flex gap-2 text-ok"><Icon name="check" size={17} /><h3>{ui("ready")}</h3></div><p className="text-xs text-muted">{task.goal} · {ui("progress", { count: passed, total: task.criteria.length })}</p><div className="flex gap-2"><button className={primary} disabled={busy} onClick={() => void finish()}>{label("complete")}</button><button className={secondary} onClick={openEvidence}>{label("evidence")}</button></div></section>}
+    {completions.map(completed => <section key={completed.id} className={`${card} text-muted`} data-harness-completed data-harness-anchor={completed.completedAfterBlockId ?? harnessBlockBefore(blocks, completed.completedAt)}><span className="flex items-center gap-2 text-xs"><Icon name="check" size={14} />{label("completed")}</span><h3 className="text-fg">{completed.goal}</h3><p className="text-xs">{ui("evidenceKept")}</p>{completed.completionReason && <p className="text-xs whitespace-pre-wrap">{completed.completionReason}</p>}<button className={secondary} onClick={() => openPanel("history")}>{ui("completionRecord")}</button></section>)}
     {error && <p className="text-xs text-err" role="alert">{error}</p>}
   </div>;
   if (!cwd) return null;
@@ -244,7 +251,12 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
       {popover && snapshot?.enabled && shownTask && <div id={popId} className="absolute left-3 right-3 top-full mt-1 max-h-[60vh] max-w-md overflow-auto rounded-xl border border-line bg-panel p-4 shadow-2xl" data-harness-popover><div className="flex items-center justify-between gap-3"><span className="text-muted">{ui("currentTask")}</span><button aria-label={ui("close")} onClick={() => setPopover(false)}><Icon name="x" size={14} /></button></div><h3 className="mb-2 mt-2 break-words text-sm font-medium">{shownTask.goal}</h3>{taskRows(shownTask)}<div className="mt-4 flex flex-wrap gap-2">{paused ? <button className={primary} disabled={busy} onClick={() => void act({ type: "status", taskId: paused.id, status: "active" })}>{label("resume")}</button> : <><button className={primary} disabled={busy} onClick={() => allPassed ? void finish() : (setSelected([]), setCheckMode("command"), openPanel("task"))}>{allPassed ? label("complete") : ui("checkCriteria")}</button><button className={secondary} onClick={openEvidence}>{label("evidence")}</button></>}<button className={secondary} onClick={() => openPanel("task")}>{ui("more")}</button></div></div>}
       {error && !detailActive && <p className="px-4 pb-2 text-xs text-err" role="alert">{error}</p>}
     </section>
-    {conversationSlot && createPortal(conversation, conversationSlot)}
+    {conversation && Children.toArray(conversation.props.children).map((child, index) => {
+      if (!isValidElement<{ "data-harness-anchor"?: string; role?: string }>(child)) return null;
+      const anchor = child.props["data-harness-anchor"] ?? (child.props.role === "alert" ? blocks.at(-1)?.id : undefined);
+      const slot = anchor && conversationSlot.get(anchor);
+      return slot ? createPortal(<div data-harness-conversation>{child as ReactNode}</div>, slot, String(child.key ?? index)) : null;
+    })}
     {detailSlot && view && createPortal(<aside ref={panel} tabIndex={-1} id={panelId} aria-label={view === "settings" ? ui("settings") : view === "link" ? ui("linkResult") : ui("currentTask")} className="pointer-events-auto flex h-full w-full min-w-0 flex-col bg-panel outline-none" data-harness-detail>
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-4"><Icon name={view === "settings" ? "settings" : view === "history" ? "clock" : "list"} size={14} className="text-muted" /><h2 className="min-w-0 flex-1 text-xs font-medium">{view === "settings" ? ui("settings") : view === "history" ? label("history") : view === "start" ? label("start") : view === "edit" ? label("edit") : view === "finish" ? label("complete") : view === "link" ? ui("linkResult") : ui("taskDetails")}</h2><button className="rounded p-1 text-muted hover:bg-panel-2 hover:text-fg" aria-label={ui("close")} onClick={closePanel}><Icon name="x" size={14} /></button></header>
       <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4 text-xs">
@@ -290,7 +302,7 @@ export function HarnessWorkspace({ tabId, cwd, blocks, conversationSlot, detailS
             <div className="flex gap-4 border-b border-line" role="group" aria-label={ui("checkMethod")}>{(["evidence", "manual", "command"] as const).map(value => <button key={value} className={`border-b-2 px-0.5 pb-2 pt-1 text-xs ${checkMode === value ? "border-fg text-fg" : "border-transparent text-muted hover:text-fg"}`} aria-pressed={checkMode === value} onClick={() => setCheckMode(value)}>{value === "evidence" ? label("evidence") : value === "manual" ? label("confirm") : ui("commandCheck")}</button>)}</div>
             <p className="text-xs text-muted">{checkMode === "manual" && selected.length !== 1 ? ui("manualSelection") : selected.length ? ui("selected", { count: selected.length }) : ui(checkMode === "evidence" ? "evidenceSelection" : "selectionHint")}</p>
             {checkMode === "manual" && selected.length === 1 && <section className="space-y-3 border-t border-line pt-4"><h3 className="text-xs font-medium">{label("confirm")}</h3><textarea className={input} rows={3} aria-label={label("note")} value={noteValid ? note : ""} maxLength={4000} placeholder={ui("notePlaceholder")} onChange={event => { if (!noteCriterion) return; setNote(event.target.value); setNoteTarget({ taskId: task.id, criterionId: noteCriterion.id, revision: noteCriterion.revision }); }} /><button className={secondary} disabled={busy || !noteValid || !note.trim() || !snapshot?.enabled} onClick={() => void act({ type: "confirm", taskId: task.id, criterionId: noteTarget!.criterionId, criterionRevision: noteTarget!.revision, note }).then(ok => { if (ok) setNote(""); })}>{ui("saveConfirmation")}</button></section>}
-            {checkMode === "command" && <section className="space-y-3 border-t border-line pt-4"><label className="grid gap-2 text-xs text-muted">{label("commands")}<textarea className={`${input} mono`} rows={3} value={commands ?? snapshot?.config.commands.join("\n") ?? ""} onChange={event => setCommands(event.target.value)} /></label><p className="text-xs text-muted">{ui("commandHint")}</p><label className="flex items-start gap-2 text-xs text-muted"><input type="checkbox" checked={autoRepair} onChange={event => setAutoRepair(event.target.checked)} />{t("chat.feedback.enable")}</label><div className="flex flex-wrap gap-2"><button className={primary} disabled={busy || !snapshot?.enabled || !!liveVerify || !selected.length || !lines(commands ?? snapshot?.config.commands.join("\n") ?? "").length} onClick={() => void act({ type: "verify", taskId: task.id, criterionIds: selected, commands: lines(commands ?? snapshot?.config.commands.join("\n") ?? ""), autoRepair })}>{ui("runCommands", { count: lines(commands ?? snapshot?.config.commands.join("\n") ?? "").length })}</button><button className={secondary} disabled={busy || !snapshot?.enabled || !selected.length} onClick={() => void act({ type: "review", taskId: task.id, criterionIds: selected })}>{label("review")}</button></div>{liveVerify && <button className={secondary} onClick={() => void window.sudal.chat.verifyAbort(tabId)}>{t("chat.verifyCard.abort")}</button>}</section>}
+            {checkMode === "command" && <section className="space-y-3 border-t border-line pt-4"><label className="grid gap-2 text-xs text-muted">{label("commands")}<textarea className={`${input} mono`} rows={3} aria-label={label("commands")} value={commands ?? snapshot?.config.commands.join("\n") ?? ""} onChange={event => setCommands(event.target.value)} /></label><p className="text-xs text-muted">{ui("commandHint")}</p><label className="flex items-start gap-2 text-xs text-muted"><input type="checkbox" checked={autoRepair} onChange={event => setAutoRepair(event.target.checked)} />{t("chat.feedback.enable")}</label><div className="flex flex-wrap gap-2"><button className={primary} disabled={busy || !snapshot?.enabled || !!liveVerify || !selected.length || !lines(commands ?? snapshot?.config.commands.join("\n") ?? "").length} onClick={() => void act({ type: "verify", taskId: task.id, criterionIds: selected, commands: lines(commands ?? snapshot?.config.commands.join("\n") ?? ""), autoRepair })}>{ui("runCommands", { count: lines(commands ?? snapshot?.config.commands.join("\n") ?? "").length })}</button><button className={secondary} disabled={busy || !snapshot?.enabled || !selected.length} onClick={() => void act({ type: "review", taskId: task.id, criterionIds: selected })}>{label("review")}</button></div>{liveVerify && <button className={secondary} onClick={() => void window.sudal.chat.verifyAbort(tabId)}>{t("chat.verifyCard.abort")}</button>}</section>}
           </>}
 
           {checkMode === "evidence" && blocks.filter((block): block is VerifyBlock => block.kind === "verify" && shownTask.evidence.some(evidence => evidence.source === "command" && evidence.reference.includes(block.id))).slice(-2).map(block => <VerifyCard key={block.id} block={block} tabId={tabId} layout="panel" />)}

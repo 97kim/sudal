@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { harnessCriterionStatus, type HarnessAction, type HarnessSnapshot } from "@shared/harness";
 import { userErrorMessage } from "@shared/error-message";
+import { Icon } from "./Icon";
 
 const lines = (value: string) => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
@@ -72,9 +73,9 @@ export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
     setCriteria(snapshot?.proposal?.criteria.map(item => item.description + " | " + item.method).join("\n") ?? "");
     setMode("task");
   };
-  const inputClass = "w-full rounded border border-line bg-bg px-2 py-1.5 text-xs";
-  const buttonClass = "rounded border border-line px-2 py-1 text-xs hover:bg-panel-2 disabled:opacity-40";
-  const field = (name: string, value: string, change: (value: string) => void) => <label className="grid gap-1">{label(name)}<textarea className={inputClass} rows={3} value={value} onChange={event => change(event.target.value)} /></label>;
+  const inputClass = "w-full min-w-0 resize-y rounded-md border border-line bg-inset px-3 py-2 text-xs leading-6 outline-none transition-colors focus:border-accent/50";
+  const buttonClass = "inline-flex items-center justify-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:bg-panel-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-40";
+  const field = (name: string, value: string, change: (value: string) => void) => <label className="grid min-w-0 gap-2"><span className="font-medium text-fg">{label(name)}</span><textarea className={`${inputClass} ${name === "documents" || name === "commands" ? "mono" : ""}`} rows={3} aria-label={label(name)} value={value} onChange={event => change(event.target.value)} /></label>;
   if (!cwd) return null;
   return <section className={settingsOnly ? "text-xs" : "shrink-0 border-b border-line bg-panel text-xs"} data-harness-panel>
     {!settingsOnly && <div className="flex items-center gap-2 px-4 py-2">
@@ -83,14 +84,16 @@ export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
       {snapshot?.enabled && !task && <span className="text-muted">{label(snapshot.proposal ? "proposal" : "empty")}</span>}
     </div>}
     {open && <div className={settingsOnly ? "space-y-4" : "max-h-[45vh] space-y-3 overflow-y-auto border-t border-line px-4 py-3"}>
-      <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || !snapshot} checked={snapshot?.enabled ?? false} onChange={event => void act({ type: "enable", enabled: event.target.checked })} />{label("enable")}</label>
-      <p className="text-muted">{label("stopHint")}</p>
+      <div className="flex items-start justify-between gap-4 border-b border-line pb-5">
+        <div className="min-w-0 space-y-2"><h3 className="text-sm font-medium">{label("enable")}</h3><p className="break-words text-xs leading-5 text-muted">{label("stopHint")}</p></div>
+        <button type="button" role="switch" aria-label={label("enable")} aria-checked={snapshot?.enabled ?? false} disabled={busy || !snapshot} className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-40 ${snapshot?.enabled ? "bg-accent" : "bg-panel-2 ring-1 ring-inset ring-line"}`} onClick={() => void act({ type: "enable", enabled: !snapshot?.enabled })}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${snapshot?.enabled ? "left-0.5 translate-x-4" : "left-0.5"}`} /></button>
+      </div>
       {!snapshot && !error && <p>{label("loading")}</p>}
       {snapshot?.configError && <p role="alert" className="text-danger">{label("configInvalid")}</p>}
       {error && <p role="alert" className="text-danger whitespace-pre-wrap">{error}</p>}
       {snapshot?.enabled && <>
-        <div className="flex flex-wrap gap-2">
-          <button className={buttonClass} disabled={busy} onClick={() => configure()}>{label("setup")}</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={buttonClass} disabled={busy} onClick={() => configure()}><Icon name="edit" size={13} />{label("setup")}</button>
           {!settingsOnly && <button className={buttonClass} disabled={busy} onClick={draft}>{label("start")}</button>}
           {!settingsOnly && <button className={buttonClass} onClick={() => setHistory(!history)}>{label("history")}</button>}
           <button className={buttonClass} onClick={() => configure(true, undefined)}>{label("improve")}</button>
@@ -100,9 +103,16 @@ export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
           <p>{label("proposal")} · {snapshot.proposal.goal}</p>
           <button className={buttonClass} onClick={draft}>{label("accept")}</button>{" "}<button className={buttonClass} onClick={() => void act({ type: "dismiss" })}>{label("dismiss")}</button>
         </div>}
-        {mode === "config" && <div className="grid gap-3 rounded border border-line p-3">
-          <p className="text-muted">{label("configHint")}</p>
-          <div className="grid gap-1">{snapshot.inspection.map(item => <span key={item.path}>{item.path} · {label(item.found ? "found" : "missing")}</span>)}</div>
+        {settingsOnly && mode === null && <div className="divide-y divide-line" data-harness-config-summary>
+          {(["documents", "commands", "procedures"] as const).map(name => <section key={name} className="space-y-3 py-4 first:pt-1">
+            <div className="flex items-center gap-2"><Icon name={name === "documents" ? "file" : name === "commands" ? "terminal" : "list"} size={14} className="text-muted" /><h3 className="flex-1 font-medium">{label(`${name}Title`)}</h3><span className="text-[11px] text-muted">{snapshot.config[name].length}</span></div>
+            <p className="text-[11px] leading-5 text-muted">{label(`${name}Hint`)}</p>
+            {snapshot.config[name].length ? <ul className="space-y-1.5">{snapshot.config[name].map((value, index) => <li key={index} className={`break-words text-xs leading-5 ${name !== "procedures" ? "mono" : ""}`}>{value}</li>)}</ul> : <p className="text-xs text-muted-2">{label("notConfigured")}</p>}
+          </section>)}
+        </div>}
+        {mode === "config" && <div className="grid min-w-0 gap-5" data-harness-config-editor>
+          <p className="text-[11px] leading-5 text-muted">{label("configHint")}</p>
+          <details className="text-[11px] text-muted"><summary className="cursor-pointer hover:text-fg">{label("projectFiles")}</summary><div className="mt-2 grid gap-1.5">{snapshot.inspection.map(item => <span key={item.path} className="break-words">{item.path} · {label(item.found ? "found" : "missing")}</span>)}</div></details>
           {improve && <>{field("problem", problem, setProblem)}<p className="text-muted">{label("improveHint")}</p></>}
           <button className={buttonClass} disabled={busy} onClick={() => {
             let prompt = `Read this project and propose a harness configuration. Do not edit files, run commands, install tools or change permissions. Use existing documents and suggest reusable verification procedures. Explain the evidence, unknowns, and proposed changes in the conversation language. Return an optional fenced sudal-harness JSON block with {version:1,documents:string[],commands:string[],procedures:string[]}. Proposals are not approval to apply changes. Current configuration: ${JSON.stringify(snapshot.config)}. ${improve ? `Problem to prevent: ${problem}. Explain the missed check and suggest targeted improvements without adding unrelated rules.` : ""}`;
@@ -118,7 +128,7 @@ export function HarnessPanel({ tabId, cwd, settingsOnly = false, controller }: {
             })().then(result => { if (!result.ok) setError(result.error); else setMode(null); }).catch(error => setError(userErrorMessage(error))).finally(() => setBusy(false));
           }}>{label("suggest")}</button>
           {field("documents", documents, setDocuments)}{field("commands", commands, setCommands)}{field("procedures", procedures, setProcedures)}
-          <details><summary>{label("applyConfirm")}</summary><pre className="whitespace-pre-wrap">{JSON.stringify({ version: 1, documents: lines(documents), commands: lines(commands), procedures: lines(procedures) }, null, 2)}</pre></details>
+          <details className="text-[11px] text-muted"><summary className="cursor-pointer hover:text-fg">{label("applyConfirm")}</summary><pre className="mt-2 whitespace-pre-wrap break-words">{JSON.stringify({ version: 1, documents: lines(documents), commands: lines(commands), procedures: lines(procedures) }, null, 2)}</pre></details>
           <div className="flex gap-2"><button className={buttonClass} disabled={busy} onClick={() => void act({ type: "configure", token, improvementId, draftToken, config: { version: 1, documents: lines(documents), commands: lines(commands), procedures: lines(procedures) } }).then(ok => { if (ok) { setMode(null); setImprovementId(undefined); } })}>{label("save")}</button><button className={buttonClass} onClick={() => { setMode(null); setImprovementId(undefined); }}>{label("cancel")}</button></div>
         </div>}
         {(mode === "task" || mode === "edit") && <div className="grid gap-3 rounded border border-line p-3">

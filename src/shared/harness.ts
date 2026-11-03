@@ -11,6 +11,10 @@ export interface HarnessEvidence {
   reference: string;
   timestamp: number;
   codeRevision?: string;
+  /** When/where evidence was attached; never used to decide freshness or precedence. */
+  recordedAt?: number;
+  afterBlockId?: string;
+  confirmationBlockId?: string;
 }
 export interface HarnessTask {
   id: string;
@@ -22,9 +26,11 @@ export interface HarnessTask {
   evidence: HarnessEvidence[];
   completionReason?: string;
   completedAt?: number;
+  /** Presentation only: the message preceding completion, never verification evidence. */
+  completedAfterBlockId?: string;
 }
 export interface HarnessConfig { version: 1; documents: string[]; commands: string[]; procedures: string[] }
-export interface HarnessProposal { goal: string; criteria: { description: string; method: string }[] }
+export interface HarnessProposal { goal: string; criteria: { description: string; method: string }[]; blockId?: string }
 export interface HarnessImprovement { id: string; problem: string; taskId?: string; status: "proposed" | "applied" | "confirmed"; confirmation?: string }
 export interface HarnessSnapshot {
   enabled: boolean; project: string; config: HarnessConfig; configToken: string;
@@ -42,22 +48,26 @@ export type HarnessAction =
   | { type: "configure"; config: HarnessConfig; token: string; improvementId?: string; draftToken?: string }
   | { type: "start"; goal: string; criteria: { description: string; method: string }[] }
   | { type: "edit"; taskId: string; criteria: { id?: string; description: string; method: string }[]; expectedCriteria?: { id: string; revision: number }[] }
-  | { type: "status"; taskId: string; status: HarnessTaskStatus; reason?: string }
-  | { type: "confirm"; taskId: string; criterionId: string; note: string; criterionRevision?: number }
+  | { type: "status"; taskId: string; status: HarnessTaskStatus; reason?: string; afterBlockId?: string }
+  | { type: "confirm"; taskId: string; criterionId: string; note: string; criterionRevision?: number; confirmationBlockId?: string; afterBlockId?: string }
   | { type: "dismiss" }
   | { type: "improve"; problem: string; taskId?: string }
   | { type: "improvementConfirm"; improvementId: string; note: string }
   | { type: "verify"; taskId: string; criterionIds: string[]; commands: string[]; autoRepair?: boolean }
   | { type: "review"; taskId: string; criterionIds: string[] }
-  | { type: "linkVerification"; taskId: string; runId: string; criteria: { id: string; revision: number }[] };
+  | { type: "linkVerification"; taskId: string; runId: string; criteria: { id: string; revision: number }[]; afterBlockId?: string };
 export type HarnessCriterionStatus = "passed" | "failed" | "unconfirmed" | "stale";
+
+export function harnessCriterionEvidence(task: HarnessTask, criterion: HarnessCriterion): HarnessEvidence | undefined {
+  const matching = task.evidence.filter(item => item.criterionId === criterion.id);
+  const current = matching.filter(item => item.criterionRevision === criterion.revision);
+  return (current.length ? current : matching)
+    .reduce<HarnessEvidence | undefined>((latest, item) => !latest || item.timestamp > latest.timestamp || item.timestamp === latest.timestamp && !(item.confirmationBlockId && !latest.confirmationBlockId) ? item : latest, undefined);
+}
 
 /** Agent assertions remain reports, not verified passing results. */
 export function harnessCriterionStatus(task: HarnessTask, criterion: HarnessCriterion, codeRevision?: string): HarnessCriterionStatus {
-  const matching = task.evidence.filter(item => item.criterionId === criterion.id);
-  const current = matching.filter(item => item.criterionRevision === criterion.revision);
-  const evidence = (current.length ? current : matching)
-    .reduce<HarnessEvidence | undefined>((latest, item) => !latest || item.timestamp >= latest.timestamp ? item : latest, undefined);
+  const evidence = harnessCriterionEvidence(task, criterion);
   if (!evidence) return "unconfirmed";
   if (evidence.criterionRevision !== criterion.revision) return "stale";
   if (evidence.codeRevision && evidence.codeRevision !== codeRevision) return "stale";

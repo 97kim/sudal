@@ -126,7 +126,15 @@ export function ChatView({
 }) {
   const { t } = useTranslation();
   const tabId = tab.id;
-  const [harnessConversationSlot, setHarnessConversationSlot] = useState<HTMLDivElement | null>(null);
+  const [harnessConversationSlot, setHarnessConversationSlots] = useState<ReadonlyMap<string, HTMLElement>>(new Map());
+  const setHarnessConversationSlot = useCallback((id: string, element: HTMLDivElement | null) => {
+    setHarnessConversationSlots(previous => {
+      if ((previous.get(id) ?? null) === element) return previous;
+      const next = new Map(previous);
+      if (element) next.set(id, element); else next.delete(id);
+      return next;
+    });
+  }, []);
   const [harnessDetailSlot, setHarnessDetailSlot] = useState<HTMLDivElement | null>(null);
   const [harnessPanelRequest, setHarnessPanelRequest] = useState(0);
   const [harnessContextRequest, setHarnessContextRequest] = useState(0);

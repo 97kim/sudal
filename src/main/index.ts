@@ -1,4 +1,5 @@
 import { HarnessService } from "./harness";
+import { confirmationSource } from "./harness-confirmation";
 import type { HarnessAction } from "@shared/harness";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { isWithin } from "./path-within";
@@ -2244,6 +2245,16 @@ function registerIpc() {
     if (action.type === "snapshot") return harness.snapshot(cwd, tabId);
     if (!await isFolderTrusted(cwd)) throw new Error("Project must be trusted before changing harness settings");
     if (sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+    if (action.type === "confirm" && action.confirmationBlockId !== undefined) {
+      if (typeof action.confirmationBlockId !== "string" || !action.confirmationBlockId || action.confirmationBlockId.length > 500) throw new Error("Invalid confirmation source");
+      const source = await confirmationSource(store.iterateEvents(tabId), action);
+      if (!source) throw new Error("Invalid confirmation source");
+      if (!workspaces.tab(tabId)?.open || sessions.snapshot(tabId).cwd !== cwd || !await isFolderTrusted(cwd)) throw new Error("Project changed");
+      if (!workspaces.tab(tabId)?.open || sessions.snapshot(tabId).cwd !== cwd) throw new Error("Project changed");
+      const state = await harness.mutate(cwd, tabId, action, undefined, source);
+      sendAll(IPC.harnessChanged);
+      return state;
+    }
     if (action.type === "linkVerification") {
       if (typeof action.runId !== "string" || action.runId.length > 200) throw new Error("Invalid verification evidence");
       let verification: VerifyEvent | undefined, count = 0;
