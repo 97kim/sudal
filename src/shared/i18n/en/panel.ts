@@ -29,6 +29,8 @@ export const panel: DeepPartial<typeof ko> = {
     commitButton: "Commit {{n}}",
   },
   context: {
+    percentUsed: "{{percent}}% used",
+    percentRemaining: "{{percent}}% remaining",
     repo: "Repository",
     notGit: "Not a git repository.",
     pickCwd: "Choose a working directory.",

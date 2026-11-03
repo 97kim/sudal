@@ -155,6 +155,10 @@ export interface TurnResultEvent extends Base {
   usage: TokenUsage;
   /** 마지막 assistant 메시지 하나가 든 입력 컨텍스트(input + cache read + cache write). 다음 턴이 들고 갈 크기. */
   contextTokens?: number;
+  /** Effective limit reported by the provider, independent of model name availability. */
+  contextWindow?: number;
+  /** Context was compacted without a subsequent usage observation. Accounting is still valid. */
+  contextUnavailable?: boolean;
   costUsd: number;
   durationMs: number;
   numTurns: number;

@@ -110,6 +110,44 @@ test("mapAppServerNotification: 메시지 델타·완료, 명령 실행 카드, 
   assert.deepEqual(mapAppServerNotification("thread/status/changed", {}, 9, c), []);
 });
 
+test("Codex context limit and current usage survive replay without a model name", () => {
+  const c = ctx(); delete c.model;
+  mapAppServerNotification("thread/tokenUsage/updated", { tokenUsage: { modelContextWindow: 10000, last: { inputTokens: 5000, cachedInputTokens: 3000, outputTokens: 1000, totalTokens: 6000 }, total: { totalTokens: 90000 } } }, 1, c);
+  const events = mapAppServerNotification("turn/completed", { turn: { status: "completed" } }, 2, c);
+  assert.deepEqual(contextUsage(replaySession(events)), { used: 6000, window: 10000, pct: 60 });
+  for (const limit of [null, 0, -1, NaN, Infinity]) {
+    mapAppServerNotification("thread/tokenUsage/updated", { tokenUsage: { modelContextWindow: limit, last: { inputTokens: 5000, totalTokens: 5000 } } }, 3, c);
+    const next = mapAppServerNotification("turn/completed", { turn: { status: "completed" } }, 4, c);
+    assert.equal(contextUsage(replaySession(next))?.pct, null);
+  }
+});
+
+test("automatic compaction without a fresh observation clears context but preserves accounting", () => {
+  for (const status of ["completed", "interrupted", "failed"]) {
+    const c = ctx();
+    mapAppServerNotification("thread/tokenUsage/updated", { tokenUsage: { modelContextWindow: 10000, last: { inputTokens: 9000, totalTokens: 9500, outputTokens: 500 } } }, 1, c);
+    const compact = mapAppServerNotification("item/completed", { item: { type: "contextCompaction", id: "compact" } }, 2, c);
+    const done = mapAppServerNotification("turn/completed", { turn: { status } }, 3, c);
+    const state = replaySession([...compact, ...done]);
+    assert.equal(contextUsage(state), null);
+    assert.equal(state.totals.usage.input, 9000);
+    mapAppServerNotification("thread/tokenUsage/updated", { tokenUsage: { modelContextWindow: 10000, last: { inputTokens: 1000, totalTokens: 1200, outputTokens: 200 } } }, 4, c);
+    assert.equal(contextUsage(replaySession(mapAppServerNotification("turn/completed", { turn: { status: "completed" } }, 5, c)))?.pct, 12);
+  }
+});
+
+test("context calculation rejects nonfinite limits and invalid current usage", () => {
+  for (const limit of [Infinity, NaN, -1, 0]) {
+    const c = ctx();c.lastUsage = { input: 100, output: 0, cacheRead: 0, cacheWrite: 0 };
+    const events = mapAppServerNotification("turn/completed", { turn: { status: "completed" } }, 2, c);
+    const event = events[0];
+    if(event.type !== "turn_result") throw Error("Missing result");
+    event.contextTokens = Infinity;
+    event.modelUsage = { m: { ...event.usage, costUsd: 0, contextWindow: limit } };
+    assert.deepEqual(contextUsage(replaySession(events)), { used: 100, window: null, pct: null });
+  }
+});
+
 test("mapAppServerNotification: 파일 변경·MCP 도구 호출", () => {
   const c = ctx();
   const fc = mapAppServerNotification("item/completed", { item: { type: "fileChange", id: "f1", status: "completed", changes: [{ path: "a.ts", kind: { type: "update" }, diff: "+x" }, { path: "b.ts", kind: { type: "add" }, diff: "+y" }] } }, 1, c);
