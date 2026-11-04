@@ -46,6 +46,7 @@ export function RightPanel({
   task,
   taskRequest = 0,
   contextRequest = 0,
+  openContextRequest = 0,
   onTaskActiveChange,
   onTaskTabSelected,
   visible = true,
@@ -55,6 +56,7 @@ export function RightPanel({
   task?: ReactNode;
   taskRequest?: number;
   contextRequest?: number;
+  openContextRequest?: number;
   onTaskActiveChange?: (active: boolean) => void;
   onTaskTabSelected?: () => void;
   visible?: boolean;
@@ -94,6 +96,12 @@ export function RightPanel({
   }, [contextRequest]);
 
   // 왼쪽 가장자리 드래그로 너비 조절. 왼쪽으로 끌면 넓어진다.
+  useEffect(() => {
+    if (!openContextRequest) return;
+    previous.current = null;
+    setTab("context");
+  }, [openContextRequest]);
+
   const onDragStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();

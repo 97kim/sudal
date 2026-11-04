@@ -138,6 +138,7 @@ export function ChatView({
   const [harnessDetailSlot, setHarnessDetailSlot] = useState<HTMLDivElement | null>(null);
   const [harnessPanelRequest, setHarnessPanelRequest] = useState(0);
   const [harnessContextRequest, setHarnessContextRequest] = useState(0);
+  const [openContextRequest, setOpenContextRequest] = useState(0);
   const [harnessDetailActive, setHarnessDetailActive] = useState(false);
   const [harnessHomeRequest, setHarnessHomeRequest] = useState(0);
   const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, compactBoundary, compactedExpanded, expandCompacted, collapseCompacted } = useSession(tabId);
@@ -1200,6 +1201,8 @@ export function ChatView({
             </div>}
 
             <Composer
+              contextPercent={ctx?.pct ?? null}
+              onOpenContext={() => setOpenContextRequest(n => n + 1)}
               disabled={!cwd || terminalControlled}
               disabledText={
                 terminalControlled ? t("chat.terminalBanner.controlled") : undefined
@@ -1256,6 +1259,7 @@ export function ChatView({
             cwd={cwd}
             taskRequest={harnessPanelRequest}
             contextRequest={harnessContextRequest}
+            openContextRequest={openContextRequest}
             onTaskActiveChange={setHarnessDetailActive}
             onTaskTabSelected={() => setHarnessHomeRequest(n => n + 1)}
             visible={!editorMaximized}

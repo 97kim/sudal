@@ -267,6 +267,8 @@ export const chat = {
     cancelRetry: "재시도 취소",
   },
   composer: {
+    contextUsage: "컨텍스트 {{used}}% 사용 · {{remaining}}% 남음 (마지막 응답 기준)",
+    contextUnknown: "컨텍스트 한도 정보 없음",
     commandSource: "{{source}} 제공 기능",
     imageLimit: "이미지는 최대 {{count}}장까지 첨부할 수 있습니다.",
     loadingCommands: "커맨드 목록을 불러오는 중…",
