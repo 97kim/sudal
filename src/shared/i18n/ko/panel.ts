@@ -43,6 +43,8 @@ export const panel = {
     showMore_other: "외 {{count}}개 보기",
     commitTitle: "고른 파일만 커밋합니다 (파일의 작업 트리 내용 전체가 들어갑니다)",
     usage: "컨텍스트 사용량",
+    percentUsed: "{{percent}}% 사용",
+    percentRemaining: "{{percent}}% 남음",
     used: "{{amount}} 사용",
     max: "{{amount}} 최대",
     maxUnknown: "최대 미상",

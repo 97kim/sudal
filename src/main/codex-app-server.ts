@@ -189,6 +189,9 @@ export interface AppServerTurnContext {
   startedAt: number;
   /** 마지막으로 받은 thread/tokenUsage/updated 의 last. turn/completed 때 사용량으로 쓴다. */
   lastUsage: TokenUsage | null;
+  contextTokens?: number;
+  contextWindow?: number;
+  contextUnavailable?: boolean;
   manualCompaction?: boolean;
   compaction?: CompactedEvent;
   /** 하위 에이전트의 활동을 최초 호출 카드에 반영한다. 세션 안에서 턴 간 공유한다. */
@@ -232,8 +235,15 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
     case "item/autoApprovalReview/completed":
       return autoApprovalReview(params, ts);
     case "thread/tokenUsage/updated": {
-      const tu = params.tokenUsage as { last?: unknown } | undefined;
-      if (tu?.last) ctx.lastUsage = appServerUsage(tu.last);
+      const tu = params.tokenUsage as { last?: unknown; modelContextWindow?: unknown } | undefined;
+      if (tu?.last) {
+        ctx.lastUsage = appServerUsage(tu.last);
+        ctx.contextUnavailable = false;
+        const total = (tu.last as { totalTokens?: unknown }).totalTokens;
+        ctx.contextTokens = typeof total === "number" && Number.isFinite(total) && total >= 0 ? total : undefined;
+      }
+      const limit = tu?.modelContextWindow;
+      ctx.contextWindow = typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? limit : undefined;
       return [];
     }
     case "turn/completed": {
@@ -254,6 +264,9 @@ export function mapAppServerNotification(method: string, params: Json, ts: numbe
           durationMs: Math.max(0, ts - ctx.startedAt),
           numTurns: 1,
           modelUsage,
+          ...(ctx.contextTokens !== undefined ? { contextTokens: ctx.contextTokens } : {}),
+          ...(ctx.contextWindow !== undefined ? { contextWindow: ctx.contextWindow } : {}),
+          ...(ctx.contextUnavailable ? { contextUnavailable: true } : {}),
           isError: failed,
           errorText: failed ? (turn.error?.message ?? fallback?.message) : undefined,
           ...(fallback ? { errorMsg: fallback.msg } : {}),
@@ -446,6 +459,7 @@ function itemCompleted(item: Item, ts: number, ctx?: AppServerTurnContext): Chat
       const usage = ctx?.lastUsage;
       const event: CompactedEvent = { type: "compacted", ts, trigger: ctx?.manualCompaction ? "manual" : "auto", ...(usage ? { preTokens: usage.input + usage.cacheRead + usage.cacheWrite } : {}) };
       if (ctx?.manualCompaction) { ctx.compaction = event; return []; }
+      if (ctx) { ctx.contextUnavailable = true; ctx.contextTokens = undefined; ctx.contextWindow = undefined; }
       return [event];
     }
     case "agentMessage":

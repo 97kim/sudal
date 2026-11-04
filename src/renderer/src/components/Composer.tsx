@@ -23,6 +23,7 @@ import {
   type SnippetDto,
 } from "@shared/snippets";
 import { Icon } from "./Icon";
+import { ContextGauge } from "./ContextGauge";
 import { parseAppCommand } from "@shared/app-commands";
 import { filterCodexMentions, parseDollarQuery, type CodexMention } from "@shared/codex-mentions";
 import { clearComposerDraft, loadComposerDraft, loadComposerFiles, onComposerDraftAppend, onComposerFilesDrop, saveComposerDraft, saveComposerFiles, withAttachedFiles, type ComposerFile } from "../composer-draft";
@@ -70,8 +71,12 @@ export function Composer({
   onAbort,
   onClear,
   disabledText,
+  contextPercent = null,
+  onOpenContext,
 }: {
   disabled: boolean;
+  contextPercent?: number | null;
+  onOpenContext?: () => void;
   /** 쓰다 만 글을 보존할 키(채팅 탭 id). 없으면 보존하지 않는다. */
   draftKey?: string;
   /** disabled 일 때 보여 줄 안내. 기본은 작업 경로 안내. */
@@ -649,6 +654,7 @@ export function Composer({
             <span className="text-muted">{policyTag ?? POLICY_TAG[policy]}</span>
           </span>
           <span className="ml-auto @[380px]:hidden" />
+          {onOpenContext && <ContextGauge percent={contextPercent} onOpen={onOpenContext} />}
           {running ? (
             <>
               {canSend && (

@@ -306,6 +306,8 @@ export const chat: DeepPartial<typeof ko> = {
     cancelRetry: "Cancel retry",
   },
   composer: {
+    contextUsage: "Context {{used}}% used · {{remaining}}% remaining (last response)",
+    contextUnknown: "Context limit unavailable",
     commandSource: "Provided by {{source}}",
     imageLimit: "You can attach up to {{count}} images.",
     loadingCommands: "Loading command list…",

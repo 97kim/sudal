@@ -232,7 +232,7 @@ export function ContextPanel({
 
         <Section
           title={t("panel.context.usage")}
-          badge={pct !== null ? `${pct}%` : undefined}
+          badge={pct !== null ? t("panel.context.percentUsed", { percent: pct }) : undefined}
           badgeClass="text-accent"
         >
           {last ? (
@@ -251,6 +251,7 @@ export function ContextPanel({
                   {contextWindow ? t("panel.context.max", { amount: fmt(contextWindow) }) : t("panel.context.maxUnknown")}
                 </span>
               </div>
+              {pct !== null && <p className="mt-2 text-xs text-accent">{t("panel.context.percentRemaining", { percent: 100 - pct })}</p>}
               <div className="mono mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
                 <Dot
                   color="bg-accent"

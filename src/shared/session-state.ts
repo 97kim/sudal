@@ -447,7 +447,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
       const hasUsage = u.input + u.output + u.cacheRead + u.cacheWrite > 0;
       return {
         ...state,
-        lastTurn: hasUsage || !state.lastTurn ? event : state.lastTurn,
+        lastTurn: event.contextUnavailable ? null : hasUsage || !state.lastTurn ? event : state.lastTurn,
         sessionId: event.sessionId ?? state.sessionId,
         blocks: [
           ...finalizeRunningTools(finalizeStreaming(state.blocks), "turnEnded"),
@@ -615,13 +615,17 @@ export interface ContextUsage {
 export function contextUsage(state: SessionState): ContextUsage | null {
   const last = state.lastTurn;
   if (!last) return null;
-  const sum = last.usage.input + last.usage.cacheRead + last.usage.cacheWrite;
-  const used = last.contextTokens ?? Math.round(sum / Math.max(1, last.numTurns));
+  const validUsage = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
+  const sum = [last.usage.input, last.usage.cacheRead, last.usage.cacheWrite].reduce((total, value) => total + (validUsage(value) ? value : 0), 0);
+  const turns = Number.isFinite(last.numTurns) && last.numTurns > 0 ? last.numTurns : 1;
+  const estimated = Math.round(sum / turns);
+  const used = validUsage(last.contextTokens) ? last.contextTokens : Number.isFinite(estimated) ? estimated : 0;
   const own = state.model ? last.modelUsage[state.model]?.contextWindow : undefined;
   const windows = Object.values(last.modelUsage)
     .map((m) => m.contextWindow ?? 0)
-    .filter((w) => w > 0);
-  const window = own || (windows.length ? Math.max(...windows) : null);
+    .filter((w) => Number.isFinite(w) && w > 0);
+  const reported = last.contextWindow ?? own;
+  const window = typeof reported === "number" && Number.isFinite(reported) && reported > 0 ? reported : (windows.length ? Math.max(...windows) : null);
   const pct = window ? Math.min(100, Math.round((used / window) * 100)) : null;
   return { used, window, pct };
 }
