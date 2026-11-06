@@ -127,6 +127,8 @@ export const nav: DeepPartial<typeof ko> = {
     count_other: "{{count}}",
   },
   modelPicker: {
+    effort: "Reasoning effort",
+    resetEffort: "Use default",
     title: "Change model",
     description: "The selected model is used from the next message. The conversation continues as is.",
     current: "Current",

@@ -67,7 +67,7 @@ test("Codex 제어는 모델 호출 없이 상태를 저장하고, 다음 턴·�
   writeFileSync(script, `
 const fs = require('node:fs');
 const send = data => process.stdout.write(JSON.stringify(data)+'\\n');
-let goal = null;
+let goal = null, delayedSettings = null;
 require('node:readline').createInterface({input:process.stdin}).on('line', line => {
   const m = JSON.parse(line);
   if (m.id === undefined) return;
@@ -82,6 +82,8 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   }
   if (!m.method) return;
   const reply = result => send({id:m.id,result});
+  if (m.method === 'thread/settings/update' && m.params.collaborationMode?.settings?.reasoning_effort === 'minimal') { delayedSettings=m.id; return; }
+  if (m.method === 'thread/settings/update' && m.params.collaborationMode?.settings?.reasoning_effort === 'persistent') return send({id:m.id,error:{message:'fixture effort rejected'}});
   if (m.method === 'thread/start' || m.method === 'thread/resume') return reply({thread:{id:'parent'},model:'fixture'});
   if (m.method === 'thread/goal/set') {
     if (m.params.origin !== 'user') return send({id:m.id,error:{message:'missing user authorization'}});
@@ -89,6 +91,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     goal = {...(goal || {objective:'',status:'active',tokenBudget:null,tokensUsed:7,timeUsedSeconds:1}), ...m.params};
     send({method:'thread/goal/updated',params:{threadId:'parent',goal}});
     reply({goal});
+    if(delayedSettings !== null) { send({id:delayedSettings,error:{message:'stale effort rejected'}}); delayedSettings=null; }
     if (m.params.objective === 'Auto fixture' || m.params.objective === 'Auto wait') {
       send({method:'turn/started',params:{threadId:'parent',turn:{id:'goal-turn'}}});
       if (m.params.objective === 'Auto fixture') send({id:'goal-question',method:'item/tool/requestUserInput',params:{threadId:'parent',turnId:'goal-turn',itemId:'question',questions:[{id:'q1',header:'Path',question:'Which path?',isOther:true,isSecret:false,options:[{label:'A',description:'fixture option'}]}]}});
@@ -97,7 +100,14 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   }
   if (m.method === 'turn/interrupt') { reply({}); send({method:'turn/completed',params:{threadId:'parent',turn:{id:'goal-turn',status:'interrupted'}}}); return; }
   if (m.method === 'thread/goal/get') return reply({goal});
-  if (m.method === 'thread/goal/clear') { goal = null; return reply({}); }
+  if (m.method === 'thread/goal/clear') {
+    if (delayedSettings !== null && goal?.objective === 'reject-clear') {
+      send({id:m.id,error:{message:'clear rejected'}});
+      setTimeout(()=>{send({id:delayedSettings,error:{message:'current effort rejected'}});delayedSettings=null;},30);
+      return;
+    }
+    goal = null; return reply({});
+  }
   if (m.method === 'turn/start' || m.method === 'thread/compact/start' || m.method === 'review/start') {
     reply({turn:{id:'turn'}});
     send({method:'turn/started',params:{threadId:'parent',turn:{id:'turn'}}});
@@ -111,7 +121,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     executable = join(dir, "codex.cmd");
     writeFileSync(executable, '@echo off\r\nnode "%~dp0\\fake.cjs" %*\r\n');
   } else { await (await import("node:fs/promises")).chmod(script, 0o755); writeFileSync(script, '#!/usr/bin/env node\n' + readFileSync(script, "utf8")); }
-  let persisted: SessionConfig = { provider: "codex", cwd: dir, policy: "ask" };
+  let persisted: SessionConfig = { provider: "codex", cwd: dir, policy: "ask", effort: "ultra" };
   const manager = new SessionManager({ emit() {}, maxConcurrent: 1, resolveConfig: () => persisted,
     onMeta(_tab, patch) { persisted = { ...persisted, ...patch }; },
     codexRuntime: async () => ({ codexPath: executable, env: { ...process.env } as Record<string,string> }),
@@ -120,7 +130,13 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   const idle = async () => { const until = Date.now() + 4000; while (manager.isBusy("tab") && Date.now() < until) await new Promise(r=>setTimeout(r,10)); assert.equal(manager.isBusy("tab"), false); };
   const requests = () => readFileSync(log, "utf8").trim().split("\n").map(line=>JSON.parse(line));
   try {
+    await manager.codexControl("fresh", "goal", "Fresh goal");
+    const freshSettings = requests().find(r => r.method === "thread/settings/update");
+    assert.equal(freshSettings.params.collaborationMode.mode, "default");
+    assert.equal(freshSettings.params.collaborationMode.settings.reasoning_effort, "ultra");
+    await manager.codexControl("fresh", "goal", "clear");
     await manager.codexControl("tab", "plan", "on");
+    assert.equal(requests().filter(r => r.method === "thread/settings/update").at(-1).params.collaborationMode.settings.reasoning_effort, "ultra");
     assert.equal(manager.snapshot("tab").codexMode, "plan");
     assert.equal(persisted.codexMode, "plan");
     await manager.codexControl("tab", "goal", "Finish tests");
@@ -145,7 +161,11 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     const usersBeforeInvalidCompact = manager.events("tab").filter(e => e.type === "user_message").length;
     await assert.rejects(manager.codexControl("tab", "compact", "invalid"));
     assert.equal(manager.events("tab").filter(e => e.type === "user_message").length, usersBeforeInvalidCompact, '거절된 압축 명령은 기록하지 않는다');
+    manager.configure("tab", { effort: "xhigh" });
     await manager.codexControl("tab", "review", ""); await idle();
+    const reviewIndex = requests().findIndex(r => r.method === "review/start");
+    assert.equal(requests()[reviewIndex - 1].method, "thread/settings/update");
+    assert.equal(requests()[reviewIndex - 1].params.collaborationMode.settings.reasoning_effort, "xhigh");
     assert.equal(requests().filter(r=>r.method==='turn/start').length,1);
     assert.equal(requests().find(r=>r.method==='thread/compact/start').params.threadId,'parent');
     assert.deepEqual(requests().find(r=>r.method==='review/start').params.target,{type:'uncommittedChanges'});
@@ -170,6 +190,12 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     await manager.codexControl('tab','goal','Auto wait');
     await new Promise(r=>setTimeout(r,20));
     assert.equal(manager.isBusy('tab'),true);
+    const settingsBefore = requests().filter(r=>r.method==='thread/settings/update').length;
+    manager.configure("tab", { effort: "low" });
+    manager.configure("tab", { effort: "high" });
+    const settingsDeadline = Date.now()+3000;
+    while(requests().filter(r=>r.method==='thread/settings/update').length < settingsBefore+2 && Date.now()<settingsDeadline) await new Promise(r=>setTimeout(r,10));
+    assert.deepEqual(requests().filter(r=>r.method==='thread/settings/update').slice(-2).map(r=>r.params.collaborationMode.settings.reasoning_effort), ["low","high"]);
     await assert.rejects(manager.codexControl('other','goal','Another goal'),/끝난 뒤/,'새 목표도 동시 실행 상한을 우회하지 않는다');
     assert.equal(manager.abort('tab'),true);
     await new Promise(r=>setTimeout(r,60));
@@ -182,5 +208,32 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     assert.equal(manager.snapshot("tab").codexMode,'default');
     manager.release("tab");
     assert.equal(manager.snapshot("tab").codexMode,'default','저장된 설정을 복원한다');
+    await manager.codexControl("tab", "goal", "Auto wait");
+    manager.configure("tab", { effort: "minimal" });
+    const delayedDeadline = Date.now()+3000;
+    while(!requests().some(r=>r.method==="thread/settings/update" && r.params.collaborationMode?.settings.reasoning_effort==="minimal") && Date.now()<delayedDeadline) await new Promise(r=>setTimeout(r,10));
+    assert.ok(requests().some(r=>r.method==="thread/settings/update" && r.params.collaborationMode?.settings.reasoning_effort==="minimal"));
+    await manager.codexControl("tab", "goal", "clear");
+    manager.configure("tab", { effort: "high" });
+    await manager.codexControl("tab", "goal", "Auto wait");
+    await new Promise(r=>setTimeout(r,50));
+    assert.equal(manager.snapshot("tab").codexGoal?.status, "active", "이전 목표의 지연 실패가 새 목표를 종료하지 않는다");
+    assert.ok(!manager.events("tab").some(e=>e.type==="error" && e.message?.includes("stale effort rejected")));
+    manager.configure("tab", { effort: "persistent" });
+    const failedDeadline = Date.now()+3000;
+    while(!manager.events("tab").some(e=>e.type==="error" && e.message?.includes("fixture effort rejected")) && Date.now()<failedDeadline) await new Promise(r=>setTimeout(r,10));
+    assert.ok(manager.events("tab").some(e=>e.type==="error" && e.message?.includes("fixture effort rejected")));
+    assert.notEqual(manager.snapshot("tab").codexGoal?.status, "active");
+    manager.configure("tab", { effort: "high" });
+    await manager.codexControl("tab", "goal", "reject-clear");
+    const beforeRejectedClear = requests().length;
+    manager.configure("tab", { effort: "minimal" });
+    const clearDeadline = Date.now()+3000;
+    while(!requests().slice(beforeRejectedClear).some(r=>r.method==="thread/settings/update") && Date.now()<clearDeadline) await new Promise(r=>setTimeout(r,10));
+    await assert.rejects(manager.codexControl("tab", "goal", "clear"), /clear rejected/);
+    const errorDeadline = Date.now()+3000;
+    while(!manager.events("tab").some(e=>e.type==="error" && e.message?.includes("current effort rejected")) && Date.now()<errorDeadline) await new Promise(r=>setTimeout(r,10));
+    assert.ok(manager.events("tab").some(e=>e.type==="error" && e.message?.includes("current effort rejected")));
+    assert.notEqual(manager.snapshot("tab").codexGoal?.status,"active");
   } finally { manager.shutdown(); await rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:50}); }
 });

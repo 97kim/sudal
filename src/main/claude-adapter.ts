@@ -43,6 +43,7 @@ export interface ClaudeTurnRequest {
   sessionId: string | null;
   policy: PermissionPolicy;
   model?: string;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
   abort: AbortController;
   onEvent(event: ChatEvent): void;
   /** renderer 가 답할 때까지 resolve 되지 않는다. abort 되면 deny 로 resolve. */
@@ -165,6 +166,7 @@ interface LiveSession {
   sessionId: string | null;
   mode: PermissionMode;
   model: string | undefined;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
   q: Query;
   input: InputQueue;
   turn: TurnCtx | null;
@@ -316,6 +318,7 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
     sessionId: req.sessionId,
     mode: POLICY_TO_MODE[req.policy],
     model: req.model,
+    effort: req.effort,
     q: null as unknown as Query,
     input,
     turn: null,
@@ -346,6 +349,7 @@ async function openSessionNow(runtime: ClaudeRuntime, req: ClaudeTurnRequest): P
     env: runtime.env,
     pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
     model: req.model,
+    effort: req.effort,
     resume: req.sessionId ?? undefined,
     includePartialMessages: true,
     // SDK 는 systemPrompt 를 안 주면 빈 시스템 프롬프트로 띄운다 — 터미널 Claude Code 와 같은 기본 프롬프트(작업 전 한 줄 설명·간결한 답·도구 사용 규칙)를 쓴다
@@ -588,7 +592,7 @@ async function sessionFor(runtime: ClaudeRuntime, req: ClaudeTurnRequest): Promi
     const mode = POLICY_TO_MODE[req.policy];
     // bypassPermissions 는 프로세스 시작 플래그(allowDangerouslySkipPermissions)와 묶여 있어 setPermissionMode 로 오가면 안 된다 — 새로 띄운다.
     const bypassFlip = (mode === "bypassPermissions") !== (cur.mode === "bypassPermissions");
-    if (cur.cwd === req.cwd && sameSession && !cur.turn && !bypassFlip) {
+    if (cur.cwd === req.cwd && sameSession && !cur.turn && !bypassFlip && cur.effort === req.effort) {
       if (mode !== cur.mode) {
         await cur.q.setPermissionMode(mode);
         cur.mode = mode;

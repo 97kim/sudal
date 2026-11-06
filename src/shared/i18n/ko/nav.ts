@@ -125,6 +125,8 @@ export const nav = {
     count_other: "{{count}}개",
   },
   modelPicker: {
+    effort: "추론 강도",
+    resetEffort: "기본값 사용",
     title: "모델 바꾸기",
     description: "다음 메시지부터 선택한 모델을 사용합니다. 대화는 그대로 이어집니다.",
     current: "현재",

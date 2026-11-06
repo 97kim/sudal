@@ -14,6 +14,31 @@ import { ZERO_USAGE, type ChatEvent } from "@shared/chat-events";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+test("추론 강도는 복원되고 모델·제공자 변경 시 초기화된다", () => {
+  const saved: Record<string, unknown> = {};
+  const sessions = new SessionManager({
+    emit() {}, claudeRuntime: async () => { throw Error("unused"); }, codexRuntime: async () => { throw Error("unused"); },
+    resolveConfig: () => ({ provider: "codex", cwd: null, policy: "ask", model: "test-model", effort: "high" }),
+    onMeta(_tab, patch) { Object.assign(saved, patch); },
+  });
+  assert.equal(sessions.snapshot("tab").effort, "high");
+  assert.equal(sessions.configure("tab", { effort: "low" }).effort, "low");
+  assert.equal(saved.effort, "low");
+  assert.equal(sessions.configure("tab", { model: "test-model" }).effort, "low", "동일 모델 재선택은 강도를 유지한다");
+  assert.equal(sessions.configure("tab", { model: "other" }).effort, undefined);
+  assert.equal(sessions.configure("tab", { model: "third", effort: "high" }).effort, "high");
+  assert.equal(sessions.configure("tab", { provider: "agy" }).effort, undefined);
+  sessions.adoptFork("fork", { provider: "codex", cwd: tmpdir(), model: "test-model", effort: "ultra", policy: "ask", sessionId: "fork-session" }, []);
+  assert.equal(saved.effort, "ultra", "분기한 강도도 영속 메타데이터에 포함한다");
+  const restored = new SessionManager({
+    emit() {}, claudeRuntime: async () => { throw Error("unused"); }, codexRuntime: async () => { throw Error("unused"); },
+    resolveConfig: () => ({ provider: "codex", cwd: tmpdir(), policy: "ask", effort: saved.effort as "ultra" }),
+  });
+  assert.equal(restored.snapshot("fork").effort, "ultra");
+  restored.shutdown();
+  sessions.shutdown();
+});
+
 test("history sequence fencing starts after asynchronous checkpoint preparation", async () => {
   const events: ChatEvent[] = [];
   let release!: () => void, sequence = 0, fenced = -1;

@@ -397,9 +397,10 @@ export function ChatView({
 
   // "/model" 피커. "/model opus" 처럼 인자가 있으면 피커 없이 바로 바꾼다.
   const [modelPicker, setModelPicker] = useState(false);
+  const modelButtonRef = useRef<HTMLButtonElement>(null);
   const setModel = useCallback(
-    async (model: string) => {
-      setConfig(await window.sudal.chat.configure(tabId, { model }));
+    async (model: string, effort?: import("@shared/ipc").SessionConfigDto["effort"]) => {
+      setConfig(await window.sudal.chat.configure(tabId, { model, effort }));
     },
     [tabId, setConfig],
   );
@@ -576,7 +577,7 @@ export function ChatView({
       if (cmd?.name === "mcp") return onOpenMcp();
       if (cmd?.name === "config") return onOpenSettings();
       if (cmd?.name === "model") {
-        if (cmd.arg) await setModel(modelFromArg(cmd.arg));
+        if (cmd.arg) setConfig(await window.sudal.chat.configure(tabId, { model: modelFromArg(cmd.arg) }));
         else setModelPicker(true);
         return;
       }
@@ -1201,6 +1202,10 @@ export function ChatView({
             </div>}
 
             <Composer
+              modelLabel={[headerModelLabel(config?.model, state.model), config?.effort].filter(Boolean).join(" · ")}
+              modelButtonRef={modelButtonRef}
+              modelPickerOpen={modelPicker}
+              onOpenModel={() => setModelPicker(open => !open)}
               contextPercent={ctx?.pct ?? null}
               onOpenContext={() => setOpenContextRequest(n => n + 1)}
               disabled={!cwd || terminalControlled}
@@ -1299,8 +1304,10 @@ export function ChatView({
 
         {modelPicker && config && (
           <ModelPickerModal
+            anchor={modelButtonRef.current}
             provider={config.provider}
             current={config.model}
+            effort={config.effort}
             onClose={() => setModelPicker(false)}
             onPick={setModel}
           />

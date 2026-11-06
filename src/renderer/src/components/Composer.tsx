@@ -73,10 +73,18 @@ export function Composer({
   disabledText,
   contextPercent = null,
   onOpenContext,
+  modelLabel,
+  onOpenModel,
+  modelButtonRef,
+  modelPickerOpen,
 }: {
   disabled: boolean;
   contextPercent?: number | null;
   onOpenContext?: () => void;
+  modelLabel?: string;
+  onOpenModel?: () => void;
+  modelButtonRef?: React.Ref<HTMLButtonElement>;
+  modelPickerOpen?: boolean;
   /** 쓰다 만 글을 보존할 키(채팅 탭 id). 없으면 보존하지 않는다. */
   draftKey?: string;
   /** disabled 일 때 보여 줄 안내. 기본은 작업 경로 안내. */
@@ -654,6 +662,7 @@ export function Composer({
             <span className="text-muted">{policyTag ?? POLICY_TAG[policy]}</span>
           </span>
           <span className="ml-auto @[380px]:hidden" />
+          {onOpenModel && <button ref={modelButtonRef} type="button" onClick={onOpenModel} title={t("nav.modelPicker.title")} aria-label={t("nav.modelPicker.title")} aria-haspopup="dialog" aria-expanded={modelPickerOpen} className="flex min-w-0 max-w-[45%] items-center gap-1 rounded-md px-2 py-1.5 text-sm text-fg hover:bg-panel-2"><span className="truncate">{modelLabel || t("session.model.default")}</span><span aria-hidden="true">⌄</span></button>}
           {onOpenContext && <ContextGauge percent={contextPercent} onOpen={onOpenContext} />}
           {running ? (
             <>
