@@ -662,7 +662,7 @@ export function Composer({
             <span className="text-muted">{policyTag ?? POLICY_TAG[policy]}</span>
           </span>
           <span className="ml-auto @[380px]:hidden" />
-          {onOpenModel && <button ref={modelButtonRef} type="button" onClick={onOpenModel} title={t("nav.modelPicker.title")} aria-label={t("nav.modelPicker.title")} aria-haspopup="dialog" aria-expanded={modelPickerOpen} className="flex min-w-0 max-w-[45%] items-center gap-1 rounded-md px-2 py-1.5 text-sm text-fg hover:bg-panel-2"><span className="truncate">{modelLabel || t("session.model.default")}</span><span aria-hidden="true">⌄</span></button>}
+          {onOpenModel && <button ref={modelButtonRef} type="button" onClick={onOpenModel} title={t("nav.modelPicker.title")} aria-label={t("nav.modelPicker.title")} aria-haspopup="dialog" aria-expanded={modelPickerOpen} className="flex min-w-0 max-w-[45%] items-center gap-1 rounded-md px-2 py-1.5 text-sm text-fg hover:bg-panel-2"><span className="truncate">{modelLabel || t("session.model.default")}</span><Icon name="chevronDown" size={14} className="text-muted" /></button>}
           {onOpenContext && <ContextGauge percent={contextPercent} onOpen={onOpenContext} />}
           {running ? (
             <>
