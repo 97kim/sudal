@@ -35,6 +35,7 @@ export interface CrossReviewStartDto {
 
 /** 모델 피커의 한 줄. id 는 CLI 에 넘기는 값(별칭 또는 전체 이름). */
 export interface ModelOptionDto {
+  efforts?: ("minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent")[];
   id: string;
   label: string;
   description?: string;
@@ -741,6 +742,7 @@ export interface SessionConfigDto {
   cwd: string | null;
   policy: PermissionPolicy;
   model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
   codexMode?: import("./codex-controls").CodexMode;
 }
 

@@ -68,7 +68,7 @@ async function claudeModels(src: ModelSources): Promise<ModelOptionDto[]> {
     // "default" 행은 SDK 의 기본(사용자 CLI 설정과 다를 수 있다) — 우리 "" 항목이 그 역할을 하므로 뺀다
     return list
       .filter((m) => m.value !== "default")
-      .map((m) => ({ id: m.value, label: m.displayName, description: m.description || undefined, ...(m.resolvedModel ? { resolved: m.resolvedModel } : {}) }));
+      .map((m) => ({ efforts: m.supportedEffortLevels, id: m.value, label: m.displayName, description: m.description || undefined, ...(m.resolvedModel ? { resolved: m.resolvedModel } : {}) }));
   } finally {
     try {
       (q as { close?: () => void }).close?.();
@@ -88,7 +88,7 @@ async function codexModels(src: ModelSources): Promise<ModelOptionDto[]> {
     const rows = Array.isArray(r?.data) ? r.data : [];
     return rows
       .filter((m) => m.hidden !== true && typeof m.id === "string")
-      .map((m) => ({ id: String(m.id), label: typeof m.displayName === "string" && m.displayName ? m.displayName : String(m.id), description: typeof m.description === "string" ? m.description : undefined, ...(m.isDefault === true ? { isDefault: true } : {}) }));
+      .map((m) => ({ efforts: Array.isArray(m.supportedReasoningEfforts) ? m.supportedReasoningEfforts.map((e: any) => e?.reasoningEffort).filter((e: any) => ["minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent"].includes(e)) : undefined, id: String(m.id), label: typeof m.displayName === "string" && m.displayName ? m.displayName : String(m.id), description: typeof m.description === "string" ? m.description : undefined, ...(m.isDefault === true ? { isDefault: true } : {}) }));
   } finally {
     server.close();
   }

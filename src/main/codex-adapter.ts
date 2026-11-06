@@ -42,6 +42,7 @@ export interface CodexTurnRequest {
   /** 지금 탭의 권한. 프로세스·스레드를 여는 동안 바꾼 권한이 첫 턴에도 먹게, 턴을 시작하는 순간에 다시 읽는다. */
   currentPolicy?(): PermissionPolicy;
   model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
   codexMode?: CodexMode;
   nativeAction?: "compact" | "review";
   onGoalChanged?(goal: CodexGoal | null): void;
@@ -289,6 +290,9 @@ async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, l
 function handleNotification(s: LiveCodex, method: string, params: Record<string, unknown>) {
   if (s.dead) return;
   if (params.threadId === s.threadId && (method === "thread/goal/updated" || method === "thread/goal/cleared")) {
+    const nextGoal = method === "thread/goal/cleared" ? null : params.goal as CodexGoal;
+    if (s.goal?.status !== nextGoal?.status || s.goal?.objective !== nextGoal?.objective)
+      goalSettingsEpochs.set(s, (goalSettingsEpochs.get(s) ?? 0) + 1);
     s.goal = method === "thread/goal/cleared" ? null : params.goal as CodexGoal;
     s.goalRevision = (s.goalRevision ?? 0) + 1;
     s.onGoalChanged?.(s.goal);
@@ -459,7 +463,7 @@ async function sessionFor(runtime: CodexRuntime, req: CodexWarmRequest): Promise
   return s;
 }
 
-async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "log"> & { onEvent?: CodexTurnRequest["onEvent"] }): Promise<void> {
+async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "effort" | "log"> & { onEvent?: CodexTurnRequest["onEvent"] }): Promise<void> {
   const map = POLICY_TO_APPSERVER[req.policy];
   // developerInstructions 는 설정의 developer_instructions 를 대신한다(덧붙지 않는다) — 사용자가 정해 둔 것이 있으면 싣지 않는다.
   const ownInstructions = codexHasDeveloperInstructions(process.env, homedir(), req.cwd);
@@ -489,7 +493,7 @@ async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey"
   if (!s.threadId) throw new MsgError("session.msg.codexThreadOpen");
 }
 
-export type CodexWarmRequest = Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "log" | "codexMode" | "onGoalChanged" | "onAmbientEvent" | "requestAmbientPermission">;
+export type CodexWarmRequest = Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "effort" | "log" | "codexMode" | "onGoalChanged" | "onAmbientEvent" | "requestAmbientPermission">;
 
 export async function runCodexControl(runtime: CodexRuntime, req: CodexWarmRequest & Pick<CodexTurnRequest, "codexMode" | "onGoalChanged" | "onAmbientEvent" | "requestAmbientPermission">, command: CodexControlCommand, arg: string): Promise<CodexControlResult & { sessionId: string }> {
   if (appServerUnavailable) throw new MsgError("session.msg.codexControl.appServerRequired");
@@ -498,12 +502,14 @@ export async function runCodexControl(runtime: CodexRuntime, req: CodexWarmReque
   try {
     if (command === "goal" && arg && !["status", "pause", "clear"].includes(arg) && !arg.startsWith("budget ")) {
       const policy = POLICY_TO_APPSERVER[req.policy];
-      await s.server.request("thread/settings/update", { threadId: s.threadId, approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer, sandboxPolicy: policy.sandboxPolicy, ...(req.codexMode ? { collaborationMode: codexCollaborationMode(req.codexMode, req.model || s.model) } : {}) });
+      await s.server.request("thread/settings/update", { threadId: s.threadId, approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer, sandboxPolicy: policy.sandboxPolicy, collaborationMode: codexCollaborationMode(req.codexMode ?? "default", req.model || s.model, req.effort) });
     }
     const goalRevision = s.goalRevision;
-    const result = await executeCodexControl(s.server, { threadId: s.threadId!, cwd: req.cwd, model: req.model || s.model, mode: req.codexMode }, command, arg);
+    const result = await executeCodexControl(s.server, { threadId: s.threadId!, cwd: req.cwd, model: req.model || s.model, mode: req.codexMode, effort: req.effort }, command, arg);
     if (s.dead || live.get(req.sessionKey) !== s) throw new MsgError("session.msg.sessionEnded");
     if ("goal" in result) {
+      if (s.goalRevision === goalRevision && command === "goal" && arg && arg !== "status" && !arg.startsWith("budget "))
+        goalSettingsEpochs.set(s, (goalSettingsEpochs.get(s) ?? 0) + 1);
       // RPC를 기다리는 동안 도착한 완료·한도 알림을 예전 active 응답으로 되돌리지 않는다.
       if (s.goalRevision === goalRevision) s.goal = result.goal;
       else result.goal = s.goal ?? null;
@@ -611,7 +617,13 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
   req.abort.signal.addEventListener("abort", onAbort, { once: true });
   try {
     const map = POLICY_TO_APPSERVER[policy];
-    if (req.nativeAction) await s.server.request("thread/settings/update", { threadId: s.threadId, approvalPolicy: map.approvalPolicy, approvalsReviewer: map.approvalsReviewer, sandboxPolicy: map.sandboxPolicy });
+    if (req.nativeAction) await s.server.request("thread/settings/update", {
+      threadId: s.threadId,
+      approvalPolicy: map.approvalPolicy,
+      approvalsReviewer: map.approvalsReviewer,
+      sandboxPolicy: map.sandboxPolicy,
+      collaborationMode: codexCollaborationMode(req.codexMode ?? "default", req.model || s.model, req.effort),
+    });
     const input: Record<string, unknown>[] = [
       ...req.images.map((i) => ({ type: "localImage", path: i.filePath })),
       { type: "text", text: req.prompt },
@@ -625,7 +637,8 @@ export async function runCodexTurn(runtime: CodexRuntime, req: CodexTurnRequest)
       input,
       cwd: req.cwd,
       model: req.model ?? null,
-      ...(req.codexMode ? { collaborationMode: codexCollaborationMode(req.codexMode, req.model || s.model) } : {}),
+      effort: req.effort ?? null,
+      collaborationMode: codexCollaborationMode(req.codexMode ?? "default", req.model || s.model, req.effort),
       approvalPolicy: map.approvalPolicy,
       approvalsReviewer: map.approvalsReviewer,
       sandboxPolicy: map.sandboxPolicy,
@@ -661,7 +674,8 @@ export function interruptCodexSession(key: string): void {
  */
 export async function forkCodexThread(
   runtime: CodexRuntime,
-  req: { threadId: string; lastTurnId: string; cwd: string; model?: string; policy: PermissionPolicy; log?: (line: string) => void },
+  req: { threadId: string; lastTurnId: string; cwd: string; model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent"; policy: PermissionPolicy; log?: (line: string) => void },
 ): Promise<string> {
   const server = new CodexAppServer({
     log: req.log,
@@ -856,6 +870,7 @@ export async function runCodexTurnExec(runtime: CodexRuntime, req: CodexTurnRequ
     skipGitRepoCheck: true,
     approvalPolicy: "never",
     model: req.model,
+    modelReasoningEffort: req.effort as ThreadOptions["modelReasoningEffort"],
     ...POLICY_TO_THREAD[req.policy],
   };
   const thread = req.sessionId ? codex.resumeThread(req.sessionId, threadOptions) : codex.startThread(threadOptions);
@@ -886,6 +901,33 @@ export async function runCodexTurnExec(runtime: CodexRuntime, req: CodexTurnRequ
  * 풀어 주는 변경은 이후 승인 요청에 대신 답하는 것으로 바로 적용하고(샌드박스는 다음 턴부터), 조이는 변경은 다음 턴부터다
  * (턴을 "묻지 않음" 으로 시작했으면 요청이 아예 오지 않는다).
  */
+const goalSettingsUpdates = new WeakMap<LiveCodex, Promise<void>>();
+const goalSettingsEpochs = new WeakMap<LiveCodex, number>();
+
+/** Goal continuations bypass runCodexTurn; update their server-side defaults in order. */
+export function applyCodexGoalSettings(sessionKey: string, settings: Pick<CodexTurnRequest, "model" | "effort" | "codexMode">): Promise<void> {
+  const s = live.get(sessionKey);
+  if (!s || s.dead || s.goal?.status !== "active" || !s.threadId) return Promise.resolve();
+  const epoch = goalSettingsEpochs.get(s);
+  const update = (goalSettingsUpdates.get(s) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    if (s.dead || live.get(sessionKey) !== s || s.goal?.status !== "active" || goalSettingsEpochs.get(s) !== epoch) return;
+    try {
+      await s.server.request("thread/settings/update", {
+        threadId: s.threadId,
+        collaborationMode: codexCollaborationMode(settings.codexMode ?? "default", settings.model || s.model, settings.effort),
+      });
+    } catch (error) {
+      if (s.dead || live.get(sessionKey) !== s || s.goal?.status !== "active" || goalSettingsEpochs.get(s) !== epoch) return;
+      s.goal = null;
+      s.onGoalChanged?.(null);
+      closeCodexSession(sessionKey);
+      throw error;
+    }
+  });
+  goalSettingsUpdates.set(s, update);
+  return update;
+}
+
 export async function applyCodexPolicy(sessionKey: string, policy: PermissionPolicy): Promise<"applied" | "next-turn" | "none"> {
   const s = live.get(sessionKey);
   if (!s || s.dead) return "none";

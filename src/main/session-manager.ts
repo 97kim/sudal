@@ -21,7 +21,7 @@ import type { LiveBackgroundTask, TaskFinishedNote } from "@shared/bg-tasks";
 import type { StoredChatImage } from "./chat-attachments";
 import type { BackgroundTasksSource } from "./claude-adapter";
 import { applyClaudePolicy, closeAllClaudeSessions, closeClaudeSession, interruptClaudeSession, runClaudeTurn, warmClaudeSession, type ClaudeRuntime } from "./claude-adapter";
-import { applyCodexPolicy, closeAllCodexSessions, closeCodexSession, hasAmbientCodexTurn, interruptCodexSession, runCodexTurn, runCodexControl, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
+import { applyCodexGoalSettings, applyCodexPolicy, closeAllCodexSessions, closeCodexSession, hasAmbientCodexTurn, interruptCodexSession, runCodexTurn, runCodexControl, steerCodexTurn, warmCodexSession, type CodexRuntime } from "./codex-adapter";
 import { parseGoalAction, type CodexMode, type CodexGoal, type CodexControlCommand, type CodexControlResult } from "@shared/codex-controls";
 import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
@@ -71,6 +71,7 @@ export interface SessionConfig {
   cwd: string | null;
   policy: PermissionPolicy;
   model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
   sessionId?: string | null;
 }
 
@@ -82,6 +83,7 @@ export interface SessionSnapshot {
   cwd: string | null;
   policy: PermissionPolicy;
   model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
   status: SessionStatus;
   sessionId: string | null;
   /** provider 전환 후 아직 첫 메시지를 보내지 않아 요약이 대기 중이면 true. */
@@ -128,6 +130,7 @@ interface Session {
   cwd: string | null;
   policy: PermissionPolicy;
   model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
   status: SessionStatus;
   sessionId: string | null;
   abort: AbortController | null;
@@ -228,6 +231,7 @@ export interface SessionManagerDeps {
       sessionId?: string | null;
       provider?: Provider;
       model?: string;
+      effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
       codexMode?: CodexMode;
       policy?: PermissionPolicy;
       cwd?: string | null;
@@ -372,6 +376,7 @@ export class SessionManager {
         cwd: defaults?.cwd ?? resolved?.cwd ?? null,
         policy: defaults?.policy ?? resolved?.policy ?? "ask",
         model: defaults?.model ?? resolved?.model,
+        effort: defaults?.effort ?? resolved?.effort,
         codexMode: defaults?.codexMode ?? resolved?.codexMode,
         status: "idle",
         sessionId: defaults?.sessionId ?? resolved?.sessionId ?? null,
@@ -425,6 +430,7 @@ export class SessionManager {
       cwd: s.cwd,
       policy: s.policy,
       model: s.model,
+      effort: s.effort,
       ...(s.codexMode ? { codexMode: s.codexMode } : {}),
       ...(s.codexGoal !== undefined ? { codexGoal: s.codexGoal } : {}),
       status: s.status,
@@ -558,6 +564,7 @@ export class SessionManager {
       sessionId: s.sessionId,
       policy: s.policy,
       model: s.model,
+      effort: s.effort,
       log: (line: string) => this.deps.log?.(tabId, line),
       onGoalChanged: (goal: CodexGoal | null) => this.codexGoalChanged(s, goal),
       onBackgroundTasks: (sessionId: string, tasks: LiveBackgroundTask[], source: BackgroundTasksSource) => this.deps.onBackgroundTasks?.(tabId, sessionId, tasks, source),
@@ -1099,7 +1106,8 @@ export class SessionManager {
    * 팬아웃·리뷰·검증·오케스트레이션 카드는 원래 탭의 작업(worktree 삭제 같은 동작이 딸림)이라 옮기지 않는다.
    */
   forkSource(tabId: string, pointId: string):
-    | { ok: true; point: ForkPoint; cwd: string; provider: Provider; model?: string; policy: PermissionPolicy; prefix: ChatEvent[] }
+    | { ok: true; point: ForkPoint; cwd: string; provider: Provider; model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent"; policy: PermissionPolicy; prefix: ChatEvent[] }
     | { ok: false; error: string } {
     const s = this.ensure(tabId);
     if (s.controller !== "app") return { ok: false, error: mt("session.error.forkTerminal") };
@@ -1113,19 +1121,22 @@ export class SessionManager {
       return { ok: false, error: mt("session.error.forkNotCurrent") };
     const carried = new Set<ChatEvent["type"]>(["review", "verify", "fanout", "orchestration", "thinking_delta", "subagent_activity"]);
     const prefix = events.slice(0, idx + 1).filter((e) => !carried.has(e.type));
-    return { ok: true, point, cwd: s.cwd, provider: s.provider, model: s.model, policy: s.policy, prefix };
+    return { ok: true, point, cwd: s.cwd, provider: s.provider, model: s.model,
+      effort: s.effort, policy: s.policy, prefix };
   }
 
   /** 분기로 만든 새 탭에 새 provider 세션과 옮겨 온 기록을 심는다. 대기열·예약·백그라운드는 물려받지 않는다. */
-  adoptFork(tabId: string, cfg: { provider: Provider; cwd: string; model?: string; policy: PermissionPolicy; sessionId: string }, prefix: ChatEvent[]): SessionSnapshot {
+  adoptFork(tabId: string, cfg: { provider: Provider; cwd: string; model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent"; policy: PermissionPolicy; sessionId: string }, prefix: ChatEvent[]): SessionSnapshot {
     const s = this.ensure(tabId);
     closeProviderSessions(tabId);
     s.provider = cfg.provider;
     s.cwd = cfg.cwd;
     s.model = cfg.model;
+    s.effort = cfg.effort;
     s.policy = cfg.policy;
     s.sessionId = cfg.sessionId;
-    this.deps.onMeta?.(tabId, { provider: cfg.provider, cwd: cfg.cwd, model: cfg.model, policy: cfg.policy, sessionId: cfg.sessionId });
+    this.deps.onMeta?.(tabId, { provider: cfg.provider, cwd: cfg.cwd, model: cfg.model, effort: cfg.effort, policy: cfg.policy, sessionId: cfg.sessionId });
     const now = Date.now();
     for (const e of prefix) this.record(s, e);
     this.record(s, { type: "session", ts: now, sessionId: cfg.sessionId, provider: cfg.provider, ...(cfg.model ? { model: cfg.model } : {}) });
@@ -1231,7 +1242,8 @@ export class SessionManager {
       const runtime = await this.deps.codexRuntime(tabId);
       if (this.shuttingDown || this.sessions.get(tabId) !== s) throw new MsgError("session.msg.sessionEnded");
       const result = await runCodexControl(runtime, {
-        sessionKey: tabId, cwd: s.cwd, sessionId: s.sessionId, policy: s.policy, model: s.model, codexMode: s.codexMode,
+        sessionKey: tabId, cwd: s.cwd, sessionId: s.sessionId, policy: s.policy, model: s.model,
+      effort: s.effort, codexMode: s.codexMode,
         onAmbientEvent: (event) => {
           if (this.shuttingDown || this.sessions.get(tabId) !== s || s.provider !== "codex") return;
           if (goalEvents) goalEvents.push(event);
@@ -1272,6 +1284,7 @@ export class SessionManager {
       // provider 가 바뀌면 이전 provider 의 세션 id 는 의미가 없다. 살아 있던 Claude 프로세스도 내린다.
       closeProviderSessions(tabId);
       s.provider = patch.provider;
+      s.effort = undefined; meta.effort = undefined;
       s.codexGoal = null;
       s.sessionId = null;
       meta.provider = patch.provider;
@@ -1301,6 +1314,8 @@ export class SessionManager {
       meta.policy = patch.policy;
       if (changed) this.applyPolicyNow(tabId, s, patch.policy);
     }
+    if ("model" in patch && patch.model !== s.model) { s.effort = undefined; meta.effort = undefined; }
+    if ("effort" in patch) { s.effort = patch.effort; meta.effort = patch.effort; }
     if ("model" in patch) {
       s.model = patch.model || undefined;
       meta.model = s.model;
@@ -1308,6 +1323,13 @@ export class SessionManager {
     if (patch.codexMode) {
       s.codexMode = patch.codexMode;
       meta.codexMode = patch.codexMode;
+    }
+    if (s.provider === "codex" && s.codexGoal?.status === "active" && ("effort" in patch || "model" in patch || "codexMode" in patch)) {
+      void applyCodexGoalSettings(tabId, { model: s.model, effort: s.effort, codexMode: s.codexMode }).catch(error => {
+        if (this.sessions.get(tabId) !== s || s.provider !== "codex") return;
+        this.record(s, { type: "error", ts: Date.now(), fatal: false, message: describeError(error) });
+        this.drain();
+      });
     }
     if (Object.keys(meta).length > 0) this.deps.onMeta?.(tabId, meta);
     const snap = this.snapshot(tabId);
@@ -1348,6 +1370,7 @@ export class SessionManager {
     const snapshot = this.switchProvider(tabId, {
       provider: s.provider,
       model: s.model,
+      effort: s.effort,
       preserveContext: true,
     });
     this.record(s, { type: "user_message", id: randomUUID(), ts: Date.now(), text: "/compact" });
@@ -1373,6 +1396,7 @@ export class SessionManager {
     opts: {
       provider: Provider;
       model?: string;
+      effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
       preserveContext: boolean;
       /** 떠나는 provider 가 직접 쓴 인계서. 있으면 우리가 만든 요약 대신 이걸 넘긴다. */
       summary?: string;
@@ -1398,11 +1422,13 @@ export class SessionManager {
     s.provider = opts.provider;
     s.codexGoal = null;
     s.model = opts.model || undefined;
+    s.effort = opts.effort;
     s.sessionId = null;
     this.setHandoffPrefix(s, handoff ? handoff.summary : null);
     this.deps.onMeta?.(tabId, {
       provider: s.provider,
       model: s.model,
+      effort: s.effort,
       sessionId: null,
     });
     this.record(s, { type: "session_reset", ts: Date.now() });
@@ -1572,6 +1598,7 @@ export class SessionManager {
             policy: s.policy,
             currentPolicy: () => s.policy,
             model: s.model,
+            effort: s.effort,
             codexMode: s.codexMode,
             nativeAction: turn.nativeAction,
             onGoalChanged: (goal) => this.codexGoalChanged(s, goal),
@@ -1593,6 +1620,7 @@ export class SessionManager {
             sessionId: s.sessionId,
             policy: s.policy,
             model: s.model,
+            effort: s.effort === "minimal" || s.effort === "ultra" || s.effort === "persistent" ? undefined : s.effort,
             abort,
             onEvent: emit,
             requestPermission: (req) =>

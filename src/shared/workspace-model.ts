@@ -28,6 +28,7 @@ export interface TabMeta {
   titleCustom?: boolean;
   provider: Provider;
   model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent";
   codexMode?: import("./codex-controls").CodexMode;
   policy: PermissionPolicy;
   /** 이 탭의 작업 경로. 없으면 워크스페이스 기본 경로를 쓴다. */
@@ -207,7 +208,8 @@ export function createTab(
   workspaceId: string,
   now: number,
   id: string,
-  defaults: { provider?: Provider; model?: string; policy?: PermissionPolicy; cwd?: string } = {},
+  defaults: { provider?: Provider; model?: string;
+  effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent"; policy?: PermissionPolicy; cwd?: string } = {},
 ): { model: WorkspaceModel; tab: TabMeta } {
   const tab: TabMeta = {
     id,
@@ -215,6 +217,7 @@ export function createTab(
     title: null,
     provider: defaults.provider ?? "claude",
     ...(defaults.model ? { model: defaults.model } : {}),
+    ...(defaults.effort ? { effort: defaults.effort } : {}),
     ...(defaults.cwd ? { cwd: defaults.cwd } : {}),
     policy: defaults.policy ?? "ask",
     sessionId: null,

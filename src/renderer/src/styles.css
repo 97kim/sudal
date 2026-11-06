@@ -489,6 +489,31 @@ kbd,
 .spin {
   animation: spin 0.9s linear infinite;
 }
+
+/* Keep native range keyboard behavior with a lighter, stepped visual track. */
+.effort-slider {
+  appearance: none;
+  background: transparent;
+  outline: none;
+}
+.effort-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: transparent;
+}
+.effort-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border: 2px solid var(--color-panel);
+  border-radius: 50%;
+  background: var(--color-fg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-fg) 18%, transparent), 0 2px 4px #0003;
+  transition: box-shadow 120ms ease;
+}
+.effort-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--color-accent-tint), 0 0 0 5px var(--color-accent);
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

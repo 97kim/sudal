@@ -2086,7 +2086,7 @@ async function forkTab(tabId: string, pointId: string): Promise<{ ok: true; tabI
   }
   const newTabId = workspaces.createTab(tab.workspaceId, { cwd: src.cwd, title: mt("main.tab.forkTitle", { title: tabTitleOf(tabId) }) });
   if (!newTabId) return { ok: false, error: mt("main.error.tabCreateFailed") };
-  sessions.adoptFork(newTabId, { provider: src.provider, cwd: src.cwd, model: src.model, policy: src.policy, sessionId }, src.prefix);
+  sessions.adoptFork(newTabId, { provider: src.provider, cwd: src.cwd, model: src.model, effort: src.effort, policy: src.policy, sessionId }, src.prefix);
   workspaces.activateTab(newTabId);
   return { ok: true, tabId: newTabId };
 }
@@ -2856,6 +2856,10 @@ function registerIpc() {
       if ("model" in patch) {
         if (patch.model !== undefined && typeof patch.model !== "string") throw new Error(mt("main.error.badModel"));
         clean.model = patch.model?.slice(0, 200);
+      }
+      if ("effort" in patch) {
+        if (patch.effort !== undefined && !["minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent"].includes(patch.effort)) throw new Error(mt("main.error.badArgs"));
+        clean.effort = patch.effort;
       }
       const snap = sessions.configure(tabId, clean);
       if (clean.cwd || clean.provider || clean.policy) void sessions.warm(tabId);

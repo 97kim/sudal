@@ -2,16 +2,16 @@ import { parseGoalAction, type CodexControlCommand, type CodexControlResult, typ
 import { MsgError } from "./i18n";
 
 interface Client { request<T = unknown>(method: string, params: Record<string, unknown>): Promise<T> }
-export interface CodexControlContext { threadId: string; cwd: string; model: string | null; mode?: CodexMode }
+export interface CodexControlContext { threadId: string; cwd: string; model: string | null; mode?: CodexMode; effort?: string }
 
 export function codexControlError(error: unknown): unknown {
   const message = error instanceof Error ? error.message : String(error);
   return /unknown (?:method|variant)|method not found|unrecognized method|-32601/i.test(message) ? new MsgError("session.msg.codexControl.appServerRequired") : error;
 }
 
-export function codexCollaborationMode(mode: CodexMode, model: string | null) {
+export function codexCollaborationMode(mode: CodexMode, model: string | null, effort?: string) {
   if (!model) throw new MsgError("session.msg.codexControl.modelMissing");
-  return { mode, settings: { model, reasoning_effort: null, developer_instructions: null } };
+  return { mode, settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } };
 }
 
 /** 설정 진단에는 인증 값·환경 변수 값이 섞일 수 있어 화면으로 보내기 전에 가린다. */
@@ -27,7 +27,7 @@ export async function executeCodexControl(client: Client, ctx: CodexControlConte
   const threadId = ctx.threadId;
   if (command === "plan") {
     const mode = arg === "off" || arg === "default" ? "default" : arg === "on" ? "plan" : ctx.mode === "plan" ? "default" : "plan";
-    await client.request("thread/settings/update", { threadId, collaborationMode: codexCollaborationMode(mode, ctx.model) });
+    await client.request("thread/settings/update", { threadId, collaborationMode: codexCollaborationMode(mode, ctx.model, ctx.effort) });
     return { mode };
   }
   if (command === "goal") {
