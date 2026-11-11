@@ -503,6 +503,9 @@ export class ControlServer {
         if (model) patch.model = model;
         const title = params.title !== undefined ? this.requireString(params, "title") : undefined;
         const prompt = params.prompt !== undefined ? this.requireString(params, "prompt") : undefined;
+        // 호출자는 워크스페이스 선택용이다. 작업 위임 관계는 명시한 부모에만 연결한다.
+        const parent = params.parent !== undefined ? this.resolveTab(this.requireString(params, "parent")) : undefined;
+        if (parent && parent.workspaceId !== ws.id) throw new ControlError(mt("cli.control.parentWorkspaceMismatch"));
         // 프롬프트를 보내려면 작업 경로가 있어야 한다: --cwd 나 워크스페이스 기본 경로. 없으면 만들기 전에 거절.
         if (prompt && !cwd && !ws.path) throw new ControlError(mt("cli.control.promptNeedsCwd"));
         if (cwd) this.deps.approveRoot(cwd);
@@ -512,7 +515,7 @@ export class ControlServer {
         if (!tabId) throw new ControlError(mt("cli.control.tabCreateFailed"));
         if (Object.keys(patch).length > 0) this.deps.configure(tabId, patch);
         if (title) this.deps.renameTab(tabId, title);
-        if (typeof params.caller === 'string' && st.model.tabs.some(t => t.id === params.caller)) this.deps.linkAgentTab?.(tabId, params.caller);
+        if (parent) this.deps.linkAgentTab?.(tabId, parent.id);
         if (params.activate === true) this.deps.activateTab(tabId);
         else if (prevActive && prevActive !== tabId) this.deps.activateTab(prevActive);
         let sent: ChatSendResult | null = null;

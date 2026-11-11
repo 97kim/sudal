@@ -42,6 +42,8 @@ sudal tab send --tab Review --text "Run the tests too" --wait
 sudal tab read --tab Review --last 3
 ```
 
+New tabs are independent by default. When an agent inside a Sudal tab delegates work, it can add `--parent self` to show the new tab as its worker. In a regular terminal, use a parent tab ID or title instead of `self` if you want that link. The parent and new tab must be in the same workspace.
+
 ## Features
 
 <table>
