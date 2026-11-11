@@ -37,7 +37,7 @@ Claude Code and Codex inside the app open new tabs with the `sudal` CLI, hand of
 Install the CLI and skills under Settings → General → **CLI and agent skills** and your agents learn how to use it. It applies to sessions you start after installing. You can run the same commands yourself in a terminal.
 
 ```
-sudal tab new --provider codex --title "Review" --prompt "Review the code I just changed"
+sudal tab new --provider codex --parent self --title "Review" --prompt "Review the code I just changed"
 sudal tab send --tab Review --text "Run the tests too" --wait
 sudal tab read --tab Review --last 3
 ```

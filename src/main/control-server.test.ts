@@ -5,6 +5,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { ControlServer, controlPipeName, isPipePath, type ControlDeps } from "./control-server";
 import type { ChatEvent } from "@shared/chat-events";
 import type { WorkspaceStateDto } from "@shared/ipc";
@@ -311,7 +313,7 @@ test("ControlServer: 값 없는 --tab 거절, 중복 워크스페이스 이름�
   (model.tabs as unknown[]).push({ id: "t5", workspaceId: "w2", title: null, provider: "codex", policy: "ask", sessionId: null, createdAt: 5, updatedAt: 5, open: true });
   deps.linkAgentTab = (child, parent) => { calls.push(`linkAgentTab ${child} ${parent}`); };
   await d("tab.new", { caller: "t5" });
-  assert.equal(calls.filter(c => c.startsWith('linkAgentTab')).at(-1), 'linkAgentTab t4 t5');
+  assert.equal(calls.some(c => c.startsWith('linkAgentTab')), false, '일반 탭은 호출자의 워커로 연결하지 않는다');
   assert.equal(calls.filter((c) => c.startsWith("createTab")).at(-1), "createTab w2");
   const linked = calls.filter(c => c.startsWith('linkAgentTab')).length;
   await d("tab.new", { caller: "없는-탭" });
@@ -322,6 +324,47 @@ test("ControlServer: 값 없는 --tab 거절, 중복 워크스페이스 이름�
   model.activeTabId = null;
   await d("tab.new", {});
   assert.equal(calls.filter((c) => c.startsWith("createTab")).at(-1), "createTab w1", "둘 다 없으면 첫 워크스페이스");
+});
+
+test("CLI 새 탭: 일반·인수 탭은 독립, 명시적 부모만 워커 연결, 잘못된 부모는 생성 전에 거절", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sudal-tab-parent-"));
+  const sock = process.platform === "win32" ? controlPipeName(dir) : join(dir, "c.sock");
+  const { deps, calls } = fakeDeps();
+  deps.send = async () => ({ ok: true, queued: false });
+  deps.linkAgentTab = (child, parent) => { calls.push(`linkAgentTab ${child} ${parent}`); };
+  const srv = new ControlServer(deps, sock);
+  await srv.start();
+  const run = (args: string[], self = "t2") => promisify(execFile)(process.execPath, ["cli/sudal.cjs", "tab", "new", ...args], {
+    cwd: process.cwd(), env: { ...process.env, SUDAL_SOCKET: sock, SUDAL_TAB_ID: self }, timeout: 10000,
+  });
+  try {
+    await run([]);
+    await run(["--title", "인수 탭", "--prompt", "이 대화를 이어받아 줘"]);
+    assert.equal(calls.some(c => c.startsWith("linkAgentTab")), false);
+    assert.equal(calls.filter(c => c.startsWith("activate")).at(-1), "activate t1", "화면을 빼앗지 않는다");
+    await run(["--parent", "self", "--prompt", "위임한 작업"]);
+    assert.equal(calls.filter(c => c.startsWith("linkAgentTab")).at(-1), "linkAgentTab t4 t2", "self는 active와 다르다");
+    await run(["--parent", "auth 버그"]);
+    assert.equal(calls.filter(c => c.startsWith("linkAgentTab")).at(-1), "linkAgentTab t4 t1", "제목 선택자를 지원한다");
+    await run(["--parent", "active"], "");
+    assert.equal(calls.filter(c => c.startsWith("linkAgentTab")).at(-1), "linkAgentTab t4 t1", "탭 밖에서도 명시적으로 연결한다");
+    for (const [args, self, code] of [
+      [["--parent"], "t2", "bad_request"],
+      [["--parent", "없는-탭"], "t2", "not_found"],
+      [["--parent", "닫힌 탭"], "t2", "not_found"],
+      [["--parent", "auth"], "t2", "ambiguous"],
+      [["--parent", "self"], "", "no_self_tab"],
+    ] as const) {
+      const before = calls.length;
+      await assert.rejects(run([...args], self), (error: Error & { stdout?: string }) => JSON.parse(error.stdout ?? "{}").error?.code === code);
+      assert.equal(calls.length, before, "실패한 요청은 빈 탭이나 부모 연결을 남기지 않는다");
+    }
+    await assert.rejects(srv.dispatch("tab.new", { parent: true }), /parent/);
+    await assert.rejects(srv.dispatch("tab.new", { parent: "" }), /parent/);
+  } finally {
+    srv.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("ControlServer: wait 는 남은 일(pending·limitWait)까지 보고, send --wait 는 그 메시지의 turn_result 를 기다린다", async () => {

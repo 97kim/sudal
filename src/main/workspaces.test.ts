@@ -15,7 +15,7 @@ function service(available: readonly Provider[]) {
   return ws;
 }
 
-test('CLI 에이전트 호출 관계를 모델에 저장하고 존재하는 부모 아래에서만 보여준다', () => {
+test('CLI의 명시적 작업 위임 관계를 모델에 저장하고 존재하는 부모 아래에서만 보여준다', () => {
   const ws = service(['codex']);
   const {workspaceId,tabId} = ws.createWorkspace('agents');
   const child = ws.createTab(workspaceId)!;
