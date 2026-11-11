@@ -113,7 +113,10 @@ export function Sidebar({
 }) {
   const { t } = useTranslation();
   const { model, statuses, attention } = ws;
-  const sidebarAgents = useMemo(() => Object.fromEntries(Object.entries(ws.agents ?? {}).map(([id, rows]) => [id, sidebarSessionAgents(rows)])), [ws.agents]);
+  const sidebarAgents = useMemo(() => {
+    const tabIds = new Set(model.tabs.map(tab => tab.id));
+    return Object.fromEntries(Object.entries(ws.agents ?? {}).map(([id, rows]) => [id, sidebarSessionAgents(rows, tabIds)]));
+  }, [ws.agents, model.tabs]);
   const parents = useMemo(() => agentParents(model.tabs, ws.agents ?? {}), [model.tabs, ws.agents]);
   const openBranches = useMemo(() => {
     const ids = new Set(model.openTabIds);
