@@ -5,6 +5,9 @@ import { activeWorkspace, tabCwd } from "@shared/workspace-model";
 import { Icon } from "./components/Icon";
 import { hasModalDialog } from "./components/Modal";
 import { Sidebar, type View } from "./components/Sidebar";
+import { SubagentHistory } from './components/SubagentHistory';
+import { useSubagentTabs } from './hooks/useSubagentTabs';
+import { subagentTabId } from '@shared/subagent-tabs';
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { SearchPalette } from "./components/SearchPalette";
 import { kvGet, kvSet } from "./kv-store";
@@ -49,8 +52,10 @@ export function App() {
     const t = setTimeout(() => setNotice(null), notice.error ? 6000 : 3000);
     return () => clearTimeout(t);
   }, [notice]);
-  const ws = useWorkspaces();
-  const api = window.sudal.workspaces;
+  const sourceWs = useWorkspaces();
+  const { ws, api, tabs: subagentTabs } = useSubagentTabs(sourceWs, () => setView('chat'), () => setNotice({text:t('nav.subagentHistory.unavailable'),error:true}));
+  const activeSubagent = subagentTabs.find(ref => subagentTabId(ref) === ws.model.activeTabId);
+  const sidebarWs = activeSubagent ? {...sourceWs,model:{...sourceWs.model,activeTabId:activeSubagent.parentTabId}} : sourceWs;
 
   useEffect(() => {
     window.sudal.app.info().then(setInfo).catch(console.error);
@@ -58,6 +63,7 @@ export function App() {
 
   const { model } = ws;
   const activeTab = model.tabs.find((t) => t.id === model.activeTabId) ?? null;
+  const sourceActiveTab = sourceWs.model.tabs.find(tab => tab.id === (activeSubagent?.parentTabId ?? model.activeTabId));
   const activeWs = activeTab
     ? (model.workspaces.find((w) => w.id === activeTab.workspaceId) ?? null)
     : null;
@@ -214,12 +220,12 @@ export function App() {
 
   const newWorktreeIn = useCallback(
     async (wsId: string) => {
-      const active = model.tabs.find((t) => t.id === model.activeTabId);
+      const active = sourceActiveTab;
       const r = await window.sudal.worktree.create(wsId, active?.workspaceId === wsId ? active.id : null);
-      if (r.ok) setView("chat");
+      if (r.ok) { await api.activateTab(r.tabId); setView("chat"); }
       else setNotice({ text: r.error, error: true });
     },
-    [model.tabs, model.activeTabId],
+    [sourceActiveTab, api],
   );
 
   // 응답 필요(권한 대기·미확인 완료) 세션으로 점프. 열린 탭 순서로 순환.
@@ -364,7 +370,7 @@ export function App() {
           setSettingsSection("general");
           setView("settings");
         }}
-        ws={ws}
+        ws={sidebarWs}
         info={info}
         onNewTab={() => void newTab()}
         onOpenTab={(id) => void openTab(id)}
@@ -418,6 +424,7 @@ export function App() {
                       const t = model.tabs.find((x) => x.id === id);
                       const w = t ? model.workspaces.find((x) => x.id === t.workspaceId) : null;
                       if (!t || !w) return null;
+                      const subagentRef = subagentTabs.find(ref => subagentTabId(ref) === t.id);
                       const pane: 0 | 1 = split && id === split.right ? 1 : 0;
                       const focused = !split || split.focused === pane;
                       const activateThis = () => {
@@ -436,10 +443,23 @@ export function App() {
                           {split && focused && <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 bg-accent/60" />}
                           <PaneFocusContext.Provider value={focused}>
                           <PaneSplitContext.Provider value={!!split}>
-                          <ChatView
+                          {subagentRef ? <SubagentHistory
+                            tab={t}
+                            reference={subagentRef}
+                            source={sourceWs}
+                            ws={ws}
+                            showTabStrip={!split || pane === 0}
+                            onActivateTab={tid => void api.activateTab(tid)}
+                            onCloseTab={tid => void closeTab(tid)}
+                            onNewTab={() => void newTab()}
+                            onParent={tid => void openTab(tid)}
+                            onSplitParent={openSplitTab}
+                            onUnsplit={split ? () => unsplitPane(pane) : undefined}
+                          /> : <ChatView
                             tab={t}
                             workspace={w}
-                            ws={ws}
+                            ws={sourceWs}
+                            tabBarWs={ws}
                             focused={focused}
                             showTabStrip={!split || pane === 0}
                             onUnsplit={split ? () => unsplitPane(pane) : undefined}
@@ -455,7 +475,7 @@ export function App() {
                               setView("settings");
                             }}
                             onIsolate={() => void newWorktreeIn(w.id)}
-                          />
+                          />}
                           </PaneSplitContext.Provider>
                           </PaneFocusContext.Provider>
                         </div>
@@ -492,7 +512,7 @@ export function App() {
             workspaces={model.workspaces.map((w) => ({ id: w.id, name: w.name }))}
             // MCP 상태는 Claude 가 실제로 도는 디렉토리 기준 — 활성 세션의 cwd 를 먼저, 없으면 워크스페이스 기본 경로.
             workspacePath={
-              (activeTab && tabCwd(model, activeTab)) ||
+              (sourceActiveTab && tabCwd(sourceWs.model, sourceActiveTab)) ||
               activeWs?.path ||
               model.tabs.find((t) => t.workspaceId === activeWs?.id && t.cwd)?.cwd ||
               null

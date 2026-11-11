@@ -18,6 +18,7 @@ import { OrchestrationCard } from "./OrchestrationCard";
 import { formatElapsed, useNow } from "../hooks/useNow";
 import { VirtualRows, type VirtualRowsApi } from "./VirtualRows";
 import { HistoryRowContext } from "../hooks/useHistoryRowState";
+import { SubagentHistoryContext } from '../subagent-history';
 
 /** 위로 올린 직후 이만큼은 바닥에 있어도 다시 따라가지 않는다(막 떠나는 중). */
 const UP_GRACE_MS = 300;
@@ -46,6 +47,7 @@ export function MessageList({
   compactedExpanded = false,
   onExpandCompacted,
   onCollapseCompacted,
+  readOnly = false,
 }: {
   tabId: string;
   blocks: Block[];
@@ -79,6 +81,7 @@ export function MessageList({
   compactedExpanded?: boolean;
   onExpandCompacted?: () => Promise<void>;
   onCollapseCompacted?: () => void;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -243,13 +246,13 @@ export function MessageList({
   useEffect(() => {
     if (lastUserId !== prevUserId.current) {
       prevUserId.current = lastUserId;
-      if (lastUserId && blocks.at(-1)?.id !== prevLastBlock.current && !pendingReveal(tabId)) follow();
+      if (!readOnly && lastUserId && blocks.at(-1)?.id !== prevLastBlock.current && !pendingReveal(tabId)) follow();
     }
     if (queuedCount > prevQueued.current) follow();
     prevQueued.current = queuedCount;
     prevLastBlock.current = blocks.at(-1)?.id;
     if (stickToBottom.current) scrollToBottom();
-  }, [blocks, thinking, lastUserId, queuedCount]);
+  }, [blocks, thinking, lastUserId, queuedCount, readOnly]);
   // 내용 높이(스트리밍·이미지·하이라이트)나 목록 영역 높이(입력창이 커지거나 권한 요청이 뜸)가 바뀌어도 따라 내려간다.
   useEffect(() => {
     const content = contentRef.current;
@@ -274,10 +277,11 @@ export function MessageList({
 
   // 턴 끝의 "여기서 분기": 지금 이어지는 세션의 턴이고 탭이 쉬고 있을 때만
   const forkCtx: ForkCtx = {
-    can: (p) => !!sessionId && p.sessionId === sessionId && (status === "idle" || status === "error"),
+    can: (p) => !readOnly && !!sessionId && p.sessionId === sessionId && (status === "idle" || status === "error"),
     fork: (pointId) => window.sudal.chat.fork(tabId, pointId),
   };
   return (
+    <SubagentHistoryContext.Provider value={readOnly ? null : { tabId, provider }}>
     <ForkContext.Provider value={forkCtx}>
     <div className="relative h-full">
     <div
@@ -364,6 +368,7 @@ export function MessageList({
       )}
     </div>
     </ForkContext.Provider>
+    </SubagentHistoryContext.Provider>
   );
 }
 

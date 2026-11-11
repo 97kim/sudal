@@ -110,6 +110,7 @@ import { createFileLogger, type FileLogger } from "./logger";
 import { brewUpgrade, caskVersion, compareVersions, fetchLatestRelease, type UpdateProgress } from "./app-update";
 import { winDownloadUpdate, winQuitAndInstall } from "./app-update-win";
 import { Store } from "./persistence";
+import { readSubagentHistory } from "./subagent-history";
 import { RendererState } from "./renderer-state";
 import { HOOK_APPEND_SCRIPT, claudeHookCmdFile, claudeHookSettings, shellQuote } from "./transcript-mirror";
 import { cmdQuote, nodeCmdWrapper } from "./win-proc";
@@ -2893,6 +2894,17 @@ function registerIpc() {
     return { ...page, sequence };
   });
   ipcMain.handle(IPC.chatClear, async (_e, tabId: string) => { await feedbackRunner?.stop(tabId); return sessions.clear(tabId); });
+  ipcMain.handle(IPC.chatSubagentHistory, async (_e, tabId: unknown, agentId: unknown, before: unknown, after: import('@shared/subagent-history').SubagentHistoryCursor | undefined) => {
+    if (typeof tabId !== 'string' || typeof agentId !== 'string' || before !== undefined && (!Number.isSafeInteger(before) || Number(before) < 0)) throw new Error(mt('main.error.badArgs'));
+    if (after !== undefined && (!after || typeof after !== 'object' || before !== undefined || !Number.isSafeInteger(after.offset) || after.offset < 0 || !Number.isSafeInteger(after.size) || after.size < after.offset || !Number.isFinite(after.mtimeMs) || typeof after.identity !== 'string' || after.identity.length > 256 || after.discardPartial !== undefined && typeof after.discardPartial !== 'boolean')) throw new Error(mt('main.error.badArgs'));
+    const tab = workspaces.state().model.tabs.find(tab => tab.id === tabId);
+    const row = workspaces.agents.snapshot()[tabId]?.find(row => row.id === agentId);
+    if (!tab || !row) throw new Error(mt('main.error.badArgs'));
+    return readSubagentHistory({ row, parentSessionId: tab.sessionId, before: before as number | undefined, after, roots: {
+      codex: join(process.env.CODEX_HOME?.trim() || join(app.getPath('home'), '.codex'), 'sessions'),
+      claude: join(process.env.CLAUDE_CONFIG_DIR?.trim() || join(app.getPath('home'), '.claude'), 'projects'),
+    } });
+  });
   ipcMain.handle(IPC.chatCodexControl, async (event, tabId: unknown, command: unknown, arg: unknown) => {
     if (typeof tabId !== "string" || !workspaces.state().model.tabs.some((tab) => tab.id === tabId) || typeof command !== "string" || !(CODEX_CONTROL_COMMANDS as readonly string[]).includes(command) || typeof arg !== "string" || arg.length > 20_000) throw new Error(mt("main.error.badArgs"));
     const readOnly = ["status", "usage", "ps", "mcp", "hooks", "plugins", "debug-config"].includes(command) || (command === "goal" && (!arg.trim() || arg.trim() === "status")) || (command === "memories" && !arg.trim());

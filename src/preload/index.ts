@@ -185,6 +185,7 @@ const api: SudalApi = {
     fanoutCleanup: (tabId: string, fanoutId: string) => ipcRenderer.invoke(IPC.chatFanoutCleanup, tabId, fanoutId),
     events: (tabId: string) => ipcRenderer.invoke(IPC.chatEvents, tabId),
     history: (tabId: string, before?: string, includeCompacted?: boolean) => ipcRenderer.invoke(IPC.chatHistory, tabId, before, includeCompacted),
+    subagentHistory: (tabId, agentId, before, after) => ipcRenderer.invoke(IPC.chatSubagentHistory, tabId, agentId, before, after),
     clear: (tabId: string) => ipcRenderer.invoke(IPC.chatClear, tabId),
     compact: (tabId: string, focus?: string) =>
       ipcRenderer.invoke(IPC.chatCompact, tabId, focus),

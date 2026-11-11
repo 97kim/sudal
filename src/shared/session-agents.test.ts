@@ -1,7 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentParents, reduceSessionAgents, type SessionAgent } from './session-agents';
+import { agentParents, reduceSessionAgents, sidebarSessionAgents, type SessionAgent } from './session-agents';
 import type { TabMeta } from './workspace-model';
+
+test('완료된 내부 에이전트는 숨기고 재실행하면 다시 표시하며 기록은 보존한다', () => {
+  let rows = reduceSessionAgents([], {type:'agent_status',ts:1,agentId:'child',provider:'codex',title:'검토',status:'running'}, 'codex');
+  assert.equal(sidebarSessionAgents(rows).length, 1);
+  rows = reduceSessionAgents(rows, {type:'agent_status',ts:2,agentId:'child',provider:'codex',title:'검토',status:'done'}, 'codex');
+  assert.equal(sidebarSessionAgents(rows).length, 0);
+  assert.equal(rows.length, 1);
+  rows = reduceSessionAgents(rows, {type:'agent_status',ts:3,agentId:'child',provider:'codex',title:'검토',status:'running'}, 'codex');
+  assert.equal(sidebarSessionAgents(rows).length, 1);
+  const statuses = ['running','waiting','failed','unknown'] as const;
+  for (const status of statuses) assert.equal(sidebarSessionAgents([{...rows[0],status}]).length, 1);
+  for (const kind of ['review','fanout','worker'] as const) {
+    assert.equal(sidebarSessionAgents([{...rows[0],kind,status:'done',tabId:'separate'}]).length, 1);
+  }
+});
 
 test('내부 호출은 상태 갱신에도 한 행이며 Codex 호출 완료와 작업 완료를 구분한다', () => {
   let rows: SessionAgent[] = [];
