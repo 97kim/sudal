@@ -104,9 +104,10 @@ export function MessageList({
     release();
     virtualApi.current?.reveal(`${block.kind}:${block.id}`);
     const frame = requestAnimationFrame(() => {
+      if (pendingReveal(tabId) !== blockId) return;
       const el = containerRef.current?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
       if (!el) return;
-      clearReveal();
+      clearReveal(tabId);
       release();
       el.scrollIntoView({ block: "center" });
       el.classList.add("reveal-flash");
@@ -125,7 +126,8 @@ export function MessageList({
   const userUpAt = useRef(0);
   const scrollToBottom = () => {
     const el = containerRef.current;
-    if (!el) return;
+    // A hidden chat reports a zero scroll range; leave its saved position alone.
+    if (!el || !el.clientHeight || !el.getClientRects().length) return;
     el.scrollTop = el.scrollHeight;
   };
   const follow = () => {
@@ -230,7 +232,7 @@ export function MessageList({
   // scroll 이벤트는 바닥에 다시 닿았는지만 본다.
   const onScroll = () => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !el.clientHeight || !el.getClientRects().length) return;
     if (!stickToBottom.current && el.scrollTop < 160 && hasMore && !loadingOlder && !historyError) void onLoadOlder?.();
     const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
     lastScrollAtEnd.current = atEnd;

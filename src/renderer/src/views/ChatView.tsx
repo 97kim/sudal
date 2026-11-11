@@ -69,6 +69,7 @@ import { TabBar } from "../components/TabBar";
 import { TerminalPanel } from "../components/TerminalPanel";
 import { useSnippets } from "../hooks/useSnippets";
 import { useSession } from "../hooks/useSession";
+import { clearReveal } from "../reveal";
 import {
   getCtxDismissed,
   setCtxDismissed,
@@ -498,6 +499,7 @@ export function ChatView({
 
   const onSend = useCallback(
     async (text: string, images: ChatImageDto[]) => {
+      clearReveal(tabId);
       if (provider === "codex" && isCodexSlashCommand(text)) {
         const command = parseCodexCommand(text);
         if (!command) throw new Error(t("session.msg.codexControl.unsupported", { command: text.trim().split(/\s/)[0] }));
