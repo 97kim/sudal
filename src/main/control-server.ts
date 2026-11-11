@@ -48,6 +48,7 @@ export interface ControlDeps {
   /** cwd 는 승인된 루트 안이어야 한다 — 호출자가 approveRoot 로 먼저 허용한다. */
   configure(tabId: string, patch: { cwd?: string; provider?: Provider; policy?: PermissionPolicy; model?: string }): void;
   renameTab(tabId: string, title: string): void;
+  linkAgentTab?(tabId: string, parentTabId: string): void;
   activateTab(tabId: string): void;
   closeTab(tabId: string): void;
   snapshot(tabId: string): ControlSnapshot;
@@ -511,6 +512,7 @@ export class ControlServer {
         if (!tabId) throw new ControlError(mt("cli.control.tabCreateFailed"));
         if (Object.keys(patch).length > 0) this.deps.configure(tabId, patch);
         if (title) this.deps.renameTab(tabId, title);
+        if (typeof params.caller === 'string' && st.model.tabs.some(t => t.id === params.caller)) this.deps.linkAgentTab?.(tabId, params.caller);
         if (params.activate === true) this.deps.activateTab(tabId);
         else if (prevActive && prevActive !== tabId) this.deps.activateTab(prevActive);
         let sent: ChatSendResult | null = null;

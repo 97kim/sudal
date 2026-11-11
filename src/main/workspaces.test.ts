@@ -15,6 +15,17 @@ function service(available: readonly Provider[]) {
   return ws;
 }
 
+test('CLI 에이전트 호출 관계를 모델에 저장하고 존재하는 부모 아래에서만 보여준다', () => {
+  const ws = service(['codex']);
+  const {workspaceId,tabId} = ws.createWorkspace('agents');
+  const child = ws.createTab(workspaceId)!;
+  ws.linkAgentTab(child,tabId);
+  assert.equal(ws.tab(child)?.parentTabId,tabId);
+  assert.equal(ws.state().agents?.[tabId][0].tabId,child);
+  ws.linkAgentTab(child,child);
+  assert.equal(ws.tab(child)?.parentTabId,tabId);
+});
+
 for (const provider of ["claude", "codex"] as const) {
   test(`only ${provider}: workspace and tab defaults use the installed CLI`, () => {
     const ws = service([provider]);

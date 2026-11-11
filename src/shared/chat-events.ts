@@ -120,6 +120,17 @@ export interface SubagentActivityEvent extends Base {
   via?: "codex";
 }
 
+/** Persisted lifecycle of a background agent; independent of its launch tool result. */
+export interface AgentStatusEvent extends Base {
+  type: 'agent_status';
+  agentId: string;
+  toolUseId?: string;
+  background?: boolean;
+  provider: Provider;
+  title: string;
+  status: 'running' | 'done' | 'failed' | 'unknown';
+}
+
 export interface ToolResultEvent extends Base {
   type: "tool_result";
   toolUseId: string;
@@ -343,6 +354,7 @@ export type ChatEvent =
   | TextDeltaEvent
   | ThinkingDeltaEvent
   | SubagentActivityEvent
+  | AgentStatusEvent
   | AssistantTextEvent
   | ToolUseEvent
   | ToolResultEvent

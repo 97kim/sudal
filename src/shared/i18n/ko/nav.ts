@@ -6,6 +6,7 @@ export const nav = {
     settings: "설정",
   },
   sidebar: {
+    agents: '호출한 에이전트', agentKind: { internal: '하위 에이전트', review: '교차 리뷰', fanout: '팬아웃', worker: '작업자' }, agentStatus: { running: '작업 중', waiting: '응답 대기', done: '완료', failed: '실패', unknown: '상태 미확인' },
     expand: "사이드바 펼치기 ({{kSidebar}})",
     collapse: "사이드바 접기 ({{kSidebar}})",
     newSessionIn: "{{name}} 에 새 세션 ({{kNewTab}})",

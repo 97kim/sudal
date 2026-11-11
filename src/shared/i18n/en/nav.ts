@@ -8,6 +8,7 @@ export const nav: DeepPartial<typeof ko> = {
     settings: "Settings",
   },
   sidebar: {
+    agents: 'Called agents', agentKind: { internal: 'Subagent', review: 'Cross review', fanout: 'Fan-out', worker: 'Worker' }, agentStatus: { running: 'Running', waiting: 'Waiting', done: 'Done', failed: 'Failed', unknown: 'Unknown' },
     expand: "Expand sidebar ({{kSidebar}})",
     collapse: "Collapse sidebar ({{kSidebar}})",
     newSessionIn: "New session in {{name}} ({{kNewTab}})",
