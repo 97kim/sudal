@@ -1,0 +1,44 @@
+name: start-release
+run-name: 새 버전 릴리즈 시작 · ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '새 버전 (예: 0.21.0). main CI 통과와 release-notes/<버전>.md 준비 필요'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: start-release
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 릴리즈 커밋 작성자 설정
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: main CI 확인 및 버전·태그 생성, 배포 시작
+        run: node scripts/release-start.mjs
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

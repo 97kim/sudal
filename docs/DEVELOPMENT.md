@@ -35,6 +35,21 @@ Repository permissions → **Contents: Read and write**로 설정한다. 토큰�
 실제 공개를 요청했는데 Homebrew 토큰이 없거나 유효하지 않으면 빌드 전 단계에서 실패한다.
 PR 빌드·수동 빌드 검증에는 이 토큰이 필요하지 않다.
 
+### GitHub Actions에서 새 버전 시작
+
+`release-notes/<새 버전>.md`를 PR로 머지하고 최신 main의 `test` CI가 통과하면,
+GitHub → Actions → **start-release** → **Run workflow**에서 브랜치 `main`과 새 버전(예: `0.21.0`)을 입력한다.
+현재 버전보다 큰 정식 버전만 허용한다. 버전 커밋과 태그를 함께 올린 뒤 기존 `release` 워크플로를 호출해
+Windows·macOS 빌드, 산출물 검증, 공개, Homebrew 갱신까지 실행한다. 로컬 Node.js·Yarn은 필요 없다.
+
+저장소의 기본 `GITHUB_TOKEN`에 이 작업의 `contents: write`, `actions: write` 권한을 부여한다.
+기존 Homebrew 갱신용 `HOMEBREW_TAP_TOKEN`도 필요하다. main의 새 CI 실행과 버전 커밋·태그 확인이 끝나기 전에
+main이 변경되면 시작을 중단하므로 최신 main의 CI를 확인한 뒤 다시 실행한다.
+
+기본 토큰이 올린 태그는 다른 `push` 워크플로를 실행하지 않으므로 `release`를 `workflow_dispatch`로 직접 호출한다.
+태그 생성 후 이 호출만 실패했다면 `start-release`를 반복하지 말고 기존 `release`에서 `tag=v<버전>`, `publish=true`로 실행한다.
+빌드·공개 단계가 실패했을 때도 아래의 **실패한 릴리즈 재실행** 절차를 따른다.
+
 ### Windows 또는 macOS에서 시작
 
 먼저 `release-notes/<새 버전>.md`에 사용자 관점의 한국어 변경 사항을 글머리표로 작성하고 PR로 머지한다.

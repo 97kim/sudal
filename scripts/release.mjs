@@ -49,7 +49,7 @@ export function startRelease(args = process.argv.slice(2)) {
     manifest.version = version;
     writeFileSync('package.json', JSON.stringify(manifest, null, 2) + '\n');
     git('add', 'package.json');
-    git('commit', '-m', tag);
+    git('commit', '-m', `chore: ${version} 릴리즈 준비`);
   }
   git('tag', '-a', tag, '-m', tag);
   git('push', '--atomic', 'origin', 'main', `refs/tags/${tag}`);
