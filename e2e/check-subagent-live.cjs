@@ -18,11 +18,16 @@ const { _electron } = require('playwright-core');
   const tab = (id,provider) => ({id,title:id,provider,sessionId:`${provider}-session`,workspaceId:'ws',policy:'ask',createdAt:now,updatedAt:now,open:true,cwd:home});
   fs.writeFileSync(path.join(profile, 'workspaces.json'), JSON.stringify({version:1,
     workspaces:[{id:'ws',name:'자동 갱신 테스트',path:home,addedAt:now,lastUsedAt:now}],
-    tabs:[tab('parent-codex','codex'),tab('parent-claude','claude')],openTabIds:['parent-codex','parent-claude'],activeTabId:'parent-codex'}));
+    tabs:[tab('parent-codex','codex'),tab('parent-claude','claude'),tab('orphan-parent','codex'),{...tab('closed-review','claude'),open:false}],openTabIds:['parent-codex','parent-claude','orphan-parent'],activeTabId:'parent-codex'}));
   const write = (file,records) => fs.writeFileSync(file,records.map(JSON.stringify).join('\n')+'\n');
   write(path.join(profile,'threads','parent-codex.jsonl'),[
     {type:'user_message',id:'request',ts:now,text:'서브에이전트 확인'},
-    {type:'tool_use',ts:now,toolUseId:'launch',name:'Agent',input:{codexAgent:true,operation:'spawnAgent',description:'자동 갱신',agents:[{id:'child',status:'running'}]}}
+    {type:'tool_use',ts:now,toolUseId:'launch',name:'Agent',input:{codexAgent:true,operation:'spawnAgent',description:'자동 갱신',agents:[{id:'child',status:'running'}]}},
+    {type:'review',ts:now,reviewer:'claude',reviewTabId:'deleted-review',scope:'1개 파일 · +3 −3',status:'failed',text:'과거 실패한 리뷰 기록'},
+    {type:'review',ts:now,reviewer:'claude',reviewTabId:'closed-review',scope:'닫아 둔 리뷰',status:'failed',text:'닫아 둔 리뷰 기록'}
+  ]);
+  write(path.join(profile,'threads','orphan-parent.jsonl'),[
+    {type:'review',ts:now,reviewer:'claude',reviewTabId:'another-deleted-review',scope:'삭제된 리뷰만 있는 세션',status:'failed',text:'보존할 과거 리뷰 기록'}
   ]);
   write(path.join(profile,'threads','parent-claude.jsonl'),[
     {type:'agent_status',ts:now,agentId:'a1',toolUseId:'launch-claude',provider:'claude',title:'Claude 자동 갱신',status:'running',background:true}
@@ -48,6 +53,19 @@ const { _electron } = require('playwright-core');
     app = await _electron.launch({args:[bootstrap],cwd:repo,env,timeout:30000});
     const page = await app.firstWindow(); page.setDefaultTimeout(15000);
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+    const sidebar=page.locator('[data-sidebar]');
+    await sidebar.locator('[data-session-agent="codex:child"]').waitFor();
+    let orphanRestored=false;
+    for(let attempt=0;attempt<100;attempt++) {
+      orphanRestored=await page.evaluate(async()=>!!(await window.sudal.workspaces.state()).agents['orphan-parent']?.length);
+      if(orphanRestored) break;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    assert.ok(orphanRestored,'orphan summaries must be restored before checking their absence from the sidebar');
+    assert.equal(await sidebar.locator('[data-session-agent="tab:deleted-review"]').count(),0,'deleted review is excluded');
+    assert.equal(await sidebar.locator('[data-session-agent="tab:another-deleted-review"]').count(),0,'orphan-only parent has no stale review row');
+    assert.equal(await sidebar.locator('[data-session="orphan-parent"] button[aria-expanded]').count(),0,'orphan-only parent has no empty expand control');
+    assert.equal(await sidebar.locator('[data-session-agent="tab:closed-review"]').count(),1,'closed review remains available');
     await page.locator('[data-sidebar] [data-session-agent="codex:child"]').click();
     const history=page.locator('[data-subagent-history]'),list=history.locator('[data-message-list]');
     await history.locator('[data-block-id="answer-139"]').waitFor();
@@ -91,8 +109,23 @@ const { _electron } = require('playwright-core');
     await history.getByText('Claude 초기 응답',{exact:true}).waitFor();
     fs.appendFileSync(claudeFile,JSON.stringify(claudeRecord('next','Claude 자동 반영 응답'))+'\n');
     await history.getByText('Claude 자동 반영 응답',{exact:true}).waitFor();
+    // Deletion must update filtering even if the stored agent summaries are unchanged.
+    await page.evaluate(()=>window.sudal.workspaces.deleteTab('closed-review'));
+    await sidebar.locator('[data-session-agent="tab:closed-review"]').waitFor({state:'detached'});
+    const retained=await page.evaluate(async()=>({agents:(await window.sudal.workspaces.state()).agents['parent-codex'],reviews:(await window.sudal.chat.events('parent-codex')).filter(e=>e.type==='review')}));
+    assert.ok(retained.agents.some(row=>row.tabId==='closed-review'),'cached source agent summary remains intact');
+    assert.equal(retained.reviews.length,2,'review history remains intact');
+    await app.close();
+    app=await _electron.launch({args:[bootstrap],cwd:repo,env,timeout:30000});
+    const restoredPage=await app.firstWindow(); restoredPage.setDefaultTimeout(15000);
+    restoredPage.on('pageerror',e=>errors.push(e.message));
+    const restoredSidebar=restoredPage.locator('[data-sidebar]');
+    await restoredSidebar.locator('[data-session-agent="codex:child"]').waitFor();
+    assert.equal(await restoredSidebar.locator('[data-session-agent="tab:closed-review"]').count(),0,'deleted reference stays hidden after app restart');
+    assert.equal(await restoredSidebar.locator('[data-session-agent="tab:deleted-review"]').count(),0);
+    await restoredSidebar.screenshot({path:path.join(repo,'.sudal/sidebar-deleted-agents.png')});
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({passed:true,codexAutomaticAppend:true,claudeFixtureAutomaticAppend:true,readingAnchorDelta:reading.y-anchor.y,noBlankRefresh:true,unmountedStopsPolling:true,noModelCalls:true}));
+    console.log(JSON.stringify({passed:true,codexAutomaticAppend:true,claudeFixtureAutomaticAppend:true,readingAnchorDelta:reading.y-anchor.y,noBlankRefresh:true,unmountedStopsPolling:true,deletedAgentsHidden:true,closedAgentsRetained:true,reviewHistoryPreserved:true,noModelCalls:true}));
   } finally {
     await app?.close();
     if(path.dirname(path.resolve(profile))!==path.resolve(os.tmpdir())||!path.basename(profile).startsWith('sudal-subagent-live-')) throw Error('Unexpected cleanup path');

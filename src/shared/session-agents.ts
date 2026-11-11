@@ -16,9 +16,9 @@ export interface SessionAgent {
   background?: boolean;
   kind: 'internal' | 'review' | 'fanout' | 'worker';
 }
-/** Completed internal calls remain in chat history, but no longer occupy the sidebar. */
-export function sidebarSessionAgents(rows: SessionAgent[]): SessionAgent[] {
-  return rows.filter(row => row.kind !== 'internal' || row.status !== 'done');
+/** Keep history intact; hide completed internal calls and references to deleted tabs. */
+export function sidebarSessionAgents(rows: SessionAgent[], tabIds: ReadonlySet<string>): SessionAgent[] {
+  return rows.filter(row => (!row.tabId || tabIds.has(row.tabId)) && (row.kind !== 'internal' || row.status !== 'done'));
 }
 /** Preserve internal call order and use the existing tab order for child sessions. */
 export function orderedSessionAgents(rows: SessionAgent[], model: WorkspaceModel): SessionAgent[] {

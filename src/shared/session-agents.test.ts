@@ -4,18 +4,39 @@ import { agentParents, reduceSessionAgents, sidebarSessionAgents, type SessionAg
 import type { TabMeta } from './workspace-model';
 
 test('완료된 내부 에이전트는 숨기고 재실행하면 다시 표시하며 기록은 보존한다', () => {
+  const tabIds = new Set(['separate']);
   let rows = reduceSessionAgents([], {type:'agent_status',ts:1,agentId:'child',provider:'codex',title:'검토',status:'running'}, 'codex');
-  assert.equal(sidebarSessionAgents(rows).length, 1);
+  assert.equal(sidebarSessionAgents(rows,tabIds).length, 1);
   rows = reduceSessionAgents(rows, {type:'agent_status',ts:2,agentId:'child',provider:'codex',title:'검토',status:'done'}, 'codex');
-  assert.equal(sidebarSessionAgents(rows).length, 0);
+  assert.equal(sidebarSessionAgents(rows,tabIds).length, 0);
   assert.equal(rows.length, 1);
   rows = reduceSessionAgents(rows, {type:'agent_status',ts:3,agentId:'child',provider:'codex',title:'검토',status:'running'}, 'codex');
-  assert.equal(sidebarSessionAgents(rows).length, 1);
+  assert.equal(sidebarSessionAgents(rows,tabIds).length, 1);
   const statuses = ['running','waiting','failed','unknown'] as const;
-  for (const status of statuses) assert.equal(sidebarSessionAgents([{...rows[0],status}]).length, 1);
+  for (const status of statuses) assert.equal(sidebarSessionAgents([{...rows[0],status}],tabIds).length, 1);
   for (const kind of ['review','fanout','worker'] as const) {
-    assert.equal(sidebarSessionAgents([{...rows[0],kind,status:'done',tabId:'separate'}]).length, 1);
+    assert.equal(sidebarSessionAgents([{...rows[0],kind,status:'done',tabId:'separate'}],tabIds).length, 1);
   }
+});
+
+test('삭제한 리뷰·팬아웃·작업자 탭의 항목을 숨기고 닫힌 탭과 원본 기록은 유지한다', () => {
+  const tabs = [{id:'closed',open:false},{id:'open',open:true}];
+  const rows:SessionAgent[] = [];
+  for (const kind of ['review','fanout','worker'] as const) for (const status of ['running','waiting','done','failed','unknown'] as const) {
+    for (const tabId of ['deleted','closed','open']) rows.push({id:`${kind}:${status}:${tabId}`,kind,status,tabId,provider:'claude',blockId:'call',title:'1개 파일 · +3 −3'});
+  }
+  rows.push({id:'internal',kind:'internal',status:'running',provider:'codex',blockId:'spawn',title:'실행 중인 내부 에이전트'});
+  const snapshot = JSON.stringify(rows);
+  const visible = sidebarSessionAgents(rows,new Set(tabs.map(tab=>tab.id)));
+  assert.equal(visible.length,31);
+  assert.ok(visible.every(row=>row.tabId!=='deleted'));
+  assert.equal(visible.filter(row=>row.tabId==='closed').length,15);
+  assert.ok(visible.includes(rows.at(-1)!));
+  assert.equal(JSON.stringify(rows),snapshot);
+  // Changing only the model's tab list is enough; persisted summaries need no migration.
+  const afterDeletion = sidebarSessionAgents(rows,new Set(['open']));
+  assert.equal(afterDeletion.length,16);
+  assert.equal(afterDeletion.filter(row=>row.tabId==='closed').length,0);
 });
 
 test('내부 호출은 상태 갱신에도 한 행이며 Codex 호출 완료와 작업 완료를 구분한다', () => {
