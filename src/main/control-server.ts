@@ -505,6 +505,7 @@ export class ControlServer {
         const prompt = params.prompt !== undefined ? this.requireString(params, "prompt") : undefined;
         // 호출자는 워크스페이스 선택용이다. 작업 위임 관계는 명시한 부모에만 연결한다.
         const parent = params.parent !== undefined ? this.resolveTab(this.requireString(params, "parent")) : undefined;
+        if (parent && parent.workspaceId !== ws.id) throw new ControlError(mt("cli.control.parentWorkspaceMismatch"));
         // 프롬프트를 보내려면 작업 경로가 있어야 한다: --cwd 나 워크스페이스 기본 경로. 없으면 만들기 전에 거절.
         if (prompt && !cwd && !ws.path) throw new ControlError(mt("cli.control.promptNeedsCwd"));
         if (cwd) this.deps.approveRoot(cwd);

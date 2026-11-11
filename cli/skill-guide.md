@@ -11,7 +11,7 @@ Write everything the user reads in the user's language: follow their language se
 - **Selector `<sel>`**: `self` (the tab you are running in) · `active` (the tab the person is looking at in the app) · a tab id · an exact title · a unique title prefix. An ambiguous selector fails with `ambiguous` and lists the candidates. Omitting `--tab` means `active`.
 - **`self` is not `active`.** You often run in a tab that is not on screen (a worker, the other side of a split, a scheduled run). `self` comes from `SUDAL_TAB_ID`, which the app sets for the agents it runs. Outside a Sudal tab, `self` fails with `no_self_tab`.
 - **`tab new` without `--ws`** creates the tab in the workspace of `self`, not of `active`. Run outside a Sudal tab, it falls back to the workspace of `active`. Other commands still read an omitted `--tab` as `active`.
-- **`tab new` creates an independent tab**, even with a prompt. Use `--parent self` (or another tab selector) only when delegating work that should appear as a worker under that parent. Leave it out for ordinary tabs and conversation handoffs. `--parent` does not change workspace selection; use `--ws` when needed.
+- **`tab new` creates an independent tab**, even with a prompt. Use `--parent self` (or another tab selector) only when delegating work that should appear as a worker under that parent. Leave it out for ordinary tabs and conversation handoffs. The parent must be in the same workspace as the new tab. `--parent` does not change workspace selection; use `--ws` to select the parent's workspace when needed.
 
 Antigravity accepts `--provider antigravity` (alias: `agy`); orchestration workers accept `--agent antigravity`. Use `--model` to select a model supported by that CLI.
 
@@ -20,7 +20,7 @@ Antigravity accepts `--provider antigravity` (alias: `agy`); orchestration worke
 Open a new tab, send a prompt, and get the reply:
 
 ```text
-sudal tab new --ws <name> --cwd /abs/repo --provider claude --policy auto_edit --title "auth bug" --parent self --prompt "Find why login returns 500" --activate
+sudal tab new --cwd /abs/repo --provider claude --policy auto_edit --title "auth bug" --parent self --prompt "Find why login returns 500" --activate
 sudal tab wait --tab "auth bug" --timeout-ms 600000
 sudal tab read --tab "auth bug" --last 6
 ```

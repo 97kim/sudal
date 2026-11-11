@@ -329,7 +329,9 @@ test("ControlServer: 값 없는 --tab 거절, 중복 워크스페이스 이름�
 test("CLI 새 탭: 일반·인수 탭은 독립, 명시적 부모만 워커 연결, 잘못된 부모는 생성 전에 거절", async () => {
   const dir = mkdtempSync(join(tmpdir(), "sudal-tab-parent-"));
   const sock = process.platform === "win32" ? controlPipeName(dir) : join(dir, "c.sock");
-  const { deps, calls } = fakeDeps();
+  const { deps, calls, model } = fakeDeps();
+  model.workspaces.push({ id: "other", name: "other", path: "/tmp/other", addedAt: 1, lastUsedAt: 1 });
+  model.tabs.push({ ...model.tabs[0], id: "other-parent", workspaceId: "other", title: "다른 부모" });
   deps.send = async () => ({ ok: true, queued: false });
   deps.linkAgentTab = (child, parent) => { calls.push(`linkAgentTab ${child} ${parent}`); };
   const srv = new ControlServer(deps, sock);
@@ -348,6 +350,14 @@ test("CLI 새 탭: 일반·인수 탭은 독립, 명시적 부모만 워커 연�
     assert.equal(calls.filter(c => c.startsWith("linkAgentTab")).at(-1), "linkAgentTab t4 t1", "제목 선택자를 지원한다");
     await run(["--parent", "active"], "");
     assert.equal(calls.filter(c => c.startsWith("linkAgentTab")).at(-1), "linkAgentTab t4 t1", "탭 밖에서도 명시적으로 연결한다");
+    const beforeMismatch = calls.length;
+    await assert.rejects(run(["--ws", "other", "--parent", "self", "--cwd", process.cwd(), "--prompt", "위임한 작업"]),
+      (error: Error & { stdout?: string }) => JSON.parse(error.stdout ?? "{}").error?.code === "bad_request");
+    await assert.rejects(run(["--parent", "other-parent"]),
+      (error: Error & { stdout?: string }) => JSON.parse(error.stdout ?? "{}").error?.code === "bad_request");
+    assert.equal(calls.length, beforeMismatch, "교차 워크스페이스 부모는 생성·신뢰 승인·전송 전에 거절한다");
+    await run(["--ws", "other", "--parent", "other-parent"]);
+    assert.equal(calls.filter(c => c.startsWith("linkAgentTab")).at(-1), "linkAgentTab t4 other-parent", "대상과 부모 워크스페이스가 같으면 호출자와 달라도 연결한다");
     for (const [args, self, code] of [
       [["--parent"], "t2", "bad_request"],
       [["--parent", "없는-탭"], "t2", "not_found"],
