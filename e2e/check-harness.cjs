@@ -80,7 +80,7 @@ const {_electron} = require('playwright-core');
     const assertAligned=async locator=>{
       const anchor=await anchorOf(locator);assert.ok(anchor);
       const card=await locator.boundingBox();assert.ok(card);
-      const geometry=await locator.evaluate(el=>{const row=el.closest('[data-virtual-row]'),slot=el.closest('[data-harness-conversation-slot]');const body=row.querySelector('[data-block-id]')??row.firstElementChild;return {card:el.getBoundingClientRect().x,body:body.getBoundingClientRect().x,right:el.getBoundingClientRect().right,rowRight:row.getBoundingClientRect().right,overflow:el.scrollWidth-el.clientWidth,anchor:slot.dataset.harnessConversationSlot};});
+      const geometry=await locator.evaluate(el=>{const row=el.closest('[data-virtual-row], [data-turn-footer]'),slot=el.closest('[data-harness-conversation-slot]');const body=row.querySelector('[data-block-id]')??row.firstElementChild;return {card:el.getBoundingClientRect().x,body:body.getBoundingClientRect().x,right:el.getBoundingClientRect().right,rowRight:row.getBoundingClientRect().right,overflow:el.scrollWidth-el.clientWidth,anchor:slot.dataset.harnessConversationSlot};});
       assert.equal(geometry.anchor,anchor);assert.ok(Math.abs(geometry.card-geometry.body)<1,JSON.stringify(geometry));assert.ok(geometry.right<=geometry.rowRight+1);assert.ok(geometry.overflow<=1);
     };
     const hp=page.locator('[data-harness-panel]');
@@ -303,9 +303,22 @@ const {_electron} = require('playwright-core');
     await page.locator('[data-harness-completed]').waitFor();
     const completedCard=page.locator('[data-harness-completed]'),completedAnchor=await anchorOf(completedCard);
     await assertAligned(completedCard);
+    await page.evaluate(()=>{
+      window.__harnessMoveSamples=[];window.__samplingHarnessMove=true;
+      const sample=()=>{
+        const user=[...document.querySelectorAll('[data-block-id]')].find(el=>el.textContent.trim()==='완료한 작업 다음 대화');
+        const row=user?.closest('[data-virtual-row]'),previous=row?.previousElementSibling;
+        if(previous?.querySelector('[data-harness-completed]'))window.__harnessMoveSamples.push(row.getBoundingClientRect().top-previous.getBoundingClientRect().bottom);
+        if(window.__samplingHarnessMove)requestAnimationFrame(sample);
+      };sample();
+    });
     fs.writeFileSync(responseFile,'완료 후에도 대화를 이어갑니다.');
     await page.evaluate(id=>window.sudal.chat.send(id,{text:'완료한 작업 다음 대화'}),tabId);
     await page.getByText('완료 후에도 대화를 이어갑니다.',{exact:true}).waitFor();
+    await page.waitForTimeout(300);
+    const moveGaps=await page.evaluate(()=>{window.__samplingHarnessMove=false;return window.__harnessMoveSamples;});
+    assert.ok(moveGaps.length>=3,'completed harness card moves into history across multiple frames');
+    assert.ok(Math.max(...moveGaps)-Math.min(...moveGaps)<2,'harness portal height is retained when the next message arrives');
     assert.equal(await anchorOf(completedCard),completedAnchor);
     await page.reload();await completedCard.waitFor();assert.equal(await anchorOf(completedCard),completedAnchor);
     assert.equal((await rpc({type:'snapshot'})).tasks[0].status,'completed');
