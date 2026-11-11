@@ -1,3 +1,5 @@
+import type { SessionAgent } from '@shared/session-agents';
+import { SessionAgentIndex } from './session-agent-index';
 // 워크스페이스/탭 모델의 소유자. 순수 함수(shared/workspace-model)로 바꾸고 → 저장 → 브로드캐스트.
 // SessionManager 와는 콜백으로만 엮인다 (resolveConfig / onMeta / onStatus).
 
@@ -34,6 +36,12 @@ import type { NewTabPolicy } from "@shared/ipc";
 
 export class WorkspaceService {
   private model: WorkspaceModel;
+  private agentTimer: ReturnType<typeof setTimeout> | null = null;
+  private agentCacheTimer: ReturnType<typeof setTimeout> | null = null;
+  private agentCacheDirty = new Set<string>();
+  readonly agents = new SessionAgentIndex(() => {
+    this.agentTimer ??= setTimeout(() => { this.agentTimer = null; this.broadcast(this.state()); }, 60);
+  }, {load:id => this.store.loadAgentCache(id), save:(id, data) => this.store.saveAgentCache(id, data)});
   private sessions: SessionManager | null = null;
 
   constructor(
@@ -41,6 +49,28 @@ export class WorkspaceService {
     private readonly broadcast: (state: WorkspaceStateDto) => void,
   ) {
     this.model = store.loadModel();
+    this.agents.prepare(this.model.tabs.map(tab => tab.id));
+    store.onAgentEvent = (id, e) => this.agents.observe(id, e, this.tab(id)?.provider ?? 'claude');
+    store.onThreadReset = id => this.agents.reset(id);
+    store.onAgentFlush = id => {
+      this.agentCacheDirty.add(id);
+      // Chat text flushes every 40ms; coalesce summary writes during streaming.
+      this.agentCacheTimer ??= setTimeout(() => {
+        this.agentCacheTimer = null;
+        const ids = [...this.agentCacheDirty];
+        this.agentCacheDirty.clear();
+        for (const tabId of ids) if (this.tab(tabId)) this.agents.persist(tabId);
+      }, 1000);
+      this.agentCacheTimer.unref();
+    };
+    setImmediate(async () => {
+      for (const tab of this.model.tabs) {
+        if (!this.tab(tab.id)) continue;
+        try { await this.agents.restore(tab.id, () => store.iterateEvents(tab.id), tab.provider); }
+        catch (e) { console.error('[agents] history restore failed', tab.id, e); }
+        await new Promise<void>(resolve => setImmediate(resolve));
+      }
+    });
     // 이전 버전이 남긴 빈 "새 세션"(닫힘 + 제목·세션 없음) 정리
     const pruned = pruneEmptyClosedTabs(this.model);
     if (pruned !== this.model) {
@@ -81,9 +111,24 @@ export class WorkspaceService {
   /** 탭을 봤다(활성화) / 탭이 사라졌다 → AttentionTracker 에 알린다. */
   attentionHooks: { viewed(tabId: string): void; forget(tabId: string): void } | null = null;
 
+  linkAgentTab(tabId: string, parentTabId: string) {
+    if (tabId !== parentTabId && this.tab(parentTabId) && this.tab(tabId))
+      this.commit(updateTab(this.model, tabId, { parentTabId }, Date.now()));
+  }
+
   state(): WorkspaceStateDto {
+    const agents = this.agents.snapshot();
+    for (const tab of this.model.tabs) {
+      if (!tab.parentTabId || !this.tab(tab.parentTabId)) continue;
+      const entries = agents[tab.parentTabId] ?? [];
+      if (!entries.some(a => a.tabId === tab.id)) {
+        const row: SessionAgent = { id: `tab:${tab.id}`, tabId: tab.id, blockId: '', provider: tab.provider, title: tab.title ?? '', kind: 'worker', status: this.agents.outcome(tab.id) };
+        agents[tab.parentTabId] = [...entries, row];
+      }
+    }
     return {
       model: this.model,
+      agents,
       statuses: this.sessions?.statuses() ?? {},
       attention: this.attentionSource?.() ?? {},
     };

@@ -188,6 +188,7 @@ export class AgyEventMapper {
   private readonly stepUsage = new Map<number, TokenUsage>();
   private readonly stepTexts = new Map<number, string>();
   private readonly toolStarted = new Set<number>();
+  private readonly toolInputs = new Map<number, ReturnType<typeof normalizeAgyTool>>();
   private emittedAnyText = false;
   private sessionAnnounced = false;
   private turnSeq = 1;
@@ -213,6 +214,7 @@ export class AgyEventMapper {
   resetTurn(startedAt = Date.now(), turnId?: string): void {
     this.stepTexts.clear();
     this.toolStarted.clear();
+    this.toolInputs.clear();
     this.stepUsage.clear();
     this.emittedAnyText = false;
     this.opts.startedAt = startedAt;
@@ -282,13 +284,20 @@ export class AgyEventMapper {
             out.push({ type: "assistant_text", ts, blockId, text: full });
           }
         }
-      } else if (step.step_type === "tool") {
-        const rawName = step.tool_info?.name || step.tool_name || "Tool";
+      } else if (step.step_type === "tool" || step.step_type === "subagent") {
+        const rawName = step.tool_info?.name || step.tool_name || (step.step_type === "subagent" ? "invoke_subagent" : "Tool");
         const rawParams = step.tool_info?.parameters ?? {};
-        const { name, input } = normalizeAgyTool(rawName, rawParams);
+        const previous = this.toolInputs.get(idx);
+        const { name, input: originalInput } = !step.tool_info?.parameters && previous ? previous : normalizeAgyTool(rawName, rawParams);
+        // invoke_subagent returns launch metadata as a subagent/DONE step.
+        // It does not report whether the child's work has finished.
+        const input = step.step_type === "subagent" ? { ...originalInput, run_in_background: true } : originalInput;
+        this.toolInputs.set(idx, {name, input});
         const toolUseId = `agy-tool-${this.turnId}-${idx}`;
         if (!this.toolStarted.has(idx)) {
           this.toolStarted.add(idx);
+          out.push({ type: "tool_use", ts, toolUseId, name, input });
+        } else if (step.step_type === "subagent") {
           out.push({ type: "tool_use", ts, toolUseId, name, input });
         }
         if (step.state === "DONE" || step.state === "ERROR" || step.state === "FAILED") {

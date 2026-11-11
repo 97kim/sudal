@@ -1,3 +1,5 @@
+import { agentParents, agentStatus, orderedSessionAgents, type SessionAgent } from '@shared/session-agents';
+import { SessionAgentList } from './SessionAgentList';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionStatus } from "@shared/chat-events";
@@ -111,6 +113,21 @@ export function Sidebar({
 }) {
   const { t } = useTranslation();
   const { model, statuses, attention } = ws;
+  const parents = useMemo(() => agentParents(model.tabs, ws.agents ?? {}), [model.tabs, ws.agents]);
+  const openBranches = useMemo(() => {
+    const ids = new Set(model.openTabIds);
+    for (const tabId of model.openTabIds) for (let id = parents.get(tabId); id; id = parents.get(id)) ids.add(id);
+    return ids;
+  }, [model.openTabIds, parents]);
+  const rootTabs = (wsId: string) => workspaceTabs(model, wsId).filter(tab => !parents.has(tab.id)).sort((a,b) => Number(openBranches.has(b.id)) - Number(openBranches.has(a.id)));
+  const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(() => new Set());
+  const parentPath: string[] = [];
+  for (let id = model.activeTabId ? parents.get(model.activeTabId) : undefined; id; id = parents.get(id)) parentPath.push(id);
+  const activeParentPath = parentPath.join(',');
+  useEffect(() => {
+    if (!activeParentPath) return;
+    setCollapsedAgents(old => { const next = new Set(old); for (const id of activeParentPath.split(',')) next.delete(id); return next; });
+  }, [activeParentPath]);
   const attentionCount = model.openTabIds.filter((id) => attention[id]).length;
   const activeTab = model.tabs.find((t) => t.id === model.activeTabId) ?? null;
   const activeWs: Workspace | null =
@@ -177,9 +194,9 @@ export function Sidebar({
 
   // 끌기 말고도 자리를 옮길 수 있어야 한다 — 마우스를 끌기 어려운 경우도 있고,
   // 목록이 길면 한 칸 옮기는 데도 끌고 가야 한다. 메뉴는 클릭·키보드 양쪽에서 열린다.
-  const openTabIdsOf = (wsId: string) => workspaceTabs(model, wsId).filter((t) => t.open).map((t) => t.id);
+  const openTabIdsOf = (wsId: string, parentId?: string) => workspaceTabs(model, wsId).filter(t => t.open && parents.get(t.id) === parentId).map(t => t.id);
   const moveTabBy = (tabId: string, wsId: string, dir: "up" | "down") => {
-    const neighbor = neighborOf(openTabIdsOf(wsId), tabId, dir);
+    const neighbor = neighborOf(openTabIdsOf(wsId, parents.get(tabId)), tabId, dir);
     if (neighbor) onReorderTabs(moveNextTo(model.openTabIds, tabId, neighbor, dir === "down"));
   };
   const moveWsBy = (wsId: string, dir: "up" | "down") => {
@@ -215,7 +232,7 @@ export function Sidebar({
     // 닫힌 세션 위에도 선이 떠서 "될 것처럼 보이고 아무 일도 안 일어나는" 상태가 됐었다.
     const mine = () => {
       const d = dragRef.current;
-      return canDrop && d !== null && d.kind === kind && (kind === "ws" || d.wsId === wsId) && d.id !== id;
+      return canDrop && d !== null && d.kind === kind && (kind === "ws" || d.wsId === wsId && parents.get(d.id) === parents.get(id)) && d.id !== id;
     };
     const clear = () => {
       if (dropRef.current?.id !== id) return;
@@ -285,16 +302,23 @@ export function Sidebar({
   const [selection, setSelection] = useState<TabSelection>(EMPTY_SELECTION);
   const selectableOrder = useMemo(() => {
     const out: string[] = [];
+    const add = (id: string) => {
+      if (out.includes(id)) return;
+      out.push(id);
+      if (collapsedAgents.has(id)) return;
+      for (const agent of orderedSessionAgents(ws.agents?.[id] ?? [], model))
+        if (agent.tabId && parents.get(agent.tabId) === id) add(agent.tabId);
+    };
     // 화면에 그리는 순서(예약 워크스페이스가 맨 위로 올라간다)와 같아야 Shift 범위에 안 보이는 세션이 끼지 않는다
     for (const w of workspaces) {
       if (collapsed.has(w.id)) continue;
-      const tabs = workspaceTabs(model, w.id);
-      const closed = tabs.filter((t) => !t.open).length;
+      const tabs = rootTabs(w.id);
+      const closed = tabs.filter((t) => !openBranches.has(t.id)).length;
       const hidden = showAllClosed.has(w.id) ? 0 : Math.max(0, closed - CLOSED_LIMIT);
-      for (const t of hidden > 0 ? tabs.slice(0, tabs.length - hidden) : tabs) out.push(t.id);
+      for (const t of hidden > 0 ? tabs.slice(0, tabs.length - hidden) : tabs) add(t.id);
     }
     return out;
-  }, [model, workspaces, collapsed, showAllClosed]);
+  }, [model, workspaces, collapsed, showAllClosed, parents, openBranches, collapsedAgents, ws.agents]);
   useEffect(() => setSelection((s) => pruneSelection(s, selectableOrder)), [selectableOrder]);
   // 워크스페이스 만들기(이름 입력 행) · 워크스페이스 이름 변경(행 안에서).
   const [creating, setCreating] = useState(false);
@@ -395,6 +419,97 @@ export function Sidebar({
     e.stopPropagation();
     setMenu(m);
   };
+
+  const renderSession = (tab: TabMeta, agent?: SessionAgent): React.ReactNode => (<>
+
+                      {confirm?.kind === "tabs" && confirm.id === tab.id ? (
+                        <ConfirmRow
+                          text={t("nav.sidebar.deleteSelectedConfirm", { count: confirm.ids.length })}
+                          action={t("nav.sidebar.deleteSessionAction")}
+                          // 이 줄이 확인 줄로 바뀌며 포커스가 사라진다 — 키보드로 이어 갈 수 있게 삭제 버튼으로 옮긴다
+                          autoFocus
+                          onYes={() => {
+                            setConfirm(null);
+                            setSelection(EMPTY_SELECTION);
+                            for (const id of confirm.ids) onDeleteTab(id);
+                          }}
+                          onNo={() => {
+                            setConfirm(null);
+                            setTimeout(() => document.querySelector<HTMLElement>(`[data-sidebar] [data-session="${tab.id}"]`)?.focus(), 0);
+                          }}
+                        />
+                      ) : confirm?.kind === "tab" && confirm.id === tab.id ? (
+                        <ConfirmRow
+                          text={t("nav.sidebar.deleteSessionConfirm")}
+                          action={t("nav.sidebar.deleteSessionAction")}
+                          onYes={() => {
+                            setConfirm(null);
+                            onDeleteTab(tab.id);
+                          }}
+                          onNo={() => setConfirm(null)}
+                        />
+                      ) : (
+                        <SessionRow
+                          agent={agent}
+                          drag={{
+                            ...dragSource("tab", tab.id, tab.workspaceId, tab.open && renaming?.tabId !== tab.id),
+                            ...dropTarget("tab", tab.id, tab.workspaceId, tab.open),
+                          }}
+                          agentsControl={!!ws.agents?.[tab.id]?.length && <button type="button" aria-label={t('nav.sidebar.agents')} aria-expanded={!collapsedAgents.has(tab.id)} onDoubleClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setCollapsedAgents(old => { const next = new Set(old); if (next.has(tab.id)) next.delete(tab.id); else next.add(tab.id); return next; }); }} className="shrink-0 rounded p-0.5 text-muted hover:text-fg"><Icon name="chevronRight" size={11} className={collapsedAgents.has(tab.id) ? '' : 'rotate-90'}/></button>}
+                          dragging={drag?.id === tab.id}
+                          tab={tab}
+                          status={statuses[tab.id] ?? "idle"}
+                          attention={attention[tab.id] ?? null}
+                          active={
+                            tab.id === model.activeTabId && view === "chat"
+                          }
+                          highlighted={
+                            menu?.kind === "tab" && menu.id === tab.id
+                          }
+                          selected={selection.ids.has(tab.id)}
+                          renaming={
+                            renaming?.tabId === tab.id ? renaming.draft : null
+                          }
+                          renameRef={renameRef}
+                          onSelectKey={(range) =>
+                            setSelection((s) =>
+                              range ? rangeSelection(s, tab.id, selectableOrder, model.activeTabId) : toggleSelection(s, tab.id, model.activeTabId),
+                            )
+                          }
+                          onClick={(e) => {
+                            if (isMod(e)) return setSelection((s) => toggleSelection(s, tab.id, model.activeTabId));
+                            if (e.shiftKey) return setSelection((s) => rangeSelection(s, tab.id, selectableOrder, model.activeTabId));
+                            // 그냥 클릭은 지금처럼 연다. 고른 것은 풀고 Shift+클릭의 기준점만 남긴다.
+                            setSelection({ ids: new Set(), anchor: tab.id });
+                            onOpenTab(tab.id);
+                          }}
+                          onStartRename={() =>
+                            setRenaming({
+                              tabId: tab.id,
+                              draft: tab.title ?? "",
+                            })
+                          }
+                          onRenameChange={(v) =>
+                            setRenaming({ tabId: tab.id, draft: v })
+                          }
+                          onRenameCommit={commitRename}
+                          onRenameCancel={() => setRenaming(null)}
+                          onContextMenu={(e) => {
+                            // 여러 개 고른 것 중 하나면 고른 것 전체의 메뉴, 아니면 고른 것을 풀고 이 세션의 메뉴
+                            const many = selection.ids.size > 1 && selection.ids.has(tab.id);
+                            if (!many && selection.ids.size > 0) setSelection(EMPTY_SELECTION);
+                            openMenu(e, { kind: many ? "tabs" : "tab", id: tab.id, x: e.clientX, y: e.clientY });
+                          }}
+                          onX={() =>
+                            tab.open
+                              ? onCloseTab(tab.id)
+                              : setConfirm({ kind: "tab", id: tab.id })
+                          }
+                        />
+                      )}
+                      {!collapsedAgents.has(tab.id) && !!ws.agents?.[tab.id]?.length && <SessionAgentList tabId={tab.id} ws={ws} parents={parents} onOpen={onOpenTab} renderTab={renderSession}/>}
+
+  </>);
 
   if (railed)
     return (
@@ -578,13 +693,13 @@ export function Sidebar({
         )}
 
         {workspaces.map((w) => {
-          const tabs = workspaceTabs(model, w.id);
-          const openCount = tabs.filter((t) => t.open).length;
+          const tabs = rootTabs(w.id);
+          const openCount = model.tabs.filter(t => t.workspaceId === w.id && t.open).length;
           // 접어 둔 워크스페이스 안에서 응답이 와도 알 수 있어야 한다.
-          const unread = tabs.filter((t) => t.open && attention[t.id]).length;
+          const unread = model.tabs.filter(t => t.workspaceId === w.id && t.open && attention[t.id]).length;
           const isCollapsed = collapsed.has(w.id);
           const isActiveWs = activeWs?.id === w.id;
-          const closedTabs = tabs.filter((t) => !t.open);
+          const closedTabs = tabs.filter((t) => !openBranches.has(t.id));
           const hiddenClosed = showAllClosed.has(w.id)
             ? 0
             : Math.max(0, closedTabs.length - CLOSED_LIMIT);
@@ -705,93 +820,7 @@ export function Sidebar({
                       {t("nav.sidebar.noSessions")}
                     </li>
                   )}
-                  {visible.map((tab) => (
-                    <li key={tab.id}>
-                      {confirm?.kind === "tabs" && confirm.id === tab.id ? (
-                        <ConfirmRow
-                          text={t("nav.sidebar.deleteSelectedConfirm", { count: confirm.ids.length })}
-                          action={t("nav.sidebar.deleteSessionAction")}
-                          // 이 줄이 확인 줄로 바뀌며 포커스가 사라진다 — 키보드로 이어 갈 수 있게 삭제 버튼으로 옮긴다
-                          autoFocus
-                          onYes={() => {
-                            setConfirm(null);
-                            setSelection(EMPTY_SELECTION);
-                            for (const id of confirm.ids) onDeleteTab(id);
-                          }}
-                          onNo={() => {
-                            setConfirm(null);
-                            setTimeout(() => document.querySelector<HTMLElement>(`[data-sidebar] [data-session="${tab.id}"]`)?.focus(), 0);
-                          }}
-                        />
-                      ) : confirm?.kind === "tab" && confirm.id === tab.id ? (
-                        <ConfirmRow
-                          text={t("nav.sidebar.deleteSessionConfirm")}
-                          action={t("nav.sidebar.deleteSessionAction")}
-                          onYes={() => {
-                            setConfirm(null);
-                            onDeleteTab(tab.id);
-                          }}
-                          onNo={() => setConfirm(null)}
-                        />
-                      ) : (
-                        <SessionRow
-                          drag={{
-                            ...dragSource("tab", tab.id, w.id, tab.open && renaming?.tabId !== tab.id),
-                            ...dropTarget("tab", tab.id, w.id, tab.open),
-                          }}
-                          dragging={drag?.id === tab.id}
-                          tab={tab}
-                          status={statuses[tab.id] ?? "idle"}
-                          attention={attention[tab.id] ?? null}
-                          active={
-                            tab.id === model.activeTabId && view === "chat"
-                          }
-                          highlighted={
-                            menu?.kind === "tab" && menu.id === tab.id
-                          }
-                          selected={selection.ids.has(tab.id)}
-                          renaming={
-                            renaming?.tabId === tab.id ? renaming.draft : null
-                          }
-                          renameRef={renameRef}
-                          onSelectKey={(range) =>
-                            setSelection((s) =>
-                              range ? rangeSelection(s, tab.id, selectableOrder, model.activeTabId) : toggleSelection(s, tab.id, model.activeTabId),
-                            )
-                          }
-                          onClick={(e) => {
-                            if (isMod(e)) return setSelection((s) => toggleSelection(s, tab.id, model.activeTabId));
-                            if (e.shiftKey) return setSelection((s) => rangeSelection(s, tab.id, selectableOrder, model.activeTabId));
-                            // 그냥 클릭은 지금처럼 연다. 고른 것은 풀고 Shift+클릭의 기준점만 남긴다.
-                            setSelection({ ids: new Set(), anchor: tab.id });
-                            onOpenTab(tab.id);
-                          }}
-                          onStartRename={() =>
-                            setRenaming({
-                              tabId: tab.id,
-                              draft: tab.title ?? "",
-                            })
-                          }
-                          onRenameChange={(v) =>
-                            setRenaming({ tabId: tab.id, draft: v })
-                          }
-                          onRenameCommit={commitRename}
-                          onRenameCancel={() => setRenaming(null)}
-                          onContextMenu={(e) => {
-                            // 여러 개 고른 것 중 하나면 고른 것 전체의 메뉴, 아니면 고른 것을 풀고 이 세션의 메뉴
-                            const many = selection.ids.size > 1 && selection.ids.has(tab.id);
-                            if (!many && selection.ids.size > 0) setSelection(EMPTY_SELECTION);
-                            openMenu(e, { kind: many ? "tabs" : "tab", id: tab.id, x: e.clientX, y: e.clientY });
-                          }}
-                          onX={() =>
-                            tab.open
-                              ? onCloseTab(tab.id)
-                              : setConfirm({ kind: "tab", id: tab.id })
-                          }
-                        />
-                      )}
-                    </li>
-                  ))}
+                  {visible.map(tab => <li key={tab.id}>{renderSession(tab)}</li>)}
                   {hiddenClosed > 0 && (
                     <li>
                       <button
@@ -892,7 +921,7 @@ export function Sidebar({
                 <>
                   <MenuItem
                     label={t("nav.sidebar.menu.moveUp")}
-                    disabled={!neighborOf(openTabIdsOf(menuTab.workspaceId), menuTab.id, "up")}
+                    disabled={!neighborOf(openTabIdsOf(menuTab.workspaceId, parents.get(menuTab.id)), menuTab.id, "up")}
                     onPick={() => {
                       setMenu(null);
                       moveTabBy(menuTab.id, menuTab.workspaceId, "up");
@@ -900,7 +929,7 @@ export function Sidebar({
                   />
                   <MenuItem
                     label={t("nav.sidebar.menu.moveDown")}
-                    disabled={!neighborOf(openTabIdsOf(menuTab.workspaceId), menuTab.id, "down")}
+                    disabled={!neighborOf(openTabIdsOf(menuTab.workspaceId, parents.get(menuTab.id)), menuTab.id, "down")}
                     onPick={() => {
                       setMenu(null);
                       moveTabBy(menuTab.id, menuTab.workspaceId, "down");
@@ -1018,6 +1047,8 @@ export function Sidebar({
 }
 
 function SessionRow({
+  agent,
+  agentsControl,
   drag,
   dragging,
   tab,
@@ -1037,6 +1068,8 @@ function SessionRow({
   onContextMenu,
   onX,
 }: {
+  agent?: SessionAgent;
+  agentsControl?: React.ReactNode;
   tab: TabMeta;
   status: SessionStatus;
   attention: SessionAttention | null;
@@ -1095,6 +1128,7 @@ function SessionRow({
       data-selected={selected ? "true" : undefined}
       data-open={tab.open ? "true" : "false"}
     >
+      {agentsControl}
       <StatusDot
         status={tab.open ? status : "idle"}
         attention={tab.open ? attention : null}
@@ -1125,6 +1159,7 @@ function SessionRow({
           {tabTitle(tab, t("shared.untitledTab"))}
         </span>
       )}
+      {agent && <span className="shrink-0 text-[10px] text-muted-2">{t(`nav.sidebar.agentStatus.${['running','queued','waiting_permission','error'].includes(status) && tab.open ? agentStatus(status) : agent.status}`)}</span>}
       {/* 안 본 응답은 목록을 훑을 때 바로 눈에 들어와야 한다 — 왼쪽 상태 점은 색만 바뀌어 잘 안 보인다. */}
       {unread && (
         <span

@@ -2,6 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AgyEventMapper, agyUsage, normalizeAgyTool } from "./agy-events";
 import { agyPolicyArgs, buildAgyUserInputLine } from "./agy-adapter";
+import { reduceSessionAgents } from '@shared/session-agents';
+
+test('실제 invoke_subagent 스트림은 tool/ACTIVE 뒤 subagent/DONE으로 끝나며 작업 완료를 추정하지 않는다', () => {
+  const mapper = new AgyEventMapper({startedAt:1,turnId:'live'});
+  const start = mapper.mapEvent({event:'step_update',step_update:{step_index:2,state:'ACTIVE',step_type:'tool',tool_name:'invoke_subagent',tool_info:{name:'invoke_subagent',parameters:{Role:'Echo responder',TypeName:'self'}}}},1);
+  const end = mapper.mapEvent({event:'step_update',step_update:{step_index:2,state:'DONE',step_type:'subagent',tool_name:'invoke_subagent'}},2);
+  assert.equal(end.events.filter(e=>e.type==='tool_result').length,1);
+  let rows = reduceSessionAgents([],start.events[0],'agy');
+  for (const e of end.events) rows=reduceSessionAgents(rows,e,'agy');
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].title,'Echo responder');
+  assert.equal(rows[0].status,'unknown');
+  assert.equal(rows[0].background,true);
+});
 
 test("init 이벤트 → session 이벤트 변환", () => {
   const mapper = new AgyEventMapper({ model: "gemini-4-argon-medium", startedAt: 1000, turnId: "t1" });

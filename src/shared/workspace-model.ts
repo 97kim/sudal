@@ -20,6 +20,8 @@ export interface Workspace {
 }
 
 export interface TabMeta {
+  /** Sudal CLI에서 이 탭을 호출한 세션. */
+  parentTabId?: string;
   id: string;
   workspaceId: string;
   /** 첫 사용자 메시지에서 따오거나 사용자가 붙인 이름. 없으면 "새 세션". */

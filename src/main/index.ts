@@ -956,6 +956,7 @@ async function startControlServer() {
       createTab: (workspaceId) => workspaces.createTab(workspaceId),
       configure: (tabId, patch) => void sessions.configure(tabId, patch),
       renameTab: (tabId, title) => workspaces.renameTab(tabId, title),
+      linkAgentTab: (tabId, parentTabId) => workspaces.linkAgentTab(tabId, parentTabId),
       activateTab: (tabId) => workspaces.activateTab(tabId),
       closeTab: (tabId) => workspaces.closeTab(tabId),
       snapshot: (tabId) => {
@@ -1832,6 +1833,10 @@ function bootstrap() {
     taskContext: (tabId, cwd) => harness?.context(cwd, tabId) ?? "",
     emit(tabId, event) {
       feedbackRunner?.onEvent(tabId, event);
+      if (event.type === 'subagent_activity' && !workspaces.agents.snapshot()[tabId]?.some(a => a.blockId === event.parentToolUseId)) {
+        // Some skills expose child activity without an Agent tool name. Persist the link once.
+        sessions.note(tabId, {type:'agent_status', ts:event.ts, agentId:event.parentToolUseId, toolUseId:event.parentToolUseId, background:false, provider:event.via === 'codex' ? 'codex' : workspaces.tab(tabId)?.provider ?? 'claude', title:'', status:'running'});
+      }
       const harnessCwd = sessions.snapshot(tabId).cwd;
       if (harnessCwd && harness) {
         try { harness.proposal(harnessCwd, tabId, event); } catch { /* diagnostics must not break a provider stream */ }
@@ -1911,6 +1916,15 @@ function bootstrap() {
       if (process.env.SUDAL_DEBUG_SDK) console.log(`[bgtasks ${tabId.slice(0, 6)}] ${tasks.length}개 출처=${source}`);
       scheduleEngine?.onSignal(tabId, { kind: "tasks", count: tasks.length, source, ids: tasks.map((t) => t.id) });
       // 늘 "살아 있는 전체" 라 갈아 끼운다. 턴이 끝난 뒤에도 오므로, 노는 것처럼 보이던 구간이 채워진다.
+      const agentTasks = tasks.filter(task => ['subagent', 'local_agent'].includes(task.type) || !!task.agent);
+      const previousAgents = workspaces.agents.snapshot()[tabId] ?? [];
+      for (const task of agentTasks) {
+        const old = previousAgents.find(a => a.backgroundId === task.id);
+        if (old?.status === 'running' && old.blockId === (task.toolUseId ?? '') && old.title === task.description.slice(0,160)) continue;
+        sessions.note(tabId, {type:'agent_status', ts:Date.now(), agentId:task.id, toolUseId:task.toolUseId, provider:'claude', title:task.description.slice(0,160), status:'running'});
+      }
+      for (const old of previousAgents) if (old.backgroundId && old.status === 'running' && !agentTasks.some(task => task.id === old.backgroundId))
+        sessions.note(tabId, {type:'agent_status', ts:Date.now(), agentId:old.backgroundId, toolUseId:old.blockId || undefined, provider:old.provider, title:old.title, status:'unknown'});
       bgTasks.replace(tabId, sessionId, sessions.snapshot(tabId).cwd ?? "", tasks);
       sendBackgroundJobs();
     },
@@ -1920,6 +1934,8 @@ function bootstrap() {
     onTaskFinished(tabId, note) {
       // 예약 회차 판정에는 어떻게 끝났든 넘긴다 — 그 결과를 들고 CLI 가 후속 턴을 돈다.
       scheduleEngine?.onSignal(tabId, { kind: "task_finished", id: note.id });
+      const agent = workspaces.agents.snapshot()[tabId]?.find(a => a.backgroundId === note.id);
+      if (agent) sessions.note(tabId, {type:'agent_status', ts:Date.now(), agentId:note.id, toolUseId:agent.blockId || undefined, provider:agent.provider, title:agent.title, status:note.status === 'completed' ? 'done' : 'failed'});
       // 사용자가 세운 것(stopped)은 알리지 않는다 — 자기가 한 일이다. 시간 제한에 걸려 멈춘 것은 실패처럼 알린다.
       if (note.status === "stopped" && !note.timedOut) return;
       const job = bgTasks.recall(note.id);

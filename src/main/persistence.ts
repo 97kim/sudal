@@ -7,6 +7,7 @@ import { HistoryCheckpoints, historyFileStamp } from "./history-checkpoint";
 import path from "node:path";
 import { isInsideRel } from "./path-within";
 import type { ChatEvent } from "@shared/chat-events";
+import type { AgentIndexSnapshot } from './session-agent-index';
 import type { ProviderRateLimitDto } from "@shared/ipc";
 import { emptyModel, type WorkspaceModel } from "@shared/workspace-model";
 import { mt } from "./i18n";
@@ -29,6 +30,9 @@ const QUEUE_FILE_MAX_BYTES = 4 * 1024 * 1024;
 const QUEUE_MAX_ITEMS = 20;
 
 export class Store {
+  onAgentEvent?: (tabId: string, event: ChatEvent) => void;
+  onThreadReset?: (tabId: string) => void;
+  onAgentFlush?: (tabId: string) => void;
   private readonly modelPath: string;
   private readonly threadsDir: string;
   private readonly attentionPath: string;
@@ -189,6 +193,7 @@ export class Store {
 
   /** 이벤트를 버퍼에 쌓고 잠시 뒤 한 번에 append 한다 (text_delta 가 초당 수십 개라서). */
   appendEvent(tabId: string, event: ChatEvent): void {
+    this.onAgentEvent?.(tabId, event);
     if (event.type === "compacted") this.compactedBuffers.add(tabId);
     const buf = this.buffers.get(tabId) ?? [];
     buf.push(JSON.stringify(event));
@@ -203,16 +208,49 @@ export class Store {
     }
     if (this.buffers.size === 0) return;
     fs.mkdirSync(this.threadsDir, { recursive: true });
+    const flushed: string[] = [];
     for (const [tabId, lines] of this.buffers) {
       try {
         const before = historyFileStamp(this.threadPath(tabId));
         fs.appendFileSync(this.threadPath(tabId), `${lines.join("\n")}\n`, "utf8");
         this.checkpoints.advance(tabId, before, this.compactedBuffers.delete(tabId));
+        flushed.push(tabId);
       } catch (e) {
         console.error(`[store] thread append 실패 (${tabId}):`, e);
       }
     }
     this.buffers.clear();
+    for (const tabId of flushed) this.onAgentFlush?.(tabId);
+  }
+
+  private agentCachePath(tabId: string) { return path.join(this.threadsDir, `${safeName(tabId)}.agents.json`); }
+
+  loadAgentCache(tabId: string): AgentIndexSnapshot | null {
+    // A changed or replaced history invalidates the cache. Ordinary live appends
+    // update the summary incrementally and save it only after history is flushed.
+    if (this.buffers.has(tabId)) this.flush();
+    const stamp = historyFileStamp(this.threadPath(tabId));
+    if (!stamp) return null;
+    try {
+      const cached = JSON.parse(fs.readFileSync(this.agentCachePath(tabId), 'utf8'));
+      const data = cached.data;
+      if (JSON.stringify(cached.stamp) !== JSON.stringify(stamp) || data?.version !== 1 || !['claude','codex','agy'].includes(data.provider) || !Array.isArray(data.rows)) return null;
+      if (data.outcome !== undefined && !['done','failed'].includes(data.outcome)) return null;
+      if (!data.rows.every((a: Record<string,unknown>) => a && typeof a.id === 'string' && typeof a.title === 'string' && typeof a.blockId === 'string' && ['claude','codex','agy'].includes(String(a.provider)) && ['internal','review','fanout','worker'].includes(String(a.kind)) && ['running','waiting','done','failed','unknown'].includes(String(a.status)) && ['tabId','backgroundId'].every(k => a[k] === undefined || typeof a[k] === 'string'))) return null;
+      return data;
+    } catch { return null; }
+  }
+
+  saveAgentCache(tabId: string, data: AgentIndexSnapshot): void {
+    // Never cache events that have not reached the conversation file yet.
+    if (this.buffers.has(tabId)) return;
+    try {
+      const stamp = historyFileStamp(this.threadPath(tabId));
+      if (!stamp) return;
+      const file = this.agentCachePath(tabId);
+      fs.writeFileSync(`${file}.tmp`, JSON.stringify({stamp,data}), 'utf8');
+      fs.renameSync(`${file}.tmp`, file);
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') console.error('[store] agent cache save failed', tabId, e); }
   }
 
   /** 스레드 파일의 mtime·크기(검색 인덱스의 캐시 키). 아직 안 내려간 버퍼가 있으면 먼저 내린다. 파일이 없으면 null. */
@@ -278,6 +316,8 @@ export class Store {
    * 대기 중인 지시·인계서·첨부는 진행 중이던 상태라 함께 버린다(첨부 이미지의 dataUrl 은 보관본에 있다).
    */
   resetThread(tabId: string): void {
+    this.onThreadReset?.(tabId);
+    try { fs.rmSync(this.agentCachePath(tabId), {force:true}); } catch {}
     this.compactedBuffers.delete(tabId);
     this.checkpoints.invalidate(tabId);
     this.buffers.delete(tabId);
