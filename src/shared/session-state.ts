@@ -81,6 +81,8 @@ export function subagentLogLine(e: { tool?: string; input?: Record<string, strin
 export interface TurnBlock {
   kind: "turn";
   id: string;
+  /** Completion time, for distinguishing a later ambient turn from this result. */
+  completedAt?: number;
   usage: TokenUsage;
   costUsd: number;
   durationMs: number;
@@ -454,6 +456,7 @@ function apply(state: SessionState, event: ChatEvent): SessionState {
           {
             kind: "turn",
             id: `turn-${event.ts}-${state.totals.turns + 1}`,
+            completedAt: event.ts,
             usage: event.usage,
             costUsd: event.costUsd,
             durationMs: event.durationMs,

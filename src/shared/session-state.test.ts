@@ -142,6 +142,8 @@ test("turn_result → 합계 누적 + sessionId 갱신 + turn 블록", () => {
   assert.equal(s.totals.costUsd, 0.03);
   assert.deepEqual(s.totals.usage, { input: 20, output: 10, cacheRead: 200, cacheWrite: 40 });
   assert.equal(s.blocks.filter((b) => b.kind === "turn").length, 2);
+  const results = s.blocks.filter((b) => b.kind === "turn");
+  assert.equal(results.at(-1)?.completedAt, s.lastTurn?.ts);
 });
 
 test("turn_result: 사용량 0 인 로컬 커맨드 턴은 lastTurn 을 덮어쓰지 않는다", () => {

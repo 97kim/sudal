@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { clearReveal, onReveal, pendingReveal } from "../reveal";
 import type { ForkPoint, SessionStatus } from "@shared/chat-events";
@@ -86,6 +86,8 @@ export function MessageList({
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const virtualApi = useRef<VirtualRowsApi | null>(null);
+  const completedRowRef = useRef<HTMLDivElement>(null);
+  const completedHeights = useRef(new Map<string, number>());
   // 검색 결과에서 "이 블록으로": 예약된 블록이 이 탭의 것이고 화면에 생겼으면 스크롤 + 잠깐 강조.
   // 블록 목록이 바뀔 때마다(재생 진행) 다시 시도하므로 닫혀 있던 세션도 마운트 뒤 정상 이동한다.
   const [revealTick, setRevealTick] = useState(0);
@@ -276,6 +278,31 @@ export function MessageList({
     const last = groups[groups.length - 1];
     groups.push({ kind, blocks: [b], continued: !!last && last.kind === kind && kind === "assistant" });
   }
+  // The latest turn's summary replaces the running footer in the same space.
+  // Adding it to the virtual list while removing the footer changes the scroll
+  // range twice, even though the answer itself has not changed.
+  const resumedAfterResult = last?.kind === "turn" && status !== "idle" && status !== "error" &&
+    (status === "queued" || turnStartedAt !== null && (last.completedAt === undefined || turnStartedAt > last.completedAt));
+  const completedFooter = last?.kind === "turn" && !resumedAfterResult ? groups.at(-1) : undefined;
+  const messageGroups = completedFooter ? groups.slice(0, -1) : groups;
+  const completedId = completedFooter?.blocks[0].id;
+  // When the next message arrives this row moves into VirtualRows. Carry its
+  // measured content height across that move instead of flashing a 100px estimate.
+  useLayoutEffect(() => {
+    const row = completedRowRef.current;
+    if (!row || !completedId) return;
+    const measure = () => {
+      if (row.isConnected && row.getClientRects().length) completedHeights.current.set(completedId, row.getBoundingClientRect().height);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [completedId]);
+  useLayoutEffect(() => {
+    const ids = new Set(blocks.map(block => block.id));
+    for (const id of completedHeights.current.keys()) if (!ids.has(id)) completedHeights.current.delete(id);
+  }, [blocks]);
 
   // 턴 끝의 "여기서 분기": 지금 이어지는 세션의 턴이고 탭이 쉬고 있을 때만
   const forkCtx: ForkCtx = {
@@ -339,9 +366,9 @@ export function MessageList({
               <p className="text-muted">{t("chat.messages.empty")}</p>
             </div>
           ))}
-        <VirtualRows rows={groups.map((g, i) => ({ key: `${g.blocks[0].kind}:${g.blocks[0].id}`, gap: groups[i + 1]?.continued ? 4 : 20, estimate: g.kind === "assistant" ? 100 : 72 }))}
+        <VirtualRows rows={messageGroups.map((g, i) => ({ key: `${g.blocks[0].kind}:${g.blocks[0].id}`, gap: messageGroups[i + 1]?.continued ? 4 : 20, estimate: completedHeights.current.get(g.blocks[0].id) ?? (g.kind === "assistant" ? 100 : 72) }))}
           container={containerRef} following={stickToBottom} api={virtualApi}
-          render={(index) => <HistoryRowContext.Provider value={`${tabId}:${groups[index].blocks[0].id}`}><Group group={groups[index]} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} /><HarnessConversationSlot blockId={groups[index].blocks.at(-1)!.id} onSlot={onHarnessSlot} /></HistoryRowContext.Provider>} />
+          render={(index) => <HistoryRowContext.Provider value={`${tabId}:${messageGroups[index].blocks[0].id}`}><Group group={messageGroups[index]} provider={provider} tabId={tabId} onRerunVerify={onRerunVerify} onCompareFanout={onCompareFanout} onOpenOrchestration={onOpenOrchestration} /><HarnessConversationSlot blockId={messageGroups[index].blocks.at(-1)!.id} onSlot={onHarnessSlot} /></HistoryRowContext.Provider>} />
         {thinking && (
           <Thinking
             withAvatar={groups[groups.length - 1]?.kind !== "assistant"}
@@ -351,7 +378,14 @@ export function MessageList({
             afterTool={last?.kind === "tool" ? last.name : null}
           />
         )}
-        {status !== "idle" && status !== "error" && (turnStartedAt ?? lastUserTs) !== null && <RunningFooter since={status === "queued" ? lastUserTs! : (turnStartedAt ?? lastUserTs!)} blocks={blocks} status={status} ambientFromBg={ambientFromBg} />}
+        {completedFooter ? <div className="min-h-7" data-turn-footer="completed">
+          <div ref={completedRowRef} className="flow-root">
+          <HistoryRowContext.Provider value={`${tabId}:${last.id}`}>
+            <Group group={completedFooter} provider={provider} tabId={tabId} />
+            <HarnessConversationSlot blockId={last.id} onSlot={onHarnessSlot} />
+          </HistoryRowContext.Provider>
+          </div>
+        </div> : status !== "idle" && status !== "error" && (turnStartedAt ?? lastUserTs) !== null && <div className="min-h-7" data-turn-footer="running"><RunningFooter since={status === "queued" ? lastUserTs! : (turnStartedAt ?? lastUserTs!)} blocks={blocks} status={status} ambientFromBg={ambientFromBg} /></div>}
       </div>
     </div>
       {!atBottom && blocks.length > 0 && (
@@ -701,9 +735,6 @@ function BlockView({ block }: { block: Block }) {
       return (
         <div className="py-0.5" style={{ userSelect: "text" }}>
           <Markdown text={block.text} />
-          {block.streaming && (
-            <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-accent align-middle" />
-          )}
         </div>
       );
     case "tool":
@@ -721,7 +752,7 @@ function BlockView({ block }: { block: Block }) {
       // 성공한 턴은 통계 한 줄만 조용히. 실패는 원인을 봐야 하니 박스로.
       if (!block.isError)
         return (
-          <div className="group/turn mt-1 flex items-center justify-end gap-2 text-muted-2">
+          <div className="group/turn flex min-h-7 items-center justify-end gap-2 text-muted-2">
             {block.forkPoint && <ForkButton point={block.forkPoint} />}
             {stats}
           </div>
