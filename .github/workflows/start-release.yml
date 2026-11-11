@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '새 버전 (예: 0.21.0). main CI 통과와 release-notes/<버전>.md 준비 필요'
+        description: '새 버전 (예: 0.20.6). main CI 통과와 release-notes/<버전>.md 준비 필요'
         required: true
         type: string
 

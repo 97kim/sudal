@@ -38,7 +38,7 @@ PR 빌드·수동 빌드 검증에는 이 토큰이 필요하지 않다.
 ### GitHub Actions에서 새 버전 시작
 
 `release-notes/<새 버전>.md`를 PR로 머지하고 최신 main의 `test` CI가 통과하면,
-GitHub → Actions → **start-release** → **Run workflow**에서 브랜치 `main`과 새 버전(예: `0.21.0`)을 입력한다.
+GitHub → Actions → **start-release** → **Run workflow**에서 브랜치 `main`과 새 버전(예: `0.20.6`)을 입력한다.
 현재 버전보다 큰 정식 버전만 허용한다. 버전 커밋과 태그를 함께 올린 뒤 기존 `release` 워크플로를 호출해
 Windows·macOS 빌드, 산출물 검증, 공개, Homebrew 갱신까지 실행한다. 로컬 Node.js·Yarn은 필요 없다.
 

@@ -26,7 +26,7 @@ export async function startReleaseAction(env = process.env, deps = {}) {
   if (env.DRY_RUN) throw new Error('start-release에서는 DRY_RUN을 사용할 수 없습니다.');
   const current = deps.currentVersion?.() ?? JSON.parse(readFileSync('package.json', 'utf8')).version;
   if (!newerVersion(version, current)) throw new Error('새 버전은 현재 버전보다 커야 합니다. 기존 태그 재배포는 release 워크플로를 사용하세요.');
-  releaseNotes(version);
+  releaseNotes(version, deps.notesRoot);
   const sha = deps.head?.() ?? git('rev-parse', 'HEAD');
   if (!env.GITHUB_SHA || sha !== env.GITHUB_SHA) throw new Error('실행 대기 중 main이 변경됐습니다. 최신 main에서 다시 실행하세요.');
   const call = deps.request ?? request;

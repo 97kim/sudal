@@ -11,7 +11,7 @@ import { releaseFiles, validateTag, verifyAssets, caskText } from './release-ci.
 import { releaseNotes } from './release-notes.mjs';
 
 test('릴리즈 노트는 기존 한국어 제목·설치 안내와 버전에 맞는 파일 이름을 사용한다', () => {
-  for (const version of ['0.15.0', '0.15.1']) {
+  for (const version of ['0.15.0', '0.15.1', '0.20.6']) {
     const notes = releaseNotes(version);
     assert.deepEqual(notes.match(/^## .+$/gm), ['## 이번에 달라진 것', '## 설치', '## Windows에 설치하기', '## 필요한 것']);
     assert.ok(notes.includes(`sudal-${version}-x64.exe`));
