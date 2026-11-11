@@ -5,14 +5,16 @@ import type { TabMeta } from '@shared/workspace-model';
 import type { ReactNode } from 'react';
 import { ProviderLogo } from './ProviderLogo';
 import { requestReveal } from '../reveal';
+import { openSubagentHistory } from '../subagent-history';
 
-export function SessionAgentList({ tabId, ws, parents, onOpen, renderTab }: {
+export function SessionAgentList({ tabId, rows, ws, parents, onOpen, renderTab }: {
+  rows: SessionAgent[];
   tabId: string; ws: WorkspaceStateDto; parents: Map<string,string>; onOpen: (id:string)=>void;
   renderTab: (tab: TabMeta, agent: SessionAgent) => ReactNode;
 }) {
   const { t } = useTranslation();
   return <ul className="ml-4 border-l border-line pl-2" aria-label={t('nav.sidebar.agents')}>
-    {orderedSessionAgents(ws.agents?.[tabId] ?? [], ws.model).map(row => {
+    {orderedSessionAgents(rows, ws.model).map(row => {
       const child = row.tabId ? ws.model.tabs.find(tab => tab.id === row.tabId) : undefined;
       if (child && parents.get(child.id) === tabId) return <li key={row.id} data-session-agent={row.id}>{renderTab(child, row)}</li>;
       const live = child?.open ? ws.statuses[child.id] : undefined;
@@ -20,7 +22,7 @@ export function SessionAgentList({ tabId, ws, parents, onOpen, renderTab }: {
       const title = row.title || t(`nav.sidebar.agentKind.${row.kind}`);
       return <li key={row.id}>
         <button type="button" data-session-agent={row.id}
-          onClick={() => { if (child) onOpen(child.id); else { if (row.blockId) requestReveal(tabId, row.blockId); onOpen(tabId); } }}
+          onClick={() => { if (child) onOpen(child.id); else if (row.kind === 'internal' && (row.provider === 'codex' || row.provider === 'claude')) openSubagentHistory({ tabId, agentId: row.id }); else { if (row.blockId) requestReveal(tabId, row.blockId); onOpen(tabId); } }}
           title={`${title} · ${t(`nav.sidebar.agentStatus.${status}`)}`}
           className={`flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] hover:bg-panel-2/60 focus-visible:outline focus-visible:outline-accent ${child?.id === ws.model.activeTabId ? 'bg-panel-2 text-fg' : 'text-muted'}`}>
           <ProviderLogo provider={row.provider} size={12}/>

@@ -33,6 +33,17 @@ chat search, plus a button for sessions that need a response, shown as an icon o
 The refresh in the "Subscription limits" block at the bottom reads Claude by running the `/usage` local command through the SDK (no model call, no cost), and rescans
 transcripts for Codex. The limits block on the Usage screen has the same button.
 
+### Subagent conversations
+
+Click an internal Codex or Claude subagent below its session to open its saved conversation in a `↳ Agent name` tab beside its parent.
+This read-only tab has no composer; clicking the same agent again activates the existing tab. Return with **Parent conversation** or compare both in a split view.
+Closing a viewer leaves the source transcript intact. Open viewer tabs are restored after restarting the app.
+Completed internal subagents disappear from the sidebar; use **View conversation** on the parent conversation's Agent or Task card to reopen them.
+Recent history loads first, with older history available on demand. While viewing a running agent, new saved records appear automatically about once a second.
+Reading older content preserves the scroll position. Content cannot appear before the CLI writes it to disk; **Refresh history** also allows a manual update.
+The viewer reads local CLI transcripts and explains when a record is missing or cannot be linked to the current parent session.
+Some encrypted or oversized content cannot be displayed. Internal Antigravity conversations are not supported.
+
 ## How turns run
 
 One Claude CLI process is kept alive per tab (SDK streaming input, the session pool in `src/main/claude-adapter.ts`), and only the user message is streamed in each turn.

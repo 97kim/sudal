@@ -265,6 +265,7 @@ export const IPC = {
   chatSnapshot: "chat:snapshot",
   chatEvents: "chat:events",
   chatHistory: "chat:history",
+  chatSubagentHistory: "chat:subagent-history",
   chatClear: "chat:clear",
   chatCompact: "chat:compact",
   chatCodexControl: "chat:codex-control",
@@ -960,6 +961,7 @@ export interface SudalApi {
     /** 지금까지의 이벤트 로그 (화면 재구성용). */
     events(tabId: string): Promise<ChatEvent[]>;
     history(tabId: string, before?: string, includeCompacted?: boolean): Promise<SessionHistoryPage>;
+    subagentHistory(tabId: string, agentId: string, before?: number, after?: import('./subagent-history').SubagentHistoryCursor): Promise<import('./subagent-history').SubagentHistoryPage>;
     clear(tabId: string): Promise<SessionSnapshotDto>;
     /**
      * 컨텍스트를 줄인다. Claude 는 provider 에게 맡기고(`/compact`) 세션이 그대로 이어진다 —

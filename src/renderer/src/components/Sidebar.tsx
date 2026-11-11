@@ -1,4 +1,4 @@
-import { agentParents, agentStatus, orderedSessionAgents, type SessionAgent } from '@shared/session-agents';
+import { agentParents, agentStatus, orderedSessionAgents, sidebarSessionAgents, type SessionAgent } from '@shared/session-agents';
 import { SessionAgentList } from './SessionAgentList';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -113,6 +113,7 @@ export function Sidebar({
 }) {
   const { t } = useTranslation();
   const { model, statuses, attention } = ws;
+  const sidebarAgents = useMemo(() => Object.fromEntries(Object.entries(ws.agents ?? {}).map(([id, rows]) => [id, sidebarSessionAgents(rows)])), [ws.agents]);
   const parents = useMemo(() => agentParents(model.tabs, ws.agents ?? {}), [model.tabs, ws.agents]);
   const openBranches = useMemo(() => {
     const ids = new Set(model.openTabIds);
@@ -306,7 +307,7 @@ export function Sidebar({
       if (out.includes(id)) return;
       out.push(id);
       if (collapsedAgents.has(id)) return;
-      for (const agent of orderedSessionAgents(ws.agents?.[id] ?? [], model))
+      for (const agent of orderedSessionAgents(sidebarAgents[id] ?? [], model))
         if (agent.tabId && parents.get(agent.tabId) === id) add(agent.tabId);
     };
     // 화면에 그리는 순서(예약 워크스페이스가 맨 위로 올라간다)와 같아야 Shift 범위에 안 보이는 세션이 끼지 않는다
@@ -318,7 +319,7 @@ export function Sidebar({
       for (const t of hidden > 0 ? tabs.slice(0, tabs.length - hidden) : tabs) add(t.id);
     }
     return out;
-  }, [model, workspaces, collapsed, showAllClosed, parents, openBranches, collapsedAgents, ws.agents]);
+  }, [model, workspaces, collapsed, showAllClosed, parents, openBranches, collapsedAgents, sidebarAgents]);
   useEffect(() => setSelection((s) => pruneSelection(s, selectableOrder)), [selectableOrder]);
   // 워크스페이스 만들기(이름 입력 행) · 워크스페이스 이름 변경(행 안에서).
   const [creating, setCreating] = useState(false);
@@ -455,7 +456,7 @@ export function Sidebar({
                             ...dragSource("tab", tab.id, tab.workspaceId, tab.open && renaming?.tabId !== tab.id),
                             ...dropTarget("tab", tab.id, tab.workspaceId, tab.open),
                           }}
-                          agentsControl={!!ws.agents?.[tab.id]?.length && <button type="button" aria-label={t('nav.sidebar.agents')} aria-expanded={!collapsedAgents.has(tab.id)} onDoubleClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setCollapsedAgents(old => { const next = new Set(old); if (next.has(tab.id)) next.delete(tab.id); else next.add(tab.id); return next; }); }} className="shrink-0 rounded p-0.5 text-muted hover:text-fg"><Icon name="chevronRight" size={11} className={collapsedAgents.has(tab.id) ? '' : 'rotate-90'}/></button>}
+                          agentsControl={!!sidebarAgents[tab.id]?.length && <button type="button" aria-label={t('nav.sidebar.agents')} aria-expanded={!collapsedAgents.has(tab.id)} onDoubleClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setCollapsedAgents(old => { const next = new Set(old); if (next.has(tab.id)) next.delete(tab.id); else next.add(tab.id); return next; }); }} className="shrink-0 rounded p-0.5 text-muted hover:text-fg"><Icon name="chevronRight" size={11} className={collapsedAgents.has(tab.id) ? '' : 'rotate-90'}/></button>}
                           dragging={drag?.id === tab.id}
                           tab={tab}
                           status={statuses[tab.id] ?? "idle"}
@@ -507,7 +508,7 @@ export function Sidebar({
                           }
                         />
                       )}
-                      {!collapsedAgents.has(tab.id) && !!ws.agents?.[tab.id]?.length && <SessionAgentList tabId={tab.id} ws={ws} parents={parents} onOpen={onOpenTab} renderTab={renderSession}/>}
+                      {!collapsedAgents.has(tab.id) && !!sidebarAgents[tab.id]?.length && <SessionAgentList tabId={tab.id} rows={sidebarAgents[tab.id]} ws={ws} parents={parents} onOpen={onOpenTab} renderTab={renderSession}/>}
 
   </>);
 

@@ -16,6 +16,10 @@ export interface SessionAgent {
   background?: boolean;
   kind: 'internal' | 'review' | 'fanout' | 'worker';
 }
+/** Completed internal calls remain in chat history, but no longer occupy the sidebar. */
+export function sidebarSessionAgents(rows: SessionAgent[]): SessionAgent[] {
+  return rows.filter(row => row.kind !== 'internal' || row.status !== 'done');
+}
 /** Preserve internal call order and use the existing tab order for child sessions. */
 export function orderedSessionAgents(rows: SessionAgent[], model: WorkspaceModel): SessionAgent[] {
   const tabs = new Map(model.tabs.map(tab => [tab.id, tab]));

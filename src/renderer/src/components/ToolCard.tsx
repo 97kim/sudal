@@ -13,6 +13,7 @@ import { RunInTerminalContext, normalizeCommand } from "../terminal-run";
 import { shortenHome } from "@shared/path-display";
 import { formatElapsed, useNow } from "../hooks/useNow";
 import { IS_WIN } from "../platform";
+import { openSubagentHistory, SubagentHistoryContext } from '../subagent-history';
 
 const OUTPUT_PREVIEW_LINES = 12;
 
@@ -121,6 +122,7 @@ function isExpandedByDefault(name: string): boolean {
 }
 
 export function ToolCard({ block }: { block: ToolBlock }) {
+  const history = useContext(SubagentHistoryContext);
   const [open, setOpen] = useHistoryRowState("tool-open", () => isExpandedByDefault(block.name));
   const input = asInput(block.input);
   const openFile = useOpenFile();
@@ -235,6 +237,9 @@ export function ToolCard({ block }: { block: ToolBlock }) {
         </span>
         <Icon name="chevronDown" size={12} className={`text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
       </button>
+      {history && (history.provider === 'codex' || history.provider === 'claude') && /^(Agent|Task|spawn_agent|delegate_to_agent)$/i.test(block.name) && !block.partial && <div className="flex justify-end border-t border-line px-3 py-1">
+        <button type="button" onClick={() => openSubagentHistory({ tabId: history.tabId, blockId: block.id })} className="text-[11px] text-muted hover:text-fg" data-subagent-history-open>{t('nav.subagentHistory.open')}</button>
+      </div>}
       {block.subagent && (
         // Skill·Agent 가 띄운 하위 에이전트의 활동. 접혀 있어도 보인다 — 턴을 잡고 있는 게 무엇인지 알 수 있게.
         <div className="flex items-center gap-2 border-t border-line px-3 py-1.5 text-[11px] text-muted" data-subagent>

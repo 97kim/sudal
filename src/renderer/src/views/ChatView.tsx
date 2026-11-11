@@ -102,6 +102,7 @@ export function ChatView({
   focused = true,
   onUnsplit,
   showTabStrip = true,
+  tabBarWs,
 }: {
   /** 분할 화면에서 이 칸이 포커스된 칸인가. 창 전체 단축키(⌘J 등)는 포커스된 칸만 받는다. */
   focused?: boolean;
@@ -109,6 +110,7 @@ export function ChatView({
   onUnsplit?: () => void;
   /** 탭 줄. 분할이면 왼쪽 칸에만 — 같은 줄이 두 번 보이지 않게. */
   showTabStrip?: boolean;
+  tabBarWs?: WorkspaceStateDto;
   tab: TabMeta;
   workspace: Workspace;
   /** 같은 디렉토리에서 다른 세션이 작업 중일 때 "격리 세션으로": 워크스페이스 저장소에 worktree 를 만들어 새 세션을 연다. */
@@ -1002,7 +1004,7 @@ export function ChatView({
           >
             <div className="flex min-h-0 min-w-0 flex-col" style={{ gridArea: "a" }}>
             {showTabStrip && <TabBar
-              ws={ws}
+              ws={tabBarWs ?? ws}
               onActivate={onActivateTab}
               onClose={onCloseTab}
               onNew={onNewTab}

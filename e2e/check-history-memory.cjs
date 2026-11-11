@@ -182,6 +182,37 @@ const { _electron } = require("playwright-core");
     await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows()[0].webContents.send("chat:event", { tabId: id, sequence: 200, event: { type: "text_delta", ts: Date.now(), blockId: "live", text: "More text.\n".repeat(100) } }), tabId);
     await page.waitForTimeout(350);
     assert.ok(Math.abs(await list.evaluate((el) => el.scrollTop) - parkedTop) < 8, "reading position survives streaming below the viewport");
+    // ResizeObserver may deliver a queued notification after a virtual row was
+    // unmounted. It must not overwrite that row's cached height with zero.
+    await page.addInitScript(() => {
+      const Real = window.ResizeObserver;
+      window.__rowObservers = [];
+      window.ResizeObserver = class extends Real {
+        constructor(callback) { super(callback); this.callback = callback; }
+        observe(node, options) {
+          if (node.hasAttribute('data-virtual-row') && !window.__rowObservers.includes(this.callback)) window.__rowObservers.push(this.callback);
+          super.observe(node, options);
+        }
+      };
+    });
+    await page.reload();
+    await page.locator('[data-history-count="200"]').waitFor();
+    await page.waitForTimeout(400);
+    await list.hover(); await page.mouse.wheel(0, -5000); await page.waitForTimeout(500);
+    await page.evaluate(() => { window.__measuredRows = [...document.querySelectorAll('[data-virtual-row]')]; });
+    await page.evaluate(() => document.querySelector('[data-scroll-bottom]')?.click());
+    await page.waitForTimeout(400);
+    const beforeStale = await list.evaluate(el => ({ height: el.scrollHeight, top: el.scrollTop }));
+    const staleNodes = await page.evaluate(() => {
+      const detached = window.__measuredRows.filter(node => !node.isConnected);
+      for (const callback of window.__rowObservers) callback(detached.map(target => ({target})), null);
+      return detached.length;
+    });
+    await page.waitForTimeout(400);
+    const afterStale = await list.evaluate(el => ({ height: el.scrollHeight, top: el.scrollTop }));
+    assert.ok(staleNodes > 0, 'exercise detached row measurements');
+    assert.ok(Math.abs(afterStale.height - beforeStale.height) < 2, 'detached measurements preserve cached heights');
+    assert.ok(Math.abs(afterStale.top - beforeStale.top) < 2, 'detached measurements do not jump the scroll');
     await page.screenshot({ path: path.join(repo, ".sudal/history-e2e.png") });
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, tallRowDeltaPx: tallRowDelta, lateToolResult: true, verifyExpansionRetained: true, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true }));

@@ -2,6 +2,13 @@ import type { nav as ko } from "../ko/nav";
 import type { DeepPartial } from "../types";
 
 export const nav: DeepPartial<typeof ko> = {
+  subagentHistory: {
+    live: 'Auto-updating',
+    parent: 'Parent conversation', compare: 'View beside parent conversation',
+    open: 'View conversation', title: 'Subagent conversation', readOnly: 'Read only · Saved history', refresh: 'Refresh history', retry: 'Retry',
+    unavailable: 'Could not find this subagent’s history. It may not have been written yet, or this version may not be able to link it.',
+    limited: 'Some encrypted or oversized content may not be displayed.',
+  },
   items: {
     chat: "Chat",
     usage: "Usage",

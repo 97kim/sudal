@@ -85,6 +85,8 @@ export function VirtualRows({ rows, container, following, api, render }: {
       for (const entry of entries) {
         const node = entry.target as HTMLElement;
         const key = node.dataset.virtualRow!;
+        // Observations queued before virtual unmount must not replace measured heights with zero.
+        if (!node.isConnected || nodes.current.get(key) !== node) continue;
         const height = node.getBoundingClientRect().height;
         if (Math.abs((heights.current.get(key) ?? -1) - height) > 0.5) { heights.current.set(key, height); changed = true; }
       }
