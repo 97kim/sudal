@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/release.yml'
+      - '.github/workflows/start-release.yml'
       - 'scripts/release*'
       - 'release-notes/**'
       - 'scripts/sign-adhoc.cjs'
