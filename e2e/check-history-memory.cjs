@@ -63,7 +63,9 @@ const { _electron } = require("playwright-core");
         appendFileSync(${JSON.stringify(path.join(profile, "threads", `${tabId}.jsonl`))}, JSON.stringify(event) + '\\n');
         BrowserWindow.getAllWindows()[0].webContents.send('chat:event', { tabId: '${tabId}', sequence: 2, event });
       }
-      return result;
+      return args[2] && globalThis.__delayOlderHistory
+        ? Promise.all([result, new Promise(resolve => setTimeout(resolve, 350))]).then(([page]) => page)
+        : result;
     } : fn);
     await import(${JSON.stringify(pathToFileURL(path.join(repo, "out/main/index.js")).href)});
   `);
@@ -213,9 +215,55 @@ const { _electron } = require("playwright-core");
     assert.ok(staleNodes > 0, 'exercise detached row measurements');
     assert.ok(Math.abs(afterStale.height - beforeStale.height) < 2, 'detached measurements preserve cached heights');
     assert.ok(Math.abs(afterStale.top - beforeStale.top) < 2, 'detached measurements do not jump the scroll');
+
+    // Maximizing the editor hides the chat without unmounting it. Hidden rows
+    // must not be measured as zero or change the reader into bottom-follow mode.
+    const readerFile = path.join(profile, 'reader.txt'); fs.writeFileSync(readerFile, 'Read-only layout fixture.');
+    await app.evaluate(({ BrowserWindow }, req) => BrowserWindow.getAllWindows()[0].webContents.send('control:open', req), {kind:'file',tabId,path:readerFile});
+    await page.locator('[data-editor-maximize="off"]').waitFor(); await page.waitForTimeout(500);
+    await page.evaluate(() => document.querySelector('[data-scroll-bottom]')?.click());
+    await list.hover(); await page.mouse.wheel(0, -1400); await page.waitForTimeout(400);
+    const beforeHide = await list.evaluate(el => {
+      const top = el.getBoundingClientRect().top;
+      const row = [...el.querySelectorAll('[data-virtual-row]')].find(node => node.getBoundingClientRect().bottom > top);
+      return {key:row.dataset.virtualRow,y:row.getBoundingClientRect().top};
+    });
+    await page.locator('[data-editor-maximize="off"]').click();
+    await page.locator('[data-editor-maximized="true"]').waitFor(); await page.waitForTimeout(250);
+    await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows()[0].webContents.send('chat:event', {tabId:id,sequence:300,event:{type:'assistant_text',ts:Date.now(),blockId:'hidden-live',text:'Hidden update. '.repeat(100)}}), tabId);
+    await page.waitForTimeout(200);
+    await page.locator('[data-editor-maximize="on"]').click();
+    await page.locator('[data-editor-maximized="false"]').waitFor(); await page.waitForTimeout(500);
+    const afterHide = await page.locator(`[data-virtual-row="${beforeHide.key}"]`).boundingBox();
+    assert.ok(afterHide && Math.abs(afterHide.y - beforeHide.y) < 8, 'restoring hidden chat preserves the reading anchor even after new records');
+    await page.evaluate(() => document.querySelector('[data-scroll-bottom]')?.click());
+    await page.locator('[data-editor-pane-hide]').click();
+
+    // An older navigation request can finish after the user sends a new
+    // message. The new send must supersede it, including delayed archive pages.
+    await page.reload(); await page.locator('[data-history-count="200"]').waitFor();
+    await app.evaluate(({ ipcMain, BrowserWindow }) => {
+      globalThis.__delayOlderHistory = true;
+      ipcMain.removeHandler('chat:send');
+      ipcMain.handle('chat:send', (_event, tabId, req) => {
+        const contents = BrowserWindow.getAllWindows()[0].webContents;
+        setTimeout(() => contents.send('chat:event', {tabId,sequence:1000,event:{type:'user_message',ts:Date.now(),id:'navigation-user',text:req.text}}), 20);
+        setTimeout(() => contents.send('chat:event', {tabId,sequence:1001,event:{type:'assistant_text',ts:Date.now(),blockId:'navigation-answer',text:'새 답변입니다.'}}), 100);
+        return {ok:true,queued:false};
+      });
+    });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('app:shortcut', 'search'));
+    await page.locator('[data-search-palette] input').fill('question-0');
+    await page.locator('[data-search-hit]').first().click();
+    await page.locator('[data-composer] textarea').fill('새 메시지는 이전 대화 이동보다 우선합니다.');
+    await page.locator('[data-composer] textarea').press('Enter');
+    await page.waitForTimeout(2800);
+    const afterSend = await list.evaluate(el => ({top:el.scrollTop,height:el.scrollHeight,viewport:el.clientHeight,count:Number(el.dataset.historyCount)}));
+    assert.ok(afterSend.height - afterSend.top - afterSend.viewport < 4, 'new send cancels stale navigation instead of jumping to old history');
+    assert.ok(afterSend.count >= 202 && afterSend.count < 1200, 'cancelled navigation does not keep hydrating old pages');
     await page.screenshot({ path: path.join(repo, ".sudal/history-e2e.png") });
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, tallRowDeltaPx: tallRowDelta, lateToolResult: true, verifyExpansionRetained: true, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true }));
+    console.log(JSON.stringify({ passed: true, initialHistory: 200, totalHistory: 1200, initialMounted: mounted, initialImageReads: imageReads, anchorDeltaPx: after.y - anchor.top, tallRowDeltaPx: tallRowDelta, lateToolResult: true, verifyExpansionRetained: true, searchedOlderHistory: true, liveSequenceFence: true, scrollFollow: true, hiddenChatRestored:true, staleNavigationCancelled:true }));
   } catch (error) {
     console.error("History E2E failed:", error);
     throw error;

@@ -34,13 +34,14 @@ export function VirtualRows({ rows, container, following, api, render }: {
   };
   const readViewport = () => {
     const el = container.current;
-    if (!el) return;
+    if (!el || !el.clientHeight || !el.getClientRects().length) return;
     const top = Math.max(0, el.scrollTop - origin());
     const height = el.clientHeight;
     setViewport((v) => v.top === top && v.height === height ? v : { top, height });
   };
   useLayoutEffect(() => {
     const el = container.current;
+    if (!el || !el.clientHeight || !el.getClientRects().length) return;
     const old = previous.current;
     const nextOrigin = origin();
     if (el && !following.current && old !== layouts && old.length) {
@@ -81,12 +82,15 @@ export function VirtualRows({ rows, container, following, api, render }: {
   const resize = useRef<ResizeObserver | null>(null);
   useLayoutEffect(() => {
     const observer = new ResizeObserver((entries) => {
+      const el = container.current;
+      // Editor maximization keeps this tree mounted under display:none.
+      if (!el || !el.clientHeight || !el.getClientRects().length) return;
       let changed = false;
       for (const entry of entries) {
         const node = entry.target as HTMLElement;
         const key = node.dataset.virtualRow!;
         // Observations queued before virtual unmount must not replace measured heights with zero.
-        if (!node.isConnected || nodes.current.get(key) !== node) continue;
+        if (!node.isConnected || nodes.current.get(key) !== node || !node.getClientRects().length) continue;
         const height = node.getBoundingClientRect().height;
         if (Math.abs((heights.current.get(key) ?? -1) - height) > 0.5) { heights.current.set(key, height); changed = true; }
       }

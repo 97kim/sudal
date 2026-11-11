@@ -12,8 +12,9 @@ export function pendingReveal(tabId: string): string | null {
   return pending && pending.tabId === tabId ? pending.blockId : null;
 }
 
-export function clearReveal(): void {
-  pending = null;
+/** Cancel only this tab's navigation when another pane may still be seeking a block. */
+export function clearReveal(tabId?: string): void {
+  if (tabId === undefined || pending?.tabId === tabId) pending = null;
 }
 
 export function onReveal(listener: () => void): () => void {
