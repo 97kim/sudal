@@ -3,6 +3,8 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
+  type SetStateAction,
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
@@ -26,7 +28,7 @@ import { Icon } from "./Icon";
 import { ContextGauge } from "./ContextGauge";
 import { parseAppCommand } from "@shared/app-commands";
 import { filterCodexMentions, parseDollarQuery, type CodexMention } from "@shared/codex-mentions";
-import { clearComposerDraft, loadComposerDraft, loadComposerFiles, onComposerDraftAppend, onComposerFilesDrop, saveComposerDraft, saveComposerFiles, withAttachedFiles, type ComposerFile } from "../composer-draft";
+import { clearComposerDraft, composerImageGeneration, loadComposerDraft, loadComposerFiles, loadComposerImages, MAX_COMPOSER_IMAGES, onComposerDraftAppend, onComposerFilesDrop, onComposerImagesChanged, saveComposerDraft, saveComposerFiles, updateComposerImages, withAttachedFiles, type ComposerFile, type ComposerImage as Pending } from "../composer-draft";
 import { appendToDraft } from "@shared/attachments";
 
 /** "/" 팔레트 한 줄: 스니펫(본문을 입력창에 넣음) 또는 슬래시 커맨드(이름을 넣음). */
@@ -38,17 +40,13 @@ type PaletteRow =
 const MAX_SNIPPET_ROWS = 5;
 
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const MAX_IMAGES = 4;
+const MAX_IMAGES = MAX_COMPOSER_IMAGES;
 const POLICY_TAG: Record<PermissionPolicy, string> = {
   ask: "ASK",
   auto_edit: "AUTO-EDIT",
   auto_review: "AUTO-REVIEW",
   full: "FULL",
 };
-
-interface Pending extends ChatImageDto {
-  dataUrl: string;
-}
 
 export function Composer({
   disabled,
@@ -126,7 +124,15 @@ export function Composer({
   useEffect(() => {
     if (draftKey) saveComposerDraft(draftKey, text);
   }, [draftKey, text]);
-  const [images, setImages] = useState<Pending[]>([]);
+  const [localImages, setLocalImages] = useState<Pending[]>([]);
+  const images = useSyncExternalStore(
+    useCallback(listener => draftKey ? onComposerImagesChanged(draftKey, listener) : () => {}, [draftKey]),
+    useCallback(() => draftKey ? loadComposerImages(draftKey) : localImages, [draftKey, localImages]),
+  );
+  const setImages = useCallback((update: SetStateAction<Pending[]>, generation?: number) => {
+    if (draftKey) updateComposerImages(draftKey, current => typeof update === "function" ? update(current) : update, generation);
+    else setLocalImages(update);
+  }, [draftKey]);
   // 이미지가 아닌 첨부(파일·폴더) — 경로만 들고 있다가 보낼 때 글 끝에 목록으로 붙는다. 탭을 옮겨도 남는다.
   const [files, setFiles] = useState<ComposerFile[]>(() => (draftKey ? loadComposerFiles(draftKey) : []));
   const filesKey = useRef(draftKey);
@@ -385,6 +391,7 @@ export function Composer({
       setImageLimit(true);
       return;
     }
+    const generation = draftKey ? composerImageGeneration(draftKey) : undefined;
     for (const file of imgs) {
       const reader = new FileReader();
       reader.onload = () => {
@@ -398,7 +405,7 @@ export function Composer({
             base64,
             dataUrl,
           },
-        ]);
+        ], generation);
       };
       reader.readAsDataURL(file);
     }
@@ -454,7 +461,7 @@ export function Composer({
 
   return (
     // @container: 채팅 열이 좁아지면(에디터·오른쪽 패널을 함께 열었을 때) 툴바 글자를 숨기고 아이콘만 남겨 줄바꿈으로 깨지지 않게 한다.
-    <div className="@container relative px-3 pb-4 pt-2 @[520px]:px-6" data-composer>
+    <div className="@container relative px-3 pb-4 pt-2 @[520px]:px-6" data-composer data-composer-tab={draftKey}>
       {popoverOpen && (
         <div
           className="absolute bottom-full left-6 right-6 z-10 mb-1 overflow-hidden rounded-lg border border-line bg-panel shadow-pop"
