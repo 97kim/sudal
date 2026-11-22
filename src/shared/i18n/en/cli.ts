@@ -140,6 +140,7 @@ export const cli: DeepPartial<typeof ko> = {
     scheduleNotFound: "No such schedule.",
     noWorkspace: "There is no workspace. Create one first with `ws add --path`.",
     promptNeedsCwd: "A working directory is required to send a prompt. Pass --cwd or pick a workspace that has a default path.",
+    parentWorkspaceMismatch: "The --parent tab must be in the same workspace as the new tab. Use --ws to select the parent's workspace.",
     tabCreateFailed: "Could not create the tab.",
     tabCreatedSendFailed: "The tab was created, but the prompt could not be sent: {{detail}}",
     commandsInvalid: "commands must be a non-empty array of strings.",

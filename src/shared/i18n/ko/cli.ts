@@ -138,6 +138,7 @@ export const cli = {
     scheduleNotFound: "그 예약이 없습니다.",
     noWorkspace: "워크스페이스가 없습니다. 먼저 `ws add --path` 로 만드세요.",
     promptNeedsCwd: "프롬프트를 보내려면 작업 경로가 필요합니다. --cwd 를 주거나 기본 경로가 있는 워크스페이스를 고르세요.",
+    parentWorkspaceMismatch: "--parent 탭은 새 탭과 같은 워크스페이스에 있어야 합니다. --ws 로 부모의 워크스페이스를 고르세요.",
     tabCreateFailed: "탭을 만들지 못했습니다.",
     tabCreatedSendFailed: "탭은 만들었지만 프롬프트를 보내지 못했습니다: {{detail}}",
     commandsInvalid: "commands 는 비어 있지 않은 문자열 배열이어야 합니다.",

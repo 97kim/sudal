@@ -61,7 +61,7 @@ const MESSAGES = {
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
   sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex|antigravity] [--policy ask|auto_edit|auto_review|full]
-                  [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # --ws 생략 = 이 명령을 부른 탭(self)의 워크스페이스, 탭 밖이면 화면에서 보고 있는 탭의 워크스페이스
+                  [--model <id>] [--title <text>] [--prompt <text>] [--parent <sel>] [--activate]   # 기본은 독립 탭. 작업 위임 시에만 --parent self. --ws 생략 = 호출한 탭의 워크스페이스, 탭 밖이면 활성 탭 기준
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
   sudal tab wait --tab <sel> [--timeout-ms N]
@@ -129,7 +129,7 @@ const MESSAGES = {
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
   sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex|antigravity] [--policy ask|auto_edit|auto_review|full]
-                  [--model <id>] [--title <text>] [--prompt <text>] [--activate]   # no --ws = the workspace of the tab running this command (self); outside a tab, the tab shown in the app
+                  [--model <id>] [--title <text>] [--prompt <text>] [--parent <sel>] [--activate]   # independent by default; use --parent self only for delegated work. No --ws = caller's workspace, or active tab's outside a tab
   sudal tab status --tab <sel>
   sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
   sudal tab wait --tab <sel> [--timeout-ms N]
@@ -213,7 +213,7 @@ function parseArgs(argv) {
 }
 
 /** 값이 있어야 하는 플래그. `--tab` 처럼 값 없이 쓰면 서버가 active 로 오해하기 전에 여기서 거절한다. */
-const VALUE_FLAGS = ["tab", "text", "prompt", "ws", "cwd", "provider", "policy", "model", "title", "path", "url", "line", "last", "timeoutMs", "cmd", "run", "key", "spec", "task", "agent", "dispatch", "capability", "question", "options", "resume", "id", "body", "subject", "type", "to", "outcome", "filesModified", "types", "ack", "objective", "coordinator", "reason", "requestId", "deps", "terminal", "resolution", "name", "cron", "timezone", "precheck", "precheckTimeout", "grace", "workspace", "enabled", "selector", "out", "by", "level", "limit", "timeout"];
+const VALUE_FLAGS = ["tab", "parent", "text", "prompt", "ws", "cwd", "provider", "policy", "model", "title", "path", "url", "line", "last", "timeoutMs", "cmd", "run", "key", "spec", "task", "agent", "dispatch", "capability", "question", "options", "resume", "id", "body", "subject", "type", "to", "outcome", "filesModified", "types", "ack", "objective", "coordinator", "reason", "requestId", "deps", "terminal", "resolution", "name", "cron", "timezone", "precheck", "precheckTimeout", "grace", "workspace", "enabled", "selector", "out", "by", "level", "limit", "timeout"];
 function checkValueFlags(flags) {
   for (const k of VALUE_FLAGS) if (flags[k] === true || (Array.isArray(flags[k]) && flags[k].includes(true))) fail(t("valueNeeded", { flag: k.replace(/([A-Z])/g, (m) => "-" + m.toLowerCase()) }), "bad_request");
 }
@@ -287,7 +287,7 @@ async function main() {
   // `self` = 이 CLI 를 부른 에이전트의 탭. 앱이 탭의 에이전트를 띄울 때 SUDAL_TAB_ID 로 알려 준다.
   // `active`(사람이 화면에서 고른 탭)와 다르다 — 에이전트가 화면에 떠 있지 않은 탭에서 도는 일이 흔하다.
   const selfTab = process.env.SUDAL_TAB_ID || undefined;
-  for (const k of ["tab", "coordinator", "terminal"]) {
+  for (const k of ["tab", "coordinator", "terminal", "parent"]) {
     if (flags[k] !== "self") continue;
     if (!selfTab) return fail(t("noSelfTab"), "no_self_tab");
     flags[k] = selfTab;
@@ -358,7 +358,7 @@ async function main() {
   else if (group === "tab" && cmd === "list") { method = "tab.list"; params = { workspace: flags.ws, all: flags.all === true }; }
   else if (group === "tab" && cmd === "new") {
     method = "tab.new";
-    params = { workspace: flags.ws, cwd: flags.cwd, provider: flags.provider, policy: flags.policy, model: flags.model, title: flags.title, prompt: flags.prompt !== undefined ? readStdinIfDash(String(flags.prompt)) : undefined, activate: flags.activate === true };
+    params = { workspace: flags.ws, cwd: flags.cwd, provider: flags.provider, policy: flags.policy, model: flags.model, title: flags.title, parent: flags.parent, prompt: flags.prompt !== undefined ? readStdinIfDash(String(flags.prompt)) : undefined, activate: flags.activate === true };
   } else if (group === "tab" && cmd === "status") { method = "tab.status"; params = { tab: flags.tab }; }
   else if (group === "tab" && cmd === "send") {
     method = "tab.send";

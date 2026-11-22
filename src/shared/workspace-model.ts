@@ -20,7 +20,7 @@ export interface Workspace {
 }
 
 export interface TabMeta {
-  /** Sudal CLI에서 이 탭을 호출한 세션. */
+  /** Sudal CLI에서 명시적으로 작업을 위임한 부모 탭. */
   parentTabId?: string;
   id: string;
   workspaceId: string;

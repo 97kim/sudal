@@ -42,6 +42,8 @@ sudal tab send --tab 리뷰 --text "테스트도 돌려 줘" --wait
 sudal tab read --tab 리뷰 --last 3
 ```
 
+새 탭은 기본적으로 독립 탭이에요. Sudal 탭 안의 에이전트가 작업을 위임할 때는 `--parent self`를 추가하면 부모 아래 워커로 표시돼요. 일반 터미널에서 연결하려면 `self` 대신 부모 탭 ID나 제목을 지정하세요. 부모와 새 탭은 같은 워크스페이스에 있어야 해요.
+
 ## 기능
 
 <table>
