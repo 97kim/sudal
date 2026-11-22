@@ -1,7 +1,7 @@
 import type { ChatImageDto } from "@shared/ipc";
 // 입력창에 쓰다 만 글. 채팅 탭마다 따로 둔다 — 탭을 옮기거나 앱을 껐다 켜도 남는다. 전송하면 비운다.
 // 진실은 메모리 캐시(cache)이고 kv-store(main 의 renderer-state.json)는 그 사본이다: 저장은 잠깐 모아서 쓰지만 읽기는 항상 최신을 준다
-// (빠르게 탭을 오가도 300ms 안의 입력이 옛 저장분에 밀리지 않는다). 첨부 이미지는 크기 때문에 보존하지 않는다.
+// (빠르게 탭을 오가도 300ms 안의 입력이 옛 저장분에 밀리지 않는다). 이미지는 큰 base64를 디스크에 쓰지 않고 실행 중 메모리에만 둔다.
 import { kvGet, kvKeys, kvSet } from "./kv-store";
 
 const KEY_PREFIX = "composerDraft.";
@@ -10,6 +10,46 @@ const SAVE_DELAY_MS = 300;
 const MAX_CHARS = 200_000;
 const cache = new Map<string, string>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export interface ComposerImage extends ChatImageDto { dataUrl: string }
+export const MAX_COMPOSER_IMAGES = 4;
+const emptyImages: ComposerImage[] = [];
+const imageCache = new Map<string, ComposerImage[]>();
+const imageGenerations = new Map<string, number>();
+let nextImageGeneration = 1;
+const imageListeners = new Map<string, Set<() => void>>();
+
+/** useSyncExternalStore의 스냅샷: 변경하기 전까지 같은 배열을 반환한다. */
+export function loadComposerImages(tabId: string): ComposerImage[] {
+  return imageCache.get(tabId) ?? emptyImages;
+}
+
+/** FileReader가 탭 전환 뒤 끝나도 원래 탭에 저장하되, 전송·삭제 뒤의 결과는 버린다. */
+export function composerImageGeneration(tabId: string): number {
+  const current = imageGenerations.get(tabId);
+  if (current !== undefined) return current;
+  const generation = nextImageGeneration++;
+  imageGenerations.set(tabId, generation);
+  return generation;
+}
+
+export function updateComposerImages(tabId: string, update: (images: ComposerImage[]) => ComposerImage[], generation?: number): void {
+  if (generation !== undefined && generation !== imageGenerations.get(tabId)) return;
+  const images = update(loadComposerImages(tabId)).slice(0, MAX_COMPOSER_IMAGES);
+  if (images.length) imageCache.set(tabId, images);
+  else imageCache.delete(tabId);
+  for (const listener of imageListeners.get(tabId) ?? []) listener();
+}
+
+export function onComposerImagesChanged(tabId: string, listener: () => void): () => void {
+  let listeners = imageListeners.get(tabId);
+  if (!listeners) imageListeners.set(tabId, (listeners = new Set()));
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) imageListeners.delete(tabId);
+  };
+}
 
 export function loadComposerDraft(tabId: string): string {
   const cached = cache.get(tabId);
@@ -35,6 +75,8 @@ export function saveComposerDraft(tabId: string, text: string): void {
 
 /** 전송했거나 탭이 삭제됐다: 캐시·저장소 모두 비운다(컴포넌트가 이미 내려갔어도 동작한다). */
 export function clearComposerDraft(tabId: string): void {
+  imageGenerations.delete(tabId);
+  updateComposerImages(tabId, () => []);
   cache.set(tabId, "");
   const t = timers.get(tabId);
   if (t) {
@@ -47,6 +89,10 @@ export function clearComposerDraft(tabId: string): void {
 /** 모델에 없는(삭제된) 탭의 초안을 지운다. 탭 삭제가 어느 경로로 일어났든 여기서 정리된다. */
 export function pruneComposerDrafts(liveTabIds: Set<string>): void {
   for (const tabId of [...cache.keys()]) if (!liveTabIds.has(tabId)) clearComposerDraft(tabId);
+  for (const tabId of new Set([...imageCache.keys(), ...imageGenerations.keys()])) if (!liveTabIds.has(tabId)) {
+    imageGenerations.delete(tabId);
+    updateComposerImages(tabId, () => []);
+  }
   for (const k of kvKeys(KEY_PREFIX)) if (!liveTabIds.has(k.slice(KEY_PREFIX.length))) kvSet(k, null);
   for (const k of kvKeys(FILES_PREFIX)) if (!liveTabIds.has(k.slice(FILES_PREFIX.length))) kvSet(k, null);
 }
@@ -137,7 +183,7 @@ export function appendComposerDraft(tabId: string, block: string, images?: ChatI
     for (const l of ls) l(block, images);
     return;
   }
-  // 마운트된 입력창이 없으면 이미지는 붙일 곳이 없다(초안은 텍스트만) — 텍스트만 남긴다
+  if (images?.length) updateComposerImages(tabId, current => [...current, ...images.map(image => ({ ...image, dataUrl: `data:${image.mime};base64,${image.base64}` }))]);
   const cur = loadComposerDraft(tabId);
   const head = cur.replace(/\s+$/, "");
   saveComposerDraft(tabId, (head ? head + "\n\n" : "") + block + "\n");
