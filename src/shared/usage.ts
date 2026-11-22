@@ -30,11 +30,13 @@ export interface ModelPrice {
 }
 
 export interface PricingEntry extends ModelPrice {
-  /** 모델 id 에 이 문자열이 포함되면 매치. 위에서부터 첫 매치. */
+  /** 모델 id 에 이 문자열이 포함되면 매치. 적용 시각을 만족하는 항목 중 위에서부터 첫 매치. */
   match: string;
   label: string;
   /** 공식 가격표를 확인하지 못한 추정치면 true. */
   estimated?: boolean;
+  /** 적용 시작 시각(Unix ms, 포함). 생략하면 모든 시각에 적용. 같은 모델은 최신 단가부터 둔다. */
+  effectiveFrom?: number;
 }
 
 /** 앱 기본 가격표. userData/pricing.json 으로 덮어쓸 수 있다. 순서가 우선순위다. */
@@ -70,15 +72,25 @@ export const DEFAULT_PRICING: PricingEntry[] = [
   { match: "codex", label: "GPT-5 Codex", input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0, estimated: true },
   { match: "gpt-5", label: "GPT-5", input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0, estimated: true },
   { match: "o4-mini", label: "o4-mini", input: 1.1, output: 4.4, cacheRead: 0.275, cacheWrite: 0, estimated: true },
-  // https://aistudio.google.com/docs/pricing#gemini-4-argon (2026-10-30): Standard through 2026-11-30.
-  // From 2026-12-01: $4 input / $20 output / $0.20 cache read per MTok.
+  // https://aistudio.google.com/docs/pricing (2026-11-22): Standard, implicit caching only.
+  // 공지된 적용일은 UTC 00:00 기준으로 구분한다. 과거 기록에는 당시 단가를 유지한다.
+  { match: "gemini-4-argon", label: "Gemini 4 Argon", input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0, effectiveFrom: Date.UTC(2026, 11, 1) },
   { match: "gemini-4-argon", label: "Gemini 4 Argon", input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 },
+  { match: "gemini-4-neon", label: "Gemini 4 Neon", input: 3, output: 15, cacheRead: 0.15, cacheWrite: 0 },
   { match: "gemini-3.8-flash", label: "Gemini 3.8 Flash", input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0, estimated: true },
 ];
 
-export function resolvePrice(model: string, pricing: PricingEntry[] = DEFAULT_PRICING): PricingEntry | null {
+function matchingPrices(model: string, pricing: PricingEntry[]): PricingEntry[] {
   const m = model.toLowerCase();
-  return pricing.find((p) => m.includes(p.match.toLowerCase())) ?? null;
+  return pricing.filter((p) => m.includes(p.match.toLowerCase()));
+}
+
+function priceAt(pricing: PricingEntry[], ts: number): PricingEntry | null {
+  return pricing.find((p) => p.effectiveFrom === undefined || ts >= p.effectiveFrom) ?? null;
+}
+
+export function resolvePrice(model: string, pricing: PricingEntry[] = DEFAULT_PRICING, ts: number = Date.now()): PricingEntry | null {
+  return priceAt(matchingPrices(model, pricing), ts);
 }
 
 export function costOf(
@@ -231,13 +243,18 @@ export function summarizeUsage(
   const pricing = opts.pricing ?? DEFAULT_PRICING;
   const inApp = opts.inAppSessionIds ?? new Set<string>();
   const now = opts.now ?? Date.now();
-  const priceCache = new Map<string, PricingEntry | null>();
-  const priceFor = (model: string) => {
-    if (!priceCache.has(model)) priceCache.set(model, resolvePrice(model, pricing));
-    return priceCache.get(model) ?? null;
+  // 모델명 일치 결과만 캐시하고, 단가는 기록 시각마다 선택한다.
+  const priceCache = new Map<string, PricingEntry[]>();
+  const priceFor = (r: UsageRecord) => {
+    let candidates = priceCache.get(r.model);
+    if (!candidates) {
+      candidates = matchingPrices(r.model, pricing);
+      priceCache.set(r.model, candidates);
+    }
+    return priceAt(candidates, r.ts);
   };
   const costFor = (r: UsageRecord) => {
-    const p = priceFor(r.model);
+    const p = priceFor(r);
     return p ? costOf(r, p) : null;
   };
 
@@ -274,7 +291,7 @@ export function summarizeUsage(
     dp.costUsd += cost ?? 0;
     dailyMap.set(day, dp);
 
-    const price = priceFor(r.model);
+    const price = priceFor(r);
     const mr =
       models.get(r.model) ??
       ({
@@ -388,7 +405,7 @@ export function usageCsv(records: UsageRecord[], filter: UsageFilter, pricing: P
     .filter((r) => matches(r, filter))
     .sort((a, b) => a.ts - b.ts)
     .map((r) => {
-      const p = resolvePrice(r.model, pricing);
+      const p = resolvePrice(r.model, pricing, r.ts);
       return [
         new Date(r.ts).toISOString(),
         r.provider,
