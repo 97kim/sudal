@@ -143,7 +143,7 @@ export const session: DeepPartial<typeof ko> = {
     pluginsTitle: "Plugins", pluginsHelp: "Browse plugins and inspect installation and enablement states.",
     memoriesTitle: "Memory", memoriesHelp: "Memory summary and setting changes for this session.",
     fastTitle: "Fast processing", fastHelp: "The fast processing setting for this session was changed.",
-    fastChoose: "Choose whether to use fast processing for this session. The setting applies to subsequent requests.", fastEnable: "Enable fast processing", fastDisable: "Disable fast processing",
+    fastChoose: "Choose whether to use fast processing for this session. The setting applies to subsequent requests.", fastEnable: "Turn on", fastDisable: "Turn off",
     stopTitle: "Stop terminals", stopHelp: "Result of the request to stop background terminals.",
     debugConfigTitle: "Configuration diagnostics", debugConfigHelp: "Inspect Codex settings applied to the current directory.",
     infoUnavailable: "Not provided", sessionState: "Status", modelSetting: "Model", permissionSetting: "Permissions", modeSetting: "Mode", directory: "Working directory", branch: "Branch", queuedPrompts: "Queued prompts", controller: "Controlled by", sessionId: "Session ID", cliVersion: "CLI version", chatController: "Sudal chat", terminalController: "Codex terminal",

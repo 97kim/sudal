@@ -141,7 +141,7 @@ export const session = {
     pluginsTitle: "플러그인", pluginsHelp: "플러그인 목록과 설치·활성 상태를 확인합니다.",
     memoriesTitle: "메모리", memoriesHelp: "현재 세션의 메모리 요약과 설정 변경 결과입니다.",
     fastTitle: "빠른 처리", fastHelp: "이 세션의 빠른 처리 설정을 변경했습니다.",
-    fastChoose: "이 세션의 빠른 처리 사용 여부를 선택하세요. 이후 요청에 적용됩니다.", fastEnable: "빠른 처리 켜기", fastDisable: "빠른 처리 끄기",
+    fastChoose: "이 세션의 빠른 처리 사용 여부를 선택하세요. 이후 요청에 적용됩니다.", fastEnable: "켜기", fastDisable: "끄기",
     stopTitle: "터미널 중단", stopHelp: "백그라운드 터미널 중단 요청 결과입니다.",
     debugConfigTitle: "설정 진단", debugConfigHelp: "현재 작업 경로에 적용되는 Codex 설정을 확인합니다.",
     infoUnavailable: "정보 미제공", sessionState: "상태", modelSetting: "모델", permissionSetting: "실행 권한", modeSetting: "모드", directory: "작업 경로", branch: "브랜치", queuedPrompts: "대기 중인 지시", controller: "제어 방식", sessionId: "세션 ID", cliVersion: "CLI 버전", chatController: "Sudal 채팅", terminalController: "Codex 터미널",
