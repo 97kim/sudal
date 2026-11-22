@@ -137,10 +137,76 @@ test("가격표: 공식 가격표와 같고, 버전이 겹치는 id 는 더 구�
 
 test("Argon uses official Standard API conversion rates including cached input", () => {
   for (const model of ["gemini-4-argon", "gemini-4-argon-medium", "gemini-4-argon-high"]) {
-    const price = resolvePrice(model)!;
+    const price = resolvePrice(model, DEFAULT_PRICING, Date.UTC(2026, 10, 22))!;
     assert.deepEqual([price.input, price.output, price.cacheRead, price.cacheWrite], [2, 10, 0.1, 0]);
     assert.notEqual(price.estimated, true);
     const cost = costOf({ input: 600_000, output: 100_000, cacheRead: 400_000, cacheWrite: 0 }, price);
     assert.ok(Math.abs(cost - 2.24) < 1e-9);
   }
+});
+
+const ARGON_PRICE_CHANGE = Date.UTC(2026, 11, 1);
+const GEMINI_TOKENS = { input: 600_000, output: 100_000, cacheRead: 400_000, cacheWrite: 0 };
+
+test("Neon: 공식 Standard 단가로 기본 모델과 추론 강도별 모델의 비용을 산정한다", () => {
+  for (const model of ["gemini-4-neon", "gemini-4-neon-low", "gemini-4-neon-medium", "GEMINI-4-NEON-HIGH", "gemini-4-neon-xhigh"]) {
+    const price = resolvePrice(model)!;
+    assert.equal(price.label, "Gemini 4 Neon");
+    assert.deepEqual([price.input, price.output, price.cacheRead, price.cacheWrite], [3, 15, 0.15, 0]);
+    assert.notEqual(price.estimated, true);
+    assert.ok(Math.abs(costOf(GEMINI_TOKENS, price) - 3.36) < 1e-9);
+  }
+  const s = summarizeUsage([rec({ ...GEMINI_TOKENS, provider: "agy", model: "gemini-4-neon" })], { from: NOW, to: NOW }, { now: NOW });
+  assert.deepEqual(s.totals.unpricedModels, []);
+  assert.equal(s.byModel[0].priced, true);
+  assert.equal(s.byModel[0].estimated, false);
+  assert.ok(Math.abs(s.totals.costUsd - 3.36) < 1e-9);
+});
+
+test("Argon: UTC 12월 1일 경계부터 새 단가를 적용하고 과거 단가는 유지한다", () => {
+  for (const model of ["gemini-4-argon", "gemini-4-argon-high"]) {
+    const before = resolvePrice(model, DEFAULT_PRICING, ARGON_PRICE_CHANGE - 1)!;
+    const after = resolvePrice(model, DEFAULT_PRICING, ARGON_PRICE_CHANGE)!;
+    assert.deepEqual([before.input, before.output, before.cacheRead, before.cacheWrite], [2, 10, 0.1, 0]);
+    assert.deepEqual([after.input, after.output, after.cacheRead, after.cacheWrite], [4, 20, 0.2, 0]);
+    assert.notEqual(after.estimated, true);
+    assert.ok(Math.abs(costOf(GEMINI_TOKENS, after) - 4.48) < 1e-9);
+  }
+});
+
+test("Argon: 변경 전후 기록이 섞여도 집계와 CSV는 각 기록 시점의 단가를 사용한다", () => {
+  const before = rec({ ...GEMINI_TOKENS, provider: "agy", model: "gemini-4-argon", ts: ARGON_PRICE_CHANGE - 1 });
+  const after = { ...before, ts: ARGON_PRICE_CHANGE };
+  const filter = { from: before.ts, to: after.ts };
+  // 순서를 뒤집어도 모델 캐시가 첫 기록의 단가를 재사용하지 않는다.
+  for (const records of [[before, after], [after, before]]) {
+    const s = summarizeUsage(records, filter, { now: after.ts + 365 * 86_400_000, inAppSessionIds: new Set(["s1"]) });
+    for (const cost of [s.totals.costUsd, s.byModel[0].costUsd, s.byWorkspace[0].costUsd, s.topSessions[0].costUsd, s.sources.inApp.costUsd,
+      s.daily.reduce((sum, d) => sum + d.costUsd, 0)]) {
+      assert.ok(Math.abs(cost - 6.72) < 1e-9);
+    }
+    assert.deepEqual(s.totals.unpricedModels, []);
+    const csv = usageCsv(records, filter).split("\n");
+    assert.match(csv[1], /,2\.240000$/);
+    assert.match(csv[2], /,4\.480000$/);
+    const current = summarizeUsage(records, { from: after.ts, to: after.ts + 1 }, { now: after.ts });
+    assert.ok(Math.abs(current.previous.costUsd - 2.24) < 1e-9);
+    assert.ok(Math.abs(current.totals.costUsd - 4.48) < 1e-9);
+    assert.ok(Math.abs(current.last5h.costUsd - 6.72) < 1e-9);
+  }
+});
+
+test("사용자 지정 가격표: 날짜 없는 기존 단가와 우선순위를 유지한다", () => {
+  const custom = [{ match: "gemini-4", label: "Custom Gemini", input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0 }, ...DEFAULT_PRICING];
+  for (const ts of [ARGON_PRICE_CHANGE - 1, ARGON_PRICE_CHANGE]) {
+    assert.equal(resolvePrice("gemini-4-argon", custom, ts), custom[0]);
+    assert.equal(resolvePrice("gemini-4-neon", custom, ts), custom[0]);
+    const r = rec({ ...GEMINI_TOKENS, model: "gemini-4-argon", ts });
+    const filter = { from: ts, to: ts };
+    assert.equal(summarizeUsage([r], filter, { pricing: custom, now: ts }).totals.costUsd, 1);
+    assert.match(usageCsv([r], filter, custom), /,1\.000000$/);
+  }
+  const futureOnly = [DEFAULT_PRICING.find((p) => p.match === "gemini-4-argon")!];
+  assert.equal(resolvePrice("gemini-4-argon", futureOnly, ARGON_PRICE_CHANGE - 1), null);
+  assert.equal(resolvePrice("gemini-4-argon", futureOnly, ARGON_PRICE_CHANGE), futureOnly[0]);
 });
