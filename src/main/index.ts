@@ -36,11 +36,9 @@ import { legacyWorktreeDir, migrateUserData, removeLegacyInstall, type UserDataM
 import { msgText, type Msg, type MsgKey } from "@shared/i18n/msg";
 import { NOTIFY_ON_DONE_DEFAULT, isNewTabPolicy, isNotifyOnDone, shouldNotifyDone, PROVIDERS, IPC, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, MAX_CONCURRENT_MIN, SESSION_IDLE_MINUTES_DEFAULT, SESSION_IDLE_MINUTES_MAX, SESSION_IDLE_MINUTES_MIN, type AppSettingsDto, type AppInfoDto, type UpdateCheckDto, type UpdateRunResult, type UpdateStatusDto, type ChatEventEnvelope, type ChatSendDto, type ChatSendResult, type CompactResult, type ControlOpenDto, type InstallStatusDto, type CliCandidateDto, type CliDiagnosticsDto, type CliStatusDto, type OverrideSetResultDto, type Provider, type RendererErrorDto, type SessionConfigDto, type ShortcutName, type SwitchProviderDto, type UsageSettingsDto, type VerifyStartResult, type FanoutStartDto, type FanoutStartResult, type FanoutCompareDto, type FanoutAdoptResult, type RateLimitWindowDto, type UsageStatusDto, type MobileStatusDto, type WorkspaceStateDto, type ManagedWorktreeDto, SearchResultDto } from "@shared/ipc";
 import {
-  DEFAULT_PRICING,
   periodRange,
   summarizeUsage,
   usageCsv,
-  type PricingEntry,
   type UsageFilter,
 } from "@shared/usage";
 import { tabCwd, tabTitle, tabsUsingPath, type WorktreeMeta } from "@shared/workspace-model";
@@ -1609,10 +1607,6 @@ let badgeDot: Electron.NativeImage | null = null;
 
 // ===== 사용량 =====
 
-function pricing(): PricingEntry[] {
-  return store.loadPricing<PricingEntry[]>() ?? DEFAULT_PRICING;
-}
-
 const agyQuotaRefresh = new AgyQuotaRefresher(async () => {
   try {
     const quota = await fetchAgyQuota(await agyRuntime(), app.getPath("home"));
@@ -1629,6 +1623,7 @@ function refreshAgyQuota(force = false): Promise<void> {
 
 function usageStatus(): UsageStatusDto {
   const { codexRateLimit, ...scan } = usage.getStatus();
+  const pricing = usage.getPricing();
   // Codex 한도는 기록 파일(대화할 때)과 새로고침(app-server)에서 온다 — 더 최근에 본 것을 쓴다.
   const fetched = store.loadRateLimits().codex ?? null;
   const codex = fetched && (!codexRateLimit || fetched.observedAt > codexRateLimit.observedAt) ? fetched : codexRateLimit;
@@ -1639,8 +1634,8 @@ function usageStatus(): UsageStatusDto {
       codex,
       agy: store.loadRateLimits().agy ?? null,
     },
-    customPricing: store.loadPricing() !== null,
-    pricing: pricing(),
+    customPricing: pricing.custom,
+    pricing: pricing.entries,
   };
 }
 
@@ -1739,7 +1734,7 @@ function querySummary(filter: UsageFilter) {
   for (const t of workspaces.state().model.tabs)
     if (t.sessionId) inApp.add(t.sessionId);
   return summarizeUsage(usage.records(), filter, {
-    pricing: pricing(),
+    pricing: usage.getPricing().entries,
     inAppSessionIds: inApp,
   });
 }
@@ -2074,6 +2069,7 @@ function bootstrap() {
     codexDir: join(app.getPath("home"), ".codex", "sessions"),
     sudalThreadsDir: join(app.getPath("userData"), "threads"),
     cachePath: join(app.getPath("userData"), "usage-cache.json"),
+    pricing: () => store.loadPricing(),
     onChange() {
       sendAll(IPC.usageChanged, null);
       checkBudget();
@@ -3536,9 +3532,10 @@ function registerIpc() {
       ? await dialog.showSaveDialog(win, opts)
       : await dialog.showSaveDialog(opts);
     if (r.canceled || !r.filePath) return null;
+    await usage.scan();
     writeFileSync(
       r.filePath,
-      usageCsv(usage.records(), filter, pricing()),
+      usageCsv(usage.records(), filter, usage.getPricing().entries),
       "utf8",
     );
     return r.filePath;

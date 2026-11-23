@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import type { UsageRecord } from "@shared/usage";
+import { DEFAULT_PRICING, isPricingTable, matchingPrices, priceAt, usageLongContext, type PricingEntry, type UsageRecord } from "@shared/usage";
 import type { ProviderRateLimitDto, RateLimitWindowDto, Provider } from "@shared/ipc";
 
 const HOUR = 3_600_000;
@@ -20,27 +20,37 @@ export interface ParseResult {
 
 interface LineParser {
   push(line: string): void;
-  finish(): ParseResult;
+  finish(pricing?: PricingEntry[]): ParseResult;
 }
 
-function parseLines(lines: Iterable<string>, parser: LineParser): ParseResult {
+function parseLines(lines: Iterable<string>, parser: LineParser, pricing?: PricingEntry[]): ParseResult {
   for (const line of lines) parser.push(line);
-  return parser.finish();
+  return parser.finish(pricing);
 }
 
-/** (sessionId, model, cwd, 시간 버킷) 으로 합쳐 캐시를 작게 유지한다. */
-export function compactRecords(records: UsageRecord[]): UsageRecord[] {
+/** 가격 구간을 보존하며 세션·모델·경로·시간별로 합친다. */
+export function compactRecords(records: UsageRecord[], pricing = DEFAULT_PRICING): UsageRecord[] {
   const map = new Map<string, UsageRecord>();
+  const pricesByModel = new Map<string, PricingEntry[]>();
   for (const r of records) {
-    const bucket = Math.floor(r.ts / HOUR) * HOUR;
-    const key = `${r.sessionId}|${r.model}|${r.cwd}|${bucket}`;
+    let candidates = pricesByModel.get(r.model);
+    if (!candidates) {
+      candidates = matchingPrices(r.model, pricing);
+      pricesByModel.set(r.model, candidates);
+    }
+    const price = priceAt(candidates, r.ts);
+    const ts = Math.max(Math.floor(r.ts / HOUR) * HOUR, price?.effectiveFrom ?? -Infinity);
+    const longContextLimit = price?.longContext?.inputThreshold;
+    const longContext = longContextLimit === undefined ? undefined : usageLongContext(r, longContextLimit);
+    const key = JSON.stringify([r.sessionId, r.model, r.cwd, ts, longContextLimit, longContext]);
     const cur = map.get(key);
-    if (!cur) map.set(key, { ...r, ts: bucket });
+    if (!cur) map.set(key, { ...r, ts, ...(longContext !== undefined ? { longContext, longContextLimit } : {}) });
     else {
       cur.input += r.input;
       cur.output += r.output;
       cur.cacheRead += r.cacheRead;
       cur.cacheWrite += r.cacheWrite;
+      if (r.cacheWrite1h) cur.cacheWrite1h = (cur.cacheWrite1h ?? 0) + r.cacheWrite1h;
       cur.requests += r.requests;
     }
   }
@@ -62,8 +72,8 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
  * Claude Code 트랜스크립트. 스트리밍 중간 저장으로 같은 message.id 가 여러 줄 나오므로
  * id 별로 마지막(가장 큰 usage) 하나만 센다. `<synthetic>` 모델은 API 호출이 아니라 제외.
  */
-export function parseClaudeLines(lines: Iterable<string>): ParseResult {
-  return parseLines(lines, createClaudeParser());
+export function parseClaudeLines(lines: Iterable<string>, pricing?: PricingEntry[]): ParseResult {
+  return parseLines(lines, createClaudeParser(), pricing);
 }
 
 function createClaudeParser(): LineParser {
@@ -81,6 +91,9 @@ function createClaudeParser(): LineParser {
     const ts = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
     if (!Number.isFinite(ts)) return;
     const id = typeof msg.id === "string" ? msg.id : `noid-${seq++}`;
+    const cacheCreation = usage.cache_creation as Record<string, unknown> | undefined;
+    const cacheWrite1h = Math.max(0, num(cacheCreation?.ephemeral_1h_input_tokens));
+    const cacheWrite = Math.max(num(usage.cache_creation_input_tokens), num(cacheCreation?.ephemeral_5m_input_tokens) + cacheWrite1h);
     const rec: UsageRecord = {
       ts,
       provider: "claude",
@@ -90,14 +103,15 @@ function createClaudeParser(): LineParser {
       input: num(usage.input_tokens),
       output: num(usage.output_tokens),
       cacheRead: num(usage.cache_read_input_tokens),
-      cacheWrite: num(usage.cache_creation_input_tokens),
+      cacheWrite,
+      ...(cacheWrite1h > 0 ? { cacheWrite1h } : {}),
       requests: 1,
     };
     const prev = byId.get(id);
     // 같은 id 면 토큰이 더 큰 쪽(최종본)을 남긴다.
     if (!prev || rec.output + rec.input >= prev.output + prev.input) byId.set(id, rec);
   };
-  return { push, finish: () => ({ records: compactRecords([...byId.values()]) }) };
+  return { push, finish: pricing => ({ records: compactRecords([...byId.values()], pricing) }) };
 }
 
 /**
@@ -113,7 +127,7 @@ function createCodexParser(): LineParser {
   let cwd = "";
   let sessionId = "";
   let model = "";
-  let prev = { input: 0, cached: 0, output: 0 };
+  let prev = { input: 0, cached: 0, written: 0, output: 0 };
   let rateLimit: CodexRateLimit | undefined;
 
   const push = (line: string) => {
@@ -145,10 +159,12 @@ function createCodexParser(): LineParser {
     const cur = {
       input: num(total.input_tokens),
       cached: num(total.cached_input_tokens),
+      written: num(total.cache_write_input_tokens),
       output: num(total.output_tokens),
     };
     const dIn = cur.input - prev.input;
-    const dCached = cur.cached - prev.cached;
+    const cacheRead = Math.max(0, Math.min(dIn, cur.cached - prev.cached));
+    const cacheWrite = Math.max(0, Math.min(dIn - cacheRead, cur.written - prev.written));
     const dOut = cur.output - prev.output;
     prev = cur;
     if (dIn <= 0 && dOut <= 0) return; // 반복 이벤트 또는 리셋
@@ -158,15 +174,15 @@ function createCodexParser(): LineParser {
       model: model || "codex-unknown",
       cwd,
       sessionId,
-      // OpenAI 의 input_tokens 는 캐시 히트를 포함한다.
-      input: Math.max(0, dIn - Math.max(0, dCached)),
+      // OpenAI input totals include both cache reads and writes.
+      input: Math.max(0, dIn - cacheRead - cacheWrite),
       output: Math.max(0, dOut),
-      cacheRead: Math.max(0, dCached),
-      cacheWrite: 0,
+      cacheRead,
+      cacheWrite,
       requests: 1,
     });
   };
-  return { push, finish: () => ({ records: compactRecords(records), rateLimit }) };
+  return { push, finish: pricing => ({ records: compactRecords(records, pricing), rateLimit }) };
 }
 
 function codexWindow(raw: unknown): RateLimitWindowDto | null {
@@ -240,7 +256,7 @@ function createSudalAgyParser(): LineParser {
         input: Math.max(0, input - cacheRead), output, cacheRead, cacheWrite, requests: Math.max(1, num(event.numTurns)) });
     }
   };
-  return { push, finish: () => ({ records: compactRecords(records) }) };
+  return { push, finish: pricing => ({ records: compactRecords(records, pricing) }) };
 }
 
 // ===== 스캐너 =====
@@ -250,11 +266,19 @@ interface FileCache {
   size: number;
   records: UsageRecord[];
   rateLimit?: CodexRateLimit;
+  pricingRules?: string;
+  writeTokensParsed?: true;
 }
 
 interface CacheFile {
   version: 5;
   files: Record<string, FileCache>;
+  pricing?: UsagePricing;
+}
+
+interface UsagePricing {
+  entries: PricingEntry[];
+  custom: boolean;
 }
 
 export interface ScanStatus {
@@ -273,11 +297,35 @@ export interface ScannerOptions {
   sudalThreadsDir?: string;
   pollIntervalMs?: number;
   cachePath: string;
+  pricing?: () => unknown;
   onChange?: () => void;
+}
+
+function pricingRulesForRecords(records: UsageRecord[], pricing: PricingEntry[], keysByModel: Map<string, string>): string {
+  const keys = new Set<string>();
+  for (const { model } of records) {
+    let key = keysByModel.get(model);
+    if (key === undefined) {
+      const matches = matchingPrices(model, pricing);
+      key = matches.some(price => price.effectiveFrom !== undefined || price.longContext)
+        ? JSON.stringify(matches.map(price => [price.effectiveFrom, price.longContext?.inputThreshold]))
+        : "";
+      keysByModel.set(model, key);
+    }
+    if (key) keys.add(JSON.stringify([model, key]));
+  }
+  return [...keys].sort().join("\n");
+}
+
+function needsCacheWriteRefresh(cached: FileCache, provider: Provider): boolean {
+  if (cached.writeTokensParsed) return false;
+  if (provider === "codex") return cached.records.some(r => r.input > 0);
+  return provider === "claude" && cached.records.some(r => r.cacheWrite > 0);
 }
 
 export class UsageScanner {
   private cache: CacheFile = { version: 5, files: {} };
+  private appliedPricing: UsagePricing;
   private status: ScanStatus;
   private watchers: fs.FSWatcher[] = [];
   private debounce: ReturnType<typeof setTimeout> | null = null;
@@ -295,6 +343,19 @@ export class UsageScanner {
       roots: { claude: opts.claudeDir, codex: opts.codexDir },
     };
     this.loadCache();
+    // Legacy caches did not record which rules produced their totals.
+    this.appliedPricing = this.cache.pricing ?? { entries: DEFAULT_PRICING, custom: false };
+  }
+
+  private readPricing(): UsagePricing {
+    const custom = this.opts.pricing?.();
+    return isPricingTable(custom)
+      ? { entries: structuredClone(custom), custom: true }
+      : { entries: DEFAULT_PRICING, custom: false };
+  }
+
+  getPricing(): UsagePricing {
+    return this.appliedPricing;
   }
 
   getStatus(): ScanStatus {
@@ -311,6 +372,7 @@ export class UsageScanner {
   scan(): Promise<void> {
     if (this.inflight) return this.inflight;
     this.inflight = this.doScan().finally(() => {
+      this.status.scanning = false;
       this.inflight = null;
     });
     return this.inflight;
@@ -320,7 +382,11 @@ export class UsageScanner {
     const started = Date.now();
     this.status.scanning = true;
     const seen = new Set<string>();
-    let changed = false;
+    const files = { ...this.cache.files };
+    const nextPricing = this.readPricing();
+    const pricing = nextPricing.entries;
+    const keysByModel = new Map<string, string>();
+    let changed = JSON.stringify(this.cache.pricing) !== JSON.stringify(nextPricing);
 
     const targets: { file: string; kind: Provider }[] = [];
     for (const f of listFiles(this.opts.claudeDir, ".jsonl")) targets.push({ file: f, kind: "claude" });
@@ -335,34 +401,47 @@ export class UsageScanner {
       } catch {
         continue;
       }
-      const cached = this.cache.files[file];
-      if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) continue;
       try {
+        const cached = files[file];
+        if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size && !needsCacheWriteRefresh(cached, kind) &&
+            (cached.pricingRules ?? "") === pricingRulesForRecords(cached.records, pricing, keysByModel)) continue;
         const parser = kind === "claude" ? createClaudeParser() : kind === "codex" ? createCodexParser() : createSudalAgyParser();
-        const result = await parseFile(file, parser);
-        this.cache.files[file] = { mtimeMs: st.mtimeMs, size: st.size, records: result.records, rateLimit: result.rateLimit };
+        const result = await parseFile(file, parser, pricing);
+        files[file] = {
+          mtimeMs: st.mtimeMs, size: st.size, records: result.records, rateLimit: result.rateLimit,
+          pricingRules: pricingRulesForRecords(result.records, pricing, keysByModel), writeTokensParsed: true,
+        };
         changed = true;
       } catch (e) {
         console.warn(`[usage] parse 실패 ${file}:`, e instanceof Error ? e.message : e);
       }
     }
-    for (const file of Object.keys(this.cache.files)) {
-      if (!seen.has(file)) {
-        delete this.cache.files[file];
+    for (const file of Object.keys(files)) {
+      if (!seen.has(file) && transcriptMissing(file)) {
+        delete files[file];
         changed = true;
       }
     }
 
+    if ((!this.cache.pricing || JSON.stringify(this.appliedPricing) !== JSON.stringify(nextPricing)) &&
+        Object.values(files).some(file => (file.pricingRules ?? "") !== pricingRulesForRecords(file.records, pricing, keysByModel))) {
+      // Retry the price change once the remaining old partitions can be read.
+      return;
+    }
+
     let latestRl: CodexRateLimit | null = null;
     let records = 0;
-    for (const f of Object.values(this.cache.files)) {
+    for (const f of Object.values(files)) {
       records += f.records.length;
       if (f.rateLimit && (!latestRl || f.rateLimit.observedAt > latestRl.observedAt)) latestRl = f.rateLimit;
     }
+    // Queries and exports see the records and price table from one scan.
+    this.cache = { version: 5, files, pricing: nextPricing };
+    this.appliedPricing = nextPricing;
     this.status = {
       ...this.status,
       scanning: false,
-      files: Object.keys(this.cache.files).length,
+      files: Object.keys(files).length,
       records,
       lastScanAt: Date.now(),
       lastScanMs: Date.now() - started,
@@ -414,7 +493,12 @@ export class UsageScanner {
     try {
       if (!fs.existsSync(this.opts.cachePath)) return;
       const parsed = JSON.parse(fs.readFileSync(this.opts.cachePath, "utf8")) as CacheFile;
-      if (parsed?.version === 5 && parsed.files) this.cache = parsed;
+      if (parsed?.version === 5 && parsed.files) {
+        const files = Object.fromEntries(Object.entries(parsed.files).filter(([, entry]) =>
+          Array.isArray(entry?.records) && entry.records.every(record => typeof record?.model === "string")));
+        const pricing = isPricingTable(parsed.pricing?.entries) && typeof parsed.pricing?.custom === "boolean" ? parsed.pricing : undefined;
+        this.cache = { version: 5, files, pricing };
+      }
     } catch (e) {
       console.warn("[usage] cache 로드 실패, 새로 스캔:", e);
     }
@@ -430,6 +514,17 @@ export class UsageScanner {
     } catch (e) {
       console.warn("[usage] cache 저장 실패:", e);
     }
+  }
+}
+
+/** A failed directory read must not be mistaken for a deleted transcript. */
+function transcriptMissing(file: string): boolean {
+  try {
+    fs.statSync(file);
+    return false;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR";
   }
 }
 
@@ -455,12 +550,12 @@ function listFiles(root: string, ext: string): string[] {
 }
 
 /** 원문은 쌓지 않고 한 줄을 읽을 때마다 처리한다. 오류 시에도 파일 스트림을 닫는다. */
-async function parseFile(file: string, parser: LineParser): Promise<ParseResult> {
+async function parseFile(file: string, parser: LineParser, pricing: PricingEntry[]): Promise<ParseResult> {
   const input = fs.createReadStream(file, { encoding: "utf8" });
   const rl = readline.createInterface({ input, crlfDelay: Infinity });
   try {
     for await (const line of rl) parser.push(line);
-    return parser.finish();
+    return parser.finish(pricing);
   } finally {
     rl.close();
     input.destroy();

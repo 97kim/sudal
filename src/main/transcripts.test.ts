@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { Readable } from "node:stream";
 import { codexRateLimitFromAppServer, compactRecords, parseSudalAgyLines, UsageScanner, parseClaudeLines, parseCodexLines } from "./transcripts";
+import { summarizeUsage, usageCsv, type PricingEntry } from "@shared/usage";
 
-const claudeLine = (o: { id: string; model?: string; ts: string; usage: Record<string, number>; cwd?: string; sessionId?: string }) =>
+const claudeLine = (o: { id: string; model?: string; ts: string; usage: Record<string, unknown>; cwd?: string; sessionId?: string }) =>
   JSON.stringify({
     type: "assistant",
     cwd: o.cwd ?? "/repo",
@@ -45,7 +47,42 @@ test("parseClaudeLines: 다른 시간 버킷/모델은 따로", () => {
   assert.equal(parseClaudeLines(lines).records.length, 3);
 });
 
-const codexTc = (ts: string, total: { input_tokens: number; cached_input_tokens: number; output_tokens: number }, usedPercent?: number) =>
+test("Haiku 5.5 charges each prompt at its own tier after hourly compaction", () => {
+  const ts = "2026-11-24T01:00:00Z";
+  const lines = [20_000, 20_000, 20_200].map((input_tokens, index) =>
+    claudeLine({ id: String(index), model: "claude-haiku-5-5", ts, usage: {
+      input_tokens, cache_read_input_tokens: 70_000, cache_creation_input_tokens: 10_000, output_tokens: 1_000,
+    } }),
+  );
+  const { records } = parseClaudeLines(lines);
+  assert.deepEqual(records.map(r => [r.longContext, r.requests]), [[false, 2], [true, 1]]);
+  const now = Date.parse(ts);
+  const filter = { from: now, to: now };
+  const summary = summarizeUsage(records, filter, { now });
+  assert.equal(summary.byModel[0].label, "Claude Haiku 5.5");
+  assert.equal(summary.totals.requests, 3);
+  assert.ok(Math.abs(summary.totals.costUsd - (0.0089 + 0.02235)) < 1e-12);
+  assert.deepEqual(usageCsv(records, filter).split("\n").slice(1).map(line => line.split(",").at(-1)), ["0.008900", "0.022350"]);
+});
+
+test("Claude cache writes keep the one-hour portion through compaction and CSV", () => {
+  const ts = "2026-11-24T01:00:00Z";
+  const { records } = parseClaudeLines([
+    claudeLine({ id: "1h", model: "claude-fable-5-2", ts, usage: {
+      cache_creation_input_tokens: 40_000,
+      cache_creation: { ephemeral_5m_input_tokens: 10_000, ephemeral_1h_input_tokens: 30_000 },
+    } }),
+    claudeLine({ id: "legacy", model: "claude-fable-5-2", ts, usage: { cache_creation_input_tokens: 20_000 } }),
+  ]);
+  const now = Date.parse(ts);
+  const filter = { from: now, to: now };
+  assert.equal(records.length, 1);
+  assert.deepEqual([records[0].cacheWrite, records[0].cacheWrite1h], [60_000, 30_000]);
+  assert.equal(summarizeUsage(records, filter, { now }).totals.costUsd, 0.78);
+  assert.match(usageCsv(records, filter), /,60000,2,0\.780000$/);
+});
+
+const codexTc = (ts: string, total: { input_tokens: number; cached_input_tokens: number; cache_write_input_tokens?: number; output_tokens: number }, usedPercent?: number) =>
   JSON.stringify({
     timestamp: ts,
     type: "event_msg",
@@ -94,6 +131,39 @@ test("parseCodexLines: 누적값 차분, 캐시 분리, 반복 이벤트 무시,
 test("parseCodexLines: turn_context 없이 오면 모델은 codex-unknown", () => {
   const lines = [codexTc("2026-09-04T01:00:10Z", { input_tokens: 10, cached_input_tokens: 0, output_tokens: 1 })];
   assert.equal(parseCodexLines(lines).records[0].model, "codex-unknown");
+});
+
+test("GPT-6.2 applies long-context pricing using each token-count delta including cache hits", () => {
+  const ts = "2026-11-24T01:00:00Z";
+  const { records } = parseCodexLines([
+    JSON.stringify({ type: "turn_context", payload: { model: "gpt-6.2-astra" } }),
+    codexTc(ts, { input_tokens: 272_000, cached_input_tokens: 270_000, output_tokens: 1_000 }),
+    codexTc(ts, { input_tokens: 545_000, cached_input_tokens: 540_000, output_tokens: 2_000 }),
+  ]);
+  assert.deepEqual(records.map(r => [r.longContext, r.input, r.cacheRead]), [[false, 2_000, 270_000], [true, 3_000, 270_000]]);
+  const now = Date.parse(ts);
+  const filter = { from: now, to: now };
+  const summary = summarizeUsage(records, filter, { now });
+  assert.equal(summary.byModel[0].label, "GPT-6.2 Astra");
+  assert.ok(Math.abs(summary.totals.costUsd - (0.164 + 0.324)) < 1e-12);
+  assert.deepEqual(usageCsv(records, filter).split("\n").slice(1).map(line => line.split(",").at(-1)), ["0.164000", "0.324000"]);
+});
+
+test("Codex cache writes are billed at the write rate and still count toward context length", () => {
+  const ts = "2026-11-24T01:00:00Z";
+  const short = { input_tokens: 100_000, cached_input_tokens: 20_000, cache_write_input_tokens: 60_000, output_tokens: 1_000 };
+  const { records } = parseCodexLines([
+    JSON.stringify({ type: "turn_context", payload: { model: "gpt-6.2-astra" } }),
+    codexTc(ts, short),
+    codexTc(ts, short),
+    codexTc(ts, { input_tokens: 373_000, cached_input_tokens: 90_000, cache_write_input_tokens: 260_000, output_tokens: 2_000 }),
+  ]);
+  assert.deepEqual(records.map(r => [r.longContext, r.input, r.cacheRead, r.cacheWrite, r.requests]),
+    [[false, 20_000, 20_000, 60_000, 1], [true, 3_000, 70_000, 200_000, 1]]);
+  const now = Date.parse(ts);
+  const filter = { from: now, to: now };
+  assert.equal(summarizeUsage(records, filter, { now }).totals.costUsd, 0.808 + 4.164);
+  assert.deepEqual(usageCsv(records, filter).split("\n").slice(1).map(line => line.split(",").at(-1)), ["0.808000", "4.164000"]);
 });
 
 test("compactRecords: 같은 세션·모델·시간 버킷을 합친다", () => {
@@ -158,6 +228,147 @@ test("UsageScanner includes persisted Antigravity history and does not duplicate
     assert.equal(scanner.records()[0].input, 100);
     assert.equal(scanner.records()[0].provider, "agy");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner retains old totals on read failure and refreshes them later without discarding unaffected files", async t => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-usage-pricing-cache-"));
+  try {
+    const claude = path.join(dir, "claude");
+    const cachePath = path.join(dir, "cache.json");
+    fs.mkdirSync(claude);
+    const newFile = path.join(claude, "tiered.jsonl");
+    const oldFile = path.join(claude, "flat.jsonl");
+    const ts = "2026-11-24T01:00:00Z";
+    fs.writeFileSync(newFile, [90_000, 110_000].map((input_tokens, index) =>
+      claudeLine({ id: String(index), model: "claude-haiku-5-5", ts, usage: { input_tokens } }),
+    ).join("\n"));
+    fs.writeFileSync(oldFile, "");
+    const cached = (file: string, model: string, input: number, requests: number) => {
+      const { mtimeMs, size } = fs.statSync(file);
+      return { mtimeMs, size, records: [{ ts: Date.parse(ts), provider: "claude", model, cwd: "/repo",
+        sessionId: "sess-1", input, output: 0, cacheRead: 0, cacheWrite: 0, requests }] };
+    };
+    fs.writeFileSync(cachePath, JSON.stringify({ version: 5, files: {
+      [newFile]: cached(newFile, "claude-haiku-5-5", 200_000, 2),
+      [oldFile]: cached(oldFile, "claude-sonnet-5", 20, 1),
+    } }));
+
+    const pricing: PricingEntry[] = [{
+      match: "haiku-5-5", label: "custom", input: 1, output: 0, cacheRead: 0, cacheWrite: 0,
+      longContext: { inputThreshold: 95_000, input: 4, output: 0, cacheRead: 0, cacheWrite: 0 },
+    }];
+    const scan = async (custom: boolean) => {
+      const scanner = new UsageScanner({ claudeDir: claude, codexDir: path.join(dir, "codex"), cachePath, pricing: () => pricing });
+      await scanner.scan();
+      assert.equal(scanner.getPricing().custom, custom);
+      return scanner.records().map(r => [r.model, r.longContext, r.input]).sort();
+    };
+    const originalRead = fs.default.createReadStream;
+    const failRead = t.mock.method(fs.default, "createReadStream", (file: string, options: Parameters<typeof originalRead>[1]) => {
+      if (file !== newFile) return originalRead(file, options);
+      return Readable.from((async function* () { throw new Error("temporarily unreadable"); })());
+    });
+    const warn = t.mock.method(console, "warn", () => {});
+    assert.deepEqual(await scan(false), [
+      ["claude-haiku-5-5", undefined, 200_000],
+      ["claude-sonnet-5", undefined, 20],
+    ]);
+    assert.equal(warn.mock.callCount(), 1);
+    assert.equal(JSON.parse(fs.readFileSync(cachePath, "utf8")).pricing, undefined, "failed migration must not publish the new price table");
+    failRead.mock.restore();
+    const expected = [
+      ["claude-haiku-5-5", false, 90_000],
+      ["claude-haiku-5-5", true, 110_000],
+      ["claude-sonnet-5", undefined, 20],
+    ];
+    assert.deepEqual(await scan(true), expected);
+    assert.deepEqual(await scan(true), expected);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner publishes usage and changed pricing together for existing logs", async t => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-usage-custom-pricing-"));
+  try {
+    const claudeDir = path.join(dir, "claude");
+    fs.mkdirSync(claudeDir);
+    const ts = "2026-11-24T01:00:00Z";
+    const file = path.join(claudeDir, "source.jsonl");
+    fs.writeFileSync(file, [20_000, 75_000].map((input_tokens, index) =>
+      claudeLine({ id: String(index), model: "claude-haiku-5-5", ts, usage: { input_tokens } }),
+    ).join("\n"));
+    const table: PricingEntry[] = [{
+      match: "haiku-5-5", label: "custom", input: 1, output: 0, cacheRead: 0, cacheWrite: 0,
+      longContext: { inputThreshold: 100_000, input: 4, output: 0, cacheRead: 0, cacheWrite: 0 },
+    }];
+    const options = { claudeDir, codexDir: path.join(dir, "codex"), cachePath: path.join(dir, "cache.json"), pricing: () => table };
+    const scanner = new UsageScanner(options);
+    const now = Date.parse(ts);
+    const filter = { from: now, to: now };
+    const cost = (view = scanner) => summarizeUsage(view.records(), filter, { now, pricing: view.getPricing().entries }).totals.costUsd;
+    const firstScan = scanner.scan();
+    table[0].longContext!.inputThreshold = 50_000;
+    await scanner.scan(); // Joins the scan in progress at the old threshold.
+    await firstScan;
+    assert.equal(cost(), 0.095);
+    assert.equal(cost(new UsageScanner(options)), 0.095, "restart keeps the price table that produced the cache");
+
+    const originalRead = fs.default.createReadStream;
+    const failRead = t.mock.method(fs.default, "createReadStream", (name: string, streamOptions: Parameters<typeof originalRead>[1]) => {
+      if (name !== file) return originalRead(name, streamOptions);
+      return Readable.from((async function* () { throw new Error("temporarily unreadable"); })());
+    });
+    t.mock.method(console, "warn", () => {});
+    await scanner.scan();
+    assert.equal(cost(), 0.095, "failed reclassification keeps the previous amount");
+    failRead.mock.restore();
+
+    const refresh = scanner.scan();
+    assert.equal(cost(), 0.095, "the current view stays consistent during a scan");
+    await refresh;
+    assert.equal(cost(), 0.32);
+    assert.deepEqual(usageCsv(scanner.records(), filter, scanner.getPricing().entries).split("\n").slice(1).map(line => line.split(",").at(-1)), ["0.020000", "0.300000"]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner falls back to default rates when a custom price entry is invalid", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-usage-invalid-pricing-"));
+  try {
+    const claudeDir = path.join(dir, "claude");
+    fs.mkdirSync(claudeDir);
+    const ts = "2026-11-24T01:00:00Z";
+    fs.writeFileSync(path.join(claudeDir, "source.jsonl"), claudeLine({
+      id: "test", model: "claude-haiku-5-5", ts, usage: { input_tokens: 120_000 },
+    }));
+    const scanner = new UsageScanner({ claudeDir, codexDir: path.join(dir, "codex"), cachePath: path.join(dir, "cache.json"), pricing: () => [{}] });
+    await scanner.scan();
+    await scanner.scan(); // Exercise the fast path for already cached records too.
+    const now = Date.parse(ts);
+    assert.equal(scanner.getStatus().scanning, false);
+    assert.equal(scanner.getPricing().custom, false);
+    assert.equal(summarizeUsage(scanner.records(), { from: now, to: now }, { now, pricing: scanner.getPricing().entries }).totals.costUsd, 0.06);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("hourly compaction preserves a custom pricing change within the hour", () => {
+  const cutoff = "2026-11-24T01:30:00Z";
+  const table: PricingEntry[] = [
+    { match: "haiku-5-5", label: "custom", effectiveFrom: Date.parse(cutoff), input: 2, output: 0, cacheRead: 0, cacheWrite: 0 },
+    { match: "haiku-5-5", label: "custom", input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+  ];
+  const { records } = parseClaudeLines(["2026-11-24T01:29:59Z", cutoff].map((ts, index) =>
+    claudeLine({ id: String(index), model: "claude-haiku-5-5", ts, usage: { input_tokens: 20_000 } }),
+  ), table);
+  const now = Date.parse(cutoff);
+  assert.equal(summarizeUsage(records, { from: now - 3_600_000, to: now }, { now, pricing: table }).totals.costUsd, 0.06);
 });
 
 test("UsageScanner streams all providers with a heap smaller than the transcript", { timeout: 60_000 }, async () => {

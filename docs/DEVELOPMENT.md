@@ -193,6 +193,8 @@ CLI 를 붙일 때는 그 값을 준다(`SUDAL_USERDATA=$PWD/userdata`). 스크�
 `src/shared/usage.ts`의 기본 단가는 USD/100만 토큰 기준의 API 환산 추정치다.
 `userData/pricing.json`이 있으면 기본 가격표 전체를 대체하며, 기존의 날짜 없는 항목은 모든 시점에 적용된다.
 날짜별 단가는 `effectiveFrom`(Unix 밀리초, 시작 시각 포함)을 지정하고 최신 항목부터 배치한다.
+긴 요청의 단가는 `longContext`에 `inputThreshold`와 단가를 지정한다. 캐시 읽기·쓰기를 포함한 요청 입력이 기준을 초과하면 적용한다.
+Claude의 1시간 캐시 쓰기 단가는 `cacheWrite1h`로 별도 지정할 수 있다. 로그에 보존 시간 구분이 없으면 기본 쓰기 단가를 적용한다.
 집계와 CSV는 현재 날짜가 아니라 각 사용 기록의 시각으로 단가를 선택한다.
 Gemini Argon의 2026년 12월 1일 가격 전환 경계는 앱에서 UTC 00:00으로 해석한다.
 

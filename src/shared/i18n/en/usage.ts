@@ -97,6 +97,6 @@ export const usage: DeepPartial<typeof ko> = {
     terminal: "Terminal",
     noPath: "(no path)",
   },
-  footnoteCustom: "Costs are estimates converted at each model's API price, not your subscription fee or an actual bill. Prices come from your settings (pricing.json) · Codex prices haven't been checked against the official price list.",
-  footnoteDefault: "Costs are estimates converted at each model's API price, not your subscription fee or an actual bill. Prices use the app defaults · Codex prices haven't been checked against the official price list.",
+  footnoteCustom: "Estimated costs use the model API rates in your settings (pricing.json).",
+  footnoteDefault: "Estimated costs use Standard API rates. Some older models use estimated rates.",
 };
