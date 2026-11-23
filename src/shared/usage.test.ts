@@ -134,6 +134,26 @@ test("가격표: 공식 가격표와 같고, 버전이 겹치는 id 는 더 구�
   assert.deepEqual([p("claude-opus-4-8")?.input, p("claude-opus-4-5")?.input, p("claude-opus-4-1")?.input], [5, 5, 15], "Opus 4.5 부터 $5");
 });
 
+test("최신 Codex와 Claude 모델을 표준 API 단가로 환산한다", () => {
+  const cases = [
+    ["gpt-6.2-astra", "GPT-6.2 Astra", 8, 40, 0.4, 10],
+    ["GPT-6.2-SOL", "GPT-6.2 Sol", 2, 10, 0.1, 2.5],
+    ["gpt-6.1-terra", "GPT-6.1 Terra", 1, 5, 0.05, 1.25],
+    ["claude-fable-5-2", "Claude Fable 5.2", 8, 40, 0.2, 10],
+    ["claude-sonnet-5-5", "Claude Sonnet 5.5", 2, 10, 0.1, 2.5],
+    ["claude-haiku-5-5", "Claude Haiku 5.5", 0.1, 0.5, 0.01, 0.125],
+  ] as const;
+  for (const [id, label, input, output, cacheRead, cacheWrite] of cases) {
+    const price = resolvePrice(id);
+    assert.ok(price, id);
+    assert.deepEqual([price.label, price.input, price.output, price.cacheRead, price.cacheWrite],
+      [label, input, output, cacheRead, cacheWrite]);
+    assert.equal(price.estimated, undefined);
+  }
+  assert.equal(resolvePrice("claude-sonnet-5")?.cacheRead, 0.2);
+  const fallback = resolvePrice("codex-unknown")!;
+  assert.equal(fallback.cacheWrite, fallback.input, "the older estimate still counts tokens now reported as writes");
+});
 
 test("Argon uses official Standard API conversion rates including cached input", () => {
   for (const model of ["gemini-4-argon", "gemini-4-argon-medium", "gemini-4-argon-high"]) {

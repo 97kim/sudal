@@ -95,6 +95,6 @@ export const usage = {
     terminal: "터미널",
     noPath: "(경로 없음)",
   },
-  footnoteCustom: "비용은 모델별 API 단가로 환산한 추정치이며, 구독 요금이나 실제 청구액이 아닙니다. 단가표는 사용자 설정(pricing.json)을 사용합니다 · Codex 단가는 공식 가격표와 대조하지 않았습니다.",
-  footnoteDefault: "비용은 모델별 API 단가로 환산한 추정치이며, 구독 요금이나 실제 청구액이 아닙니다. 단가표는 앱 기본값을 사용합니다 · Codex 단가는 공식 가격표와 대조하지 않았습니다.",
+  footnoteCustom: "비용은 사용자 설정(pricing.json)의 모델별 API 단가로 환산한 추정치입니다.",
+  footnoteDefault: "비용은 표준 API 단가로 환산한 추정치입니다. 일부 이전 모델에는 추정 단가를 적용합니다.",
 };
