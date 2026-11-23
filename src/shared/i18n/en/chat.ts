@@ -306,6 +306,8 @@ export const chat: DeepPartial<typeof ko> = {
     cancelRetry: "Cancel retry",
   },
   composer: {
+    messageInput: "Message input",
+    predictionAvailable: "Press Tab to insert the suggestion: {{text}}",
     contextUsage: "Context {{used}}% used · {{remaining}}% remaining (last response)",
     contextUnknown: "Context limit unavailable",
     commandSource: "Provided by {{source}}",
@@ -357,6 +359,7 @@ export const chat: DeepPartial<typeof ko> = {
     compacted: "Compacted · {{tokens}} · the conversation above was replaced by a summary",
     compactedTokensUnknown: "Token count unavailable",
     compactHistoryCollapsed: "Earlier conversation is collapsed",
+    previewing: "Showing recent messages while earlier history is prepared",
     compactHistoryExpanded: "Viewing the earlier conversation",
     expandCompactHistory: "Show earlier conversation",
     collapseCompactHistory: "Collapse earlier conversation",

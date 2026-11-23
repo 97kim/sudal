@@ -101,12 +101,14 @@ export function ChatView({
   onOpenSettings,
   onIsolate,
   focused = true,
+  composerPredictions = false,
   onUnsplit,
   showTabStrip = true,
   tabBarWs,
 }: {
   /** 분할 화면에서 이 칸이 포커스된 칸인가. 창 전체 단축키(⌘J 등)는 포커스된 칸만 받는다. */
   focused?: boolean;
+  composerPredictions?: boolean;
   /** 분할 화면이면 이 칸을 분할에서 뺀다(탭은 열린 채로). */
   onUnsplit?: () => void;
   /** 탭 줄. 분할이면 왼쪽 칸에만 — 같은 줄이 두 번 보이지 않게. */
@@ -144,7 +146,8 @@ export function ChatView({
   const [openContextRequest, setOpenContextRequest] = useState(0);
   const [harnessDetailActive, setHarnessDetailActive] = useState(false);
   const [harnessHomeRequest, setHarnessHomeRequest] = useState(0);
-  const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, compactBoundary, compactedExpanded, expandCompacted, collapseCompacted } = useSession(tabId);
+  const { state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, historyPreview, compactBoundary, compactedExpanded, expandCompacted, collapseCompacted, predictionTurnId } = useSession(tabId);
+  const previewing = !loaded && !!historyPreview?.length;
   const [switching, setSwitching] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [commandPanel, setCommandPanel] = useState<{ name: string; data?: unknown; argument?: string } | null>(null);
@@ -1017,17 +1020,20 @@ export function ChatView({
 
             <HarnessWorkspace key={`${tabId}:${config?.cwd ?? ""}`} tabId={tabId} cwd={config?.cwd ?? ""} blocks={state.blocks} conversationSlot={harnessConversationSlot} detailSlot={harnessDetailSlot} detailActive={harnessDetailActive && !editorMaximized} homeRequest={harnessHomeRequest} onOpenDetails={() => setHarnessPanelRequest(n => n + 1)} onCloseDetails={() => setHarnessContextRequest(n => n + 1)} />
             {feedback && <VerificationFeedbackPanel state={feedback} onStop={stopFeedback} />}
+            {previewing && <p role="status" data-history-preview className="shrink-0 px-6 py-1 text-center text-[11.5px] text-muted">{t("chat.messages.previewing")}</p>}
             <div className="relative min-h-0 flex-1">
               <MessageList
-                onHarnessSlot={setHarnessConversationSlot}
-                compactBoundary={compactBoundary}
+                onHarnessSlot={previewing ? undefined : setHarnessConversationSlot}
+                compactBoundary={previewing ? undefined : compactBoundary}
                 compactedExpanded={compactedExpanded}
                 onExpandCompacted={expandCompacted}
                 onCollapseCompacted={collapseCompacted}
                 tabId={tabId}
-                blocks={state.blocks}
-                loading={!loaded}
-                hasMore={hasMore}
+                blocks={previewing ? historyPreview! : state.blocks}
+                loading={!loaded && !previewing}
+                previewing={previewing}
+                readOnly={previewing}
+                hasMore={loaded && hasMore}
                 loadingOlder={loadingOlder}
                 onLoadOlder={loadOlder}
                 historyError={historyError}
@@ -1230,6 +1236,7 @@ export function ChatView({
               snippets={snippets}
               workspaceId={tab.workspaceId}
               draftKey={tabId}
+              predictionTurnId={composerPredictions && provider === "codex" && focused && !editorMaximized && loaded && config?.status === "idle" && !config.pendingPrompts?.length ? predictionTurnId : null}
               onSaveSnippet={(input) => window.sudal.snippets.save(input)}
               onSend={onSend}
               onAbort={() => void window.sudal.chat.abort(tabId)}

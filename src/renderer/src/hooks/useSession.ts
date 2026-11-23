@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { ChatEvent } from "@shared/chat-events";
 import type { ChatEventEnvelope, SessionSnapshotDto } from "@shared/ipc";
-import { collapseCompactedHistory, initialHistoryState, mergeHistoryPage, reduceHistoryEvent, type HistoryState, type SessionHistoryPage } from "@shared/session-history";
+import { collapseCompactedHistory, initialHistoryState, isHistoryPreviewEvent, mergeHistoryPage, reduceHistoryEvent, updateHistoryPreview, type HistoryState, type SessionHistoryPage } from "@shared/session-history";
+import type { Block } from "@shared/session-state";
 
 type Action = { kind: "event"; event: ChatEvent } | { kind: "page"; page: SessionHistoryPage; older: boolean; events: ChatEvent[] } | { kind: "collapse" };
 
@@ -16,13 +17,15 @@ export function useSession(tabId: string) {
   const [history, dispatch] = useReducer(reducer, undefined, initialHistoryState);
   const [config, setConfig] = useState<SessionSnapshotDto | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState<Block[] | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [compactedExpanded, setCompactedExpanded] = useState(false);
+  const [predictionTurnId, setPredictionTurnId] = useState<string | null>(null);
   const hiddenCount = history.compactBoundary?.hiddenCount ?? 0;
   const archiveLoaded = compactedExpanded && history.prefix.length < hiddenCount;
   const hasMore = history.prefix.length > (archiveLoaded ? 0 : hiddenCount);
-  const owner = useRef({ generation: 0, lifetime: 0, alive: false, ready: false, before: null as string | null, loading: false, includeCompacted: false, pendingCompact: false, buffered: [] as ChatEventEnvelope[] });
+  const owner = useRef({ generation: 0, lifetime: 0, alive: false, ready: false, before: null as string | null, loading: false, includeCompacted: false, pendingCompact: false, buffered: [] as ChatEventEnvelope[], previewSequence: null as number | null });
 
   const read = useCallback(async (older: boolean, openingArchive = false) => {
     const o = owner.current;
@@ -31,9 +34,22 @@ export function useSession(tabId: string) {
     o.loading = true;
     o.buffered = [];
     if (older) setLoadingOlder(true);
-    else { o.ready = false; o.buffered = []; setLoaded(false); }
+    else { o.ready = false; o.previewSequence = null; setLoaded(false); setHistoryPreview(null); }
     setHistoryError(null);
     try {
+      if (!older) {
+        const preview = await window.sudal.chat.historyPreview(tabId).catch(() => null);
+        if (!o.alive || generation !== o.generation) return;
+        if (preview) {
+          o.previewSequence = preview.sequence;
+          let blocks = preview.blocks;
+          for (const envelope of o.buffered) {
+            if ((envelope.sequence ?? Infinity) > preview.sequence && isHistoryPreviewEvent(envelope.event))
+              blocks = updateHistoryPreview(blocks, envelope.event, true);
+          }
+          setHistoryPreview(blocks);
+        }
+      }
       const page = await window.sudal.chat.history(tabId, older ? o.before! : undefined, o.includeCompacted);
       if (!o.alive || generation !== o.generation) return;
       const events = o.buffered.filter((envelope) => envelope.sequence === undefined || envelope.sequence > (page.sequence ?? -1)).map((envelope) => envelope.event);
@@ -41,6 +57,7 @@ export function useSession(tabId: string) {
       if (events.some(event => event.type === "compacted")) { o.pendingCompact = true; o.includeCompacted = false; setCompactedExpanded(false); }
       o.buffered = [];
       if (!older) {
+        setHistoryPreview(null);
         o.ready = true;
       }
       o.before = page.before;
@@ -49,6 +66,7 @@ export function useSession(tabId: string) {
         if (openingArchive) { o.includeCompacted = false; setCompactedExpanded(false); }
         setHistoryError(e instanceof Error ? e.message : String(e));
         if (!older) {
+          setHistoryPreview(null);
           for (const envelope of o.buffered) dispatch({ kind: "event", event: envelope.event });
           o.buffered = [];
           o.ready = true;
@@ -75,7 +93,13 @@ export function useSession(tabId: string) {
     o.includeCompacted = false; o.pendingCompact = false; setCompactedExpanded(false);
     const off = window.sudal.chat.onEvent((envelope) => {
       if (envelope.tabId !== tabId) return;
+      const event = envelope.event;
+      if (event.type === "turn_result") setPredictionTurnId(!event.isError && event.forkPoint?.provider === "codex" ? event.forkPoint.pointId : null);
+      else if (event.type === "user_message" || event.type === "compacted" || event.type === "session_reset" || event.type === "error" ||
+        (event.type === "status" && event.status !== "idle")) setPredictionTurnId(null);
       if (!o.ready || o.loading) o.buffered.push(envelope);
+      if (!o.ready && o.previewSequence !== null && (envelope.sequence ?? Infinity) > o.previewSequence && isHistoryPreviewEvent(event))
+        setHistoryPreview(blocks => blocks ? updateHistoryPreview(blocks, event, true) : null);
       if (o.ready) {
         if (envelope.event.type === "compacted") {
           o.generation++; o.loading = false; o.buffered = []; o.includeCompacted = false; o.pendingCompact = true;
@@ -106,6 +130,7 @@ export function useSession(tabId: string) {
     const o = owner.current;
     o.generation++;
     o.loading = false;
+    setPredictionTurnId(null);
     o.includeCompacted = false; o.pendingCompact = false; setCompactedExpanded(false);
     dispatch({ kind: "collapse" });
     void read(false);
@@ -122,6 +147,6 @@ export function useSession(tabId: string) {
     o.generation++; o.loading = false; o.includeCompacted = false; o.buffered = []; o.pendingCompact = true;
     setCompactedExpanded(false); setLoadingOlder(false); setHistoryError(null); dispatch({ kind: "collapse" });
   }, []);
-  return { state: history.state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError,
+  return { state: history.state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, historyPreview, predictionTurnId,
     compactBoundary: history.compactBoundary, compactedExpanded, expandCompacted, collapseCompacted };
 }

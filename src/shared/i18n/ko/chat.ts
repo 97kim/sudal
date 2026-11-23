@@ -267,6 +267,8 @@ export const chat = {
     cancelRetry: "재시도 취소",
   },
   composer: {
+    messageInput: "메시지 입력",
+    predictionAvailable: "Tab으로 넣을 추천 문장: {{text}}",
     contextUsage: "컨텍스트 {{used}}% 사용 · {{remaining}}% 남음 (마지막 응답 기준)",
     contextUnknown: "컨텍스트 한도 정보 없음",
     commandSource: "{{source}} 제공 기능",
@@ -318,6 +320,7 @@ export const chat = {
     compacted: "압축 · {{tokens}} · 위쪽 대화는 요약으로 대체됐습니다",
     compactedTokensUnknown: "토큰 수 미제공",
     compactHistoryCollapsed: "압축 이전 대화는 접혀 있어요",
+    previewing: "최근 메시지 미리보기 · 이전 기록 준비 중",
     compactHistoryExpanded: "압축 이전 대화를 보고 있어요",
     expandCompactHistory: "이전 대화 펼치기",
     collapseCompactHistory: "이전 대화 접기",

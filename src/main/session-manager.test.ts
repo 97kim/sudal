@@ -14,6 +14,40 @@ import { ZERO_USAGE, type ChatEvent } from "@shared/chat-events";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+test("completion notification receives a bounded live preview without reopening history", () => {
+  let reads = 0;
+  const previews: Array<string | undefined> = [];
+  const prior: ChatEvent = { type: "assistant_text", ts: 0, blockId: "old", text: "old persisted reply" };
+  const sessions = new SessionManager({
+    emit(_tab, event, preview) { if (event.type === "turn_result") previews.push(preview); },
+    claudeRuntime: async () => { throw Error("unused"); },
+    codexRuntime: async () => { throw Error("unused"); },
+    store: {
+      appendEvent() {},
+      readEvents() { throw Error("complete replies must not load the whole event list"); },
+      resetThread() {},
+      *iterateEvents() { reads++; yield prior; },
+    },
+  });
+  const result = (ts: number, isError = false): ChatEvent => ({
+    type: "turn_result", ts, isError, usage: ZERO_USAGE, costUsd: 0, durationMs: 5, numTurns: 1, modelUsage: {},
+  });
+  sessions.note("tab", { type: "user_message", ts: 1, id: "u", text: "current request" });
+  const restoredReads = reads;
+  sessions.note("tab", { type: "assistant_text", ts: 2, blockId: "update", text: "progress" });
+  sessions.note("tab", { type: "assistant_text", ts: 3, blockId: "answer", text: "Final\n answer. " + "x".repeat(10_000) });
+  sessions.note("tab", result(4));
+  sessions.note("tab", { type: "text_delta", ts: 5, blockId: "ambient", text: "Background " });
+  sessions.note("tab", { type: "text_delta", ts: 6, blockId: "ambient", text: "finished." });
+  sessions.note("tab", result(7));
+  sessions.note("tab", result(8));
+  sessions.note("tab", { type: "assistant_text", ts: 9, blockId: "failed", text: "partial failure" });
+  sessions.note("tab", result(10, true));
+  assert.deepEqual(previews, [("Final answer. " + "x".repeat(140)).slice(0, 140), "Background finished.", "", undefined]);
+  assert.equal(reads, restoredReads);
+  sessions.shutdown();
+});
+
 test("추론 강도는 복원되고 모델·제공자 변경 시 초기화된다", () => {
   const saved: Record<string, unknown> = {};
   const sessions = new SessionManager({

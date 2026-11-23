@@ -98,6 +98,16 @@ test("streamed history matches full replay on every page, including late revisio
   }
 });
 
+test("grouping a long text stream preserves cursor boundaries, event counts and notice IDs", () => {
+  const events: ChatEvent[] = [{ type: "user_message", ts: 1, id: "u", text: "prompt" }];
+  for (let i = 0; i < 600; i++)
+    events.push({ type: "text_delta", ts: i + 2, blockId: "answer", text: "조각".repeat(50) + i });
+  events.push({ type: "notice", ts: 605, level: "notice", message: "done" });
+  const full = replaySession(events);
+  assert.deepEqual(replayHistory(events), historyPage(full));
+  assert.deepEqual(replayHistory(events, "answer"), historyPage(full, "answer"));
+});
+
 test("history pages bound large bodies without losing oversized messages or older history", () => {
   const events: ChatEvent[] = Array.from({ length: 90 }, (_, i) => ({ type: "assistant_text", ts: i, blockId: `a${i}`, text: `${i}:` + "x".repeat(i === 45 ? 3_000_000 : 100_000) }));
   const full = replaySession(events);

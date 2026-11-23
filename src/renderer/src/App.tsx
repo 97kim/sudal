@@ -28,7 +28,7 @@ import { UsageView } from "./views/UsageView";
 import { startDrag } from "./drag";
 import { IS_MAC, isMod } from "./platform";
 
-export function App() {
+export function App({ initialComposerPredictions = false }: { initialComposerPredictions?: boolean }) {
   const { t } = useTranslation();
   const [view, setView] = useState<View>("chat");
   // 사이드바 접힘. 아주 없애지 않고 얇은 띠로 두는 이유는 macOS 신호등 버튼 자리를 지켜야 해서다(Windows 도 같은 띠를 쓴다).
@@ -43,6 +43,7 @@ export function App() {
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("general");
   const [info, setInfo] = useState<AppInfoDto | null>(null);
+  const [composerPredictions, setComposerPredictions] = useState(initialComposerPredictions);
   const [switcher, setSwitcher] = useState(false);
   const [search, setSearch] = useState(false);
   // 짧은 알림(오류 등). 몇 초 뒤 사라진다.
@@ -59,6 +60,7 @@ export function App() {
 
   useEffect(() => {
     window.sudal.app.info().then(setInfo).catch(console.error);
+    return window.sudal.app.onSettingsChanged(s => setComposerPredictions(s.codexComposerPredictions));
   }, []);
 
   const { model } = ws;
@@ -461,6 +463,7 @@ export function App() {
                             ws={sourceWs}
                             tabBarWs={ws}
                             focused={focused}
+                            composerPredictions={composerPredictions}
                             showTabStrip={!split || pane === 0}
                             onUnsplit={split ? () => unsplitPane(pane) : undefined}
                             onActivateTab={(tid) => void api.activateTab(tid)}

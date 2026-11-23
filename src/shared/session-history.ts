@@ -18,6 +18,42 @@ export interface SessionHistoryPage {
   sequence?: number;
 }
 
+/** Temporary display while indexing a large legacy log. IDs of text blocks
+ * are real, but this does not carry cursors, totals, or card state. */
+export interface SessionHistoryPreview { blocks: Block[]; sequence: number }
+
+const PREVIEW_BLOCKS = 24;
+const PREVIEW_BODY_CHARS = 16_000;
+type PreviewEvent = Extract<ChatEvent, { type: "user_message" | "assistant_text" | "text_delta" | "compacted" }>;
+export function isHistoryPreviewEvent(event: ChatEvent): event is PreviewEvent {
+  return event.type === "user_message" || event.type === "assistant_text" || event.type === "text_delta" || event.type === "compacted";
+}
+
+/** The temporary view keeps text only. A late card update can't introduce
+ * a card at the wrong position before the canonical page arrives. */
+export function updateHistoryPreview(blocks: Block[], event: PreviewEvent, knownTextOnly = false): Block[] {
+  if (event.type === "compacted") return [];
+  if (typeof event.text !== "string") return blocks;
+  const text = event.text.slice(0, PREVIEW_BODY_CHARS);
+  if (event.type === "user_message") {
+    if (typeof event.id !== "string" || !text.trim()) return blocks;
+    return [...blocks, { kind: "user" as const, id: event.id, ts: event.ts, text }].slice(-PREVIEW_BLOCKS);
+  }
+  if (typeof event.blockId !== "string") return blocks;
+  const index = blocks.findIndex(b => b.kind === "text" && b.id === event.blockId);
+  // Live events have not gone through the earlier-ID check. Only extend an
+  // already verified text block; the authoritative page handles other IDs.
+  if (knownTextOnly && index < 0) return blocks;
+  const prior = blocks[index];
+  const appended = event.type === "text_delta" && prior?.kind === "text" ? (prior.text + text).slice(0, PREVIEW_BODY_CHARS) : text;
+  if (!appended.trim()) return blocks;
+  const block: Block = { kind: "text", id: event.blockId, text: appended, streaming: false };
+  if (index < 0) return [...blocks, block].slice(-PREVIEW_BLOCKS);
+  const next = blocks.slice();
+  next[index] = block;
+  return next;
+}
+
 export function historyPage(state: SessionState, before?: string, size = HISTORY_PAGE_SIZE): SessionHistoryPage {
   const found = before ? state.blocks.findIndex((b) => b.id === before) : -1;
   const end = found < 0 ? state.blocks.length : found;
@@ -106,8 +142,13 @@ export function createHistoryReplay(before?: string, seed?: SessionState, includ
   let start = seedStart;
   const slimmed = new WeakSet<Block>();
   const byteSizes = new WeakMap<Block, number>();
-  const push = (event: ChatEvent) => {
+  let delta: Extract<ChatEvent, { type: "text_delta" }> | undefined;
+  let deltaCount = 0;
+  const apply = (event: ChatEvent, extraEvents = 0) => {
     const next = reduceSession(state, event);
+    // Delta timestamps aren't used by the reducer, but their event count
+    // participates in IDs for later notices, compaction markers and errors.
+    if (extraEvents) next.eventCount += extraEvents;
     if (next.blocks !== state.blocks) {
       if (end === undefined && before) {
         if (next.blocks.at(-1)?.id === before) end = next.blocks.length - 1;
@@ -132,7 +173,25 @@ export function createHistoryReplay(before?: string, seed?: SessionState, includ
     }
     state = next;
   };
-  return { push, finish(): SessionHistoryPage {
+  const flushDelta = () => {
+    if (!delta) return;
+    apply(delta, deltaCount - 1);
+    delta = undefined;
+    deltaCount = 0;
+  };
+  return { push(event: ChatEvent) {
+    // Adjacent fragments of one text block only extend that block. Group
+    // them so each fragment doesn't copy and scan the entire history.
+    if (event.type === "text_delta") {
+      if (delta?.blockId !== event.blockId || deltaCount >= 128 || delta.text.length + event.text.length > 65_536) flushDelta();
+      delta = delta ? { ...delta, text: delta.text + event.text } : event;
+      deltaCount++;
+      return;
+    }
+    flushDelta();
+    apply(event);
+  }, finish(): SessionHistoryPage {
+    flushDelta();
     const stop = end ?? state.blocks.length;
     const cut = compactHistoryCut(state.blocks);
     const floor = !includeCompacted && cut ? Math.min(stop, cut.index) : 0;

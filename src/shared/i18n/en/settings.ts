@@ -57,6 +57,10 @@ export const settings: DeepPartial<typeof ko> = {
       dark: { label: "Dark", hint: "Always use a dark background." },
     },
   },
+  codexComposerPredictions: {
+    title: "Codex next message suggestions",
+    description: "When Codex uses the default OpenAI connection, Sudal sends an excerpt of the latest request and reply in a separate call to suggest a next message. This can count toward Codex usage.",
+  },
   notify: {
     title: "Response notifications",
     description: "Choose whether to be notified when a response finishes. If you're in another app and a task needs approval, you're notified regardless of this setting.",

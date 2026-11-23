@@ -64,6 +64,7 @@ export function Composer({
   snippets = [],
   workspaceId = null,
   draftKey,
+  predictionTurnId = null,
   onSaveSnippet,
   onSend,
   onAbort,
@@ -85,6 +86,7 @@ export function Composer({
   modelPickerOpen?: boolean;
   /** 쓰다 만 글을 보존할 키(채팅 탭 id). 없으면 보존하지 않는다. */
   draftKey?: string;
+  predictionTurnId?: string | null;
   /** disabled 일 때 보여 줄 안내. 기본은 작업 경로 안내. */
   disabledText?: string;
   running: boolean;
@@ -148,6 +150,35 @@ export function Composer({
   // 문구는 값으로 두고 그릴 때 번역한다
   const [imageLimit, setImageLimit] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [suggestion, setSuggestion] = useState<{ turnId: string; text: string } | null>(null);
+  const [dismissedTurn, setDismissedTurn] = useState<string | null>(null);
+  const requestedTurn = useRef<string | null>(null);
+  const eligibleTurn = predictionTurnId && predictionTurnId !== dismissedTurn && !disabled && !running && !text && !images.length && !files.length ? predictionTurnId : null;
+  const prediction = eligibleTurn && suggestion?.turnId === eligibleTurn ? suggestion.text : null;
+  useEffect(() => {
+    if (!eligibleTurn || !draftKey || requestedTurn.current === eligibleTurn) return;
+    let active = true;
+    let waiting = false;
+    const timer = setTimeout(() => {
+      requestedTurn.current = eligibleTurn;
+      waiting = true;
+      void window.sudal.chat.composerPrediction(draftKey, eligibleTurn).then(value => {
+        if (active && value) setSuggestion({ turnId: eligibleTurn, text: value });
+      }).catch(() => {}).finally(() => { waiting = false; });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      if (waiting) void window.sudal.chat.cancelComposerPrediction(draftKey, eligibleTurn).catch(() => {});
+    };
+  }, [draftKey, eligibleTurn]);
+  const insertPrediction = () => {
+    if (!prediction) return;
+    setDismissedTurn(eligibleTurn);
+    setText(prediction);
+    setCaret(prediction.length);
+    ref.current?.focus();
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   const mentionFileRef = useRef<HTMLInputElement>(null);
   // 에디터·터미널의 "채팅에 첨부": 지금 글 뒤에 이어 붙이고 커서를 끝으로
@@ -368,6 +399,16 @@ export function Composer({
     if (popoverOpen && e.key === "Escape") {
       e.preventDefault();
       setDismissed(true);
+      return;
+    }
+    if (eligibleTurn && e.key === "Escape") {
+      e.preventDefault();
+      setDismissedTurn(eligibleTurn);
+      return;
+    }
+    if (prediction && e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      insertPrediction();
       return;
     }
     // 중단 버튼이 "중단 (esc)" 라고 적어 두고 정작 esc 는 아무 데서도 처리하지 않았다.
@@ -602,28 +643,43 @@ export function Composer({
             ))}
           </div>
         )}
-        <textarea
-          ref={ref}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setCaret(e.target.selectionStart);
-          }}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          disabled={disabled}
-          rows={1}
-          placeholder={
-            disabled
-              ? (disabledText ?? t("chat.composer.placeholderNeedCwd"))
-              : running
-                ? (runningHint ?? t("chat.composer.placeholderQueue"))
-                : t("chat.composer.placeholder")
-          }
-          className="block w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[13.5px] leading-6 outline-none placeholder:text-muted disabled:opacity-50"
-          style={{ userSelect: "text" }}
-        />
+        <div className="relative">
+          <textarea
+            ref={ref}
+            value={text}
+            onChange={(e) => {
+              if (predictionTurnId) setDismissedTurn(predictionTurnId);
+              setText(e.target.value);
+              setCaret(e.target.selectionStart);
+            }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            disabled={disabled}
+            rows={1}
+            aria-label={t("chat.composer.messageInput")}
+            placeholder={
+              disabled
+                ? (disabledText ?? t("chat.composer.placeholderNeedCwd"))
+                : running
+                  ? (runningHint ?? t("chat.composer.placeholderQueue"))
+                  : prediction ? "" : t("chat.composer.placeholder")
+            }
+            className="block w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[13.5px] leading-6 outline-none placeholder:text-muted disabled:opacity-50"
+            style={{ userSelect: "text" }}
+          />
+          <span className="sr-only" role="status">{prediction ? t("chat.composer.predictionAvailable", { text: prediction }) : ""}</span>
+          {prediction && (
+            <div className="pointer-events-none absolute inset-x-4 top-3.5 flex min-w-0 items-center gap-2 text-[13.5px] leading-6" data-composer-prediction>
+              <span className="min-w-0 flex-1 truncate text-muted" aria-hidden="true">{prediction}</span>
+              <button type="button" onClick={insertPrediction}
+                className="pointer-events-auto shrink-0 rounded border border-line bg-panel-2 px-1.5 text-[11px] leading-5 text-muted hover:text-fg focus-visible:outline focus-visible:outline-accent"
+                aria-label={t("chat.composer.predictionAvailable", { text: prediction })} title={prediction}>
+                Tab
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-1 whitespace-nowrap px-3 pb-2.5 pt-1">
           <input ref={mentionFileRef} type="file" multiple hidden onChange={(e) => { takeFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
           <input

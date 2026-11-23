@@ -68,7 +68,7 @@ async function start() {
   document.documentElement.classList.add(`platform-${window.sudal.platform}`);
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <App />
+      <App initialComposerPredictions={settingsResult.status === "fulfilled" && settingsResult.value.codexComposerPredictions} />
     </React.StrictMode>,
   );
 }

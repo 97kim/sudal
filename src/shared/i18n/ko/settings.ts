@@ -55,6 +55,10 @@ export const settings = {
       dark: { label: "어둡게", hint: "항상 어두운 배경." },
     },
   },
+  codexComposerPredictions: {
+    title: "Codex 다음 메시지 추천",
+    description: "기본 OpenAI 연결을 쓰는 Codex에서 응답이 끝나면 최근 요청과 답변 일부를 별도 호출로 보내 추천을 만듭니다. 호출은 Codex 사용량에 반영될 수 있습니다.",
+  },
   notify: {
     title: "응답 완료 알림",
     description: "응답이 끝났을 때 알림을 받을지 정합니다. 다른 앱을 보고 있을 때 작업 승인이 필요하면 이 설정과 관계없이 알립니다.",
