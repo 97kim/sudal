@@ -8,7 +8,7 @@ import type {
   SessionStatus,
 } from "./chat-events";
 import { PERMISSION_POLICIES } from "./chat-events";
-import type { SessionHistoryPage } from "./session-history";
+import type { SessionHistoryPage, SessionHistoryPreview } from "./session-history";
 import type { FeedbackStartOptions, FeedbackStartResult, VerificationFeedback } from "./verification-feedback";
 import type { BackgroundJobDto } from "./background-jobs";
 import type { OtterMood, OtterMotion } from "./otter";
@@ -138,6 +138,7 @@ export interface AppSettingsDto {
   maxConcurrent: number;
   /** 응답이 끝났을 때 macOS 알림: always = 항상, unfocused = 창이 포커스 밖이거나 다른 탭을 볼 때, off = 안 함. */
   notifyOnDone: NotifyOnDone;
+  codexComposerPredictions: boolean;
   /** 새 탭의 권한. inherit = 새 탭을 열 때 보고 있던 탭과 같게. */
   newTabPolicy: NewTabPolicy;
   /** 새 탭의 모델(provider 별). 빈 문자열이면 CLI 기본값. 보던 탭이 같은 provider 로 모델을 골라 두었으면 그쪽이 먼저다. */
@@ -265,6 +266,9 @@ export const IPC = {
   chatSnapshot: "chat:snapshot",
   chatEvents: "chat:events",
   chatHistory: "chat:history",
+  chatHistoryPreview: "chat:history-preview",
+  chatComposerPrediction: "chat:composer-prediction",
+  chatCancelComposerPrediction: "chat:cancel-composer-prediction",
   chatSubagentHistory: "chat:subagent-history",
   chatClear: "chat:clear",
   chatCompact: "chat:compact",
@@ -961,6 +965,9 @@ export interface SudalApi {
     /** 지금까지의 이벤트 로그 (화면 재구성용). */
     events(tabId: string): Promise<ChatEvent[]>;
     history(tabId: string, before?: string, includeCompacted?: boolean): Promise<SessionHistoryPage>;
+    historyPreview(tabId: string): Promise<SessionHistoryPreview | null>;
+    composerPrediction(tabId: string, turnId: string): Promise<string | null>;
+    cancelComposerPrediction(tabId: string, turnId: string): Promise<void>;
     subagentHistory(tabId: string, agentId: string, before?: number, after?: import('./subagent-history').SubagentHistoryCursor): Promise<import('./subagent-history').SubagentHistoryPage>;
     clear(tabId: string): Promise<SessionSnapshotDto>;
     /**

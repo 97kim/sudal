@@ -26,6 +26,7 @@ import { parseGoalAction, type CodexMode, type CodexGoal, type CodexControlComma
 import { applyAgyPolicy, closeAllAgySessions, closeAgySession, runAgyTurn, warmAgySession, type AgyRuntime } from "./agy-adapter";
 import { randomUUID } from "node:crypto";
 import { readJsonl } from "./jsonl-reader";
+import { CompletionPreview } from "./completion-preview";
 import { createHistoryReplay, type SessionHistoryPage } from "@shared/session-history";
 import type { HistoryCheckpoint } from "./history-checkpoint";
 import {
@@ -149,6 +150,7 @@ interface Session {
   pendingReqs: Map<string, PermissionRequestEvent>;
   /** null 이면 아직 디스크에서 읽지 않았다 (lazy). */
   events: ChatEvent[] | null;
+  completionPreview: CompletionPreview;
   historyRestored: boolean;
   hasUser: boolean;
   agentToolIds: Set<string>;
@@ -209,7 +211,8 @@ export interface SessionManagerDeps {
   taskContext?(tabId: string, cwd: string): string;
   /** 돌고 있는 Codex 턴에 지시를 끼워 넣는다. 테스트에서 바꿔 끼운다(기본: codex-adapter 의 steerCodexTurn). */
   steerCodex?: typeof steerCodexTurn;
-  emit(tabId: string, event: ChatEvent): void;
+  emit(tabId: string, event: ChatEvent, completionPreview?: string): void;
+  onResetSession?(tabId: string): void;
   /** tabId: 그 탭의 에이전트 프로세스에 자기 탭 id(SUDAL_TAB_ID)를 알려 준다. */
   claudeRuntime(tabId?: string): Promise<ClaudeRuntime>;
   codexRuntime(tabId?: string): Promise<CodexRuntime>;
@@ -389,6 +392,7 @@ export class SessionManager {
         pending: new Map(),
         pendingReqs: new Map(),
         events: null,
+        completionPreview: new CompletionPreview(),
         historyRestored: false,
         hasUser: false,
         agentToolIds: new Set(),
@@ -1969,6 +1973,8 @@ export class SessionManager {
   clear(tabId: string): SessionSnapshot {
     const s = this.ensure(tabId);
     if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
+    this.deps.onResetSession?.(tabId);
+    s.completionPreview.reset();
     this.historyReads.delete(tabId);
     this.externalCliExited(tabId);
     if (s.controller === "terminal") this.detachTerminal(tabId);
@@ -1998,6 +2004,7 @@ export class SessionManager {
   /** 탭을 닫을 때: 중단하고 메모리에서 내린다. 디스크의 스레드는 남는다(다시 열기). */
   /** 탭 닫기·삭제: 턴을 멈추고 세션을 내린다. 대기 지시는 디스크에 남긴다(삭제면 스레드와 함께 지워진다). */
   release(tabId: string): void {
+    this.deps.onResetSession?.(tabId);
     this.externalCliExited(tabId);
     this.abort(tabId, { keepQueue: true });
     closeProviderSessions(tabId);
@@ -2094,7 +2101,7 @@ export class SessionManager {
     // 나중에 기록을 통째로 불러올 때 "이미 가진 것" 에 실시간으로 받은 것도 포함되게 한다.
     if (s.dedupe) indexEvent(s.dedupe, e);
     this.deps.store?.appendEvent(s.tabId, e);
-    this.deps.emit(s.tabId, e);
+    this.deps.emit(s.tabId, e, s.completionPreview.observe(e));
   }
 
   private waitPermission(

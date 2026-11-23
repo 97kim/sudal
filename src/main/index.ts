@@ -57,9 +57,10 @@ import { sanitizeCliEnv } from "./cli-env";
 import { ShellCliMonitor } from "./cli-watch";
 import { SlashCommandCache } from "./claude-commands";
 import { fetchMcpStatus } from "./claude-mcp";
-import { currentCodexBackgroundJobs, onCodexBackgroundJobsChanged, forkCodexThread, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
+import { currentCodexBackgroundJobs, onCodexBackgroundJobsChanged, forkCodexThread, isolatedCodexPredictionRuntime, listCodexMentions, readCodexRateLimits, setCodexSessionIdleMs, type CodexRuntime } from "./codex-adapter";
 import { setAgySessionIdleMs, type AgyRuntime } from "./agy-adapter";
 import { setCodexHookDir } from "./codex-lang-hooks";
+import { CodexPredictions, generateCodexPrediction } from "./codex-prediction";
 import { buildReviewPrompt, validateReviewRequest, reviewPermissionDecision, reviewScopeParams, reviewTabTitle } from "@shared/cross-review";
 import { handoffBriefPrompt, handoffNotePermission, NOTE_FILE } from "@shared/handoff";
 import { lastReplyText } from "@shared/session-state";
@@ -1659,6 +1660,9 @@ function defaultWorktreeRootDir(): string {
   return join(homedir(), "sudal", "worktrees");
 }
 
+const codexPredictions = new CodexPredictions();
+let composerPredictionsEnabled = false;
+
 function appSettings(): AppSettingsDto {
   const raw = store.loadSettings<Partial<AppSettingsDto>>({});
   const clamp = (v: unknown, min: number, max: number, fallback: number) => {
@@ -1676,6 +1680,7 @@ function appSettings(): AppSettingsDto {
     // 환경변수는 설정 파일에 값이 없을 때의 기본값으로만 쓴다.
     maxConcurrent: clamp(raw.maxConcurrent, MAX_CONCURRENT_MIN, MAX_CONCURRENT_MAX, Number(process.env.SUDAL_MAX_CONCURRENT) || MAX_CONCURRENT_DEFAULT),
     notifyOnDone: isNotifyOnDone(raw.notifyOnDone) ? raw.notifyOnDone : NOTIFY_ON_DONE_DEFAULT,
+    codexComposerPredictions: raw.codexComposerPredictions === true,
     newTabPolicy: isNewTabPolicy(raw.newTabPolicy) ? raw.newTabPolicy : "inherit",
     newTabModel: { claude: modelSetting(raw.newTabModel?.claude), codex: modelSetting(raw.newTabModel?.codex), agy: modelSetting(raw.newTabModel?.agy) },
     otter: raw.otter === true,
@@ -1704,6 +1709,8 @@ function roamValue(v: unknown, key: keyof OtterRoamTuning): number {
 }
 
 function applyAppSettings(s: AppSettingsDto) {
+  composerPredictionsEnabled = s.codexComposerPredictions;
+  if (!composerPredictionsEnabled) codexPredictions.clear();
   // 네이티브 UI(다이얼로그·컨텍스트 메뉴·스크롤바)도 같은 테마로. 렌더러는 자기 설정값으로 따로 칠한다.
   nativeTheme.themeSource = s.theme;
   otter?.setEnabled(s.otter);
@@ -1762,6 +1769,7 @@ function bootstrap() {
   initFolderTrust(join(app.getPath("userData"), "trusted-folders.json"));
   adoptLegacyInstall();
   workspaces = new WorkspaceService(store, (state: WorkspaceStateDto) => {
+    codexPredictions.cancelExcept(state.model.activeTabId);
     sendAll(IPC.wsChanged, state);
     feedbackRunner?.reconcile();
   });
@@ -1832,7 +1840,9 @@ function bootstrap() {
   });
   sessions = new SessionManager({
     taskContext: (tabId, cwd) => harness?.context(cwd, tabId) ?? "",
-    emit(tabId, event) {
+    onResetSession: tabId => codexPredictions.forget(tabId),
+    emit(tabId, event, completionPreview) {
+      if (composerPredictionsEnabled && workspaces.tab(tabId)?.provider === "codex") codexPredictions.observe(tabId, event);
       feedbackRunner?.onEvent(tabId, event);
       if (event.type === 'subagent_activity' && !workspaces.agents.snapshot()[tabId]?.some(a => a.blockId === event.parentToolUseId)) {
         // Some skills expose child activity without an Agent tool name. Persist the link once.
@@ -1880,10 +1890,9 @@ function bootstrap() {
         // 오케스트레이션 워커 탭의 턴은 알리지 않는다 — Run 의 완료·응답 필요는 Run 단위로 따로 알린다
         const supervised = orchestrator?.isSupervisedTab(tabId) ?? false;
         if (!supervised && shouldNotifyDone(appSettings().notifyOnDone, focused, isActive)) {
-          const reply = lastReplyText(sessions.events(tabId)).replace(/\s+/g, " ").trim();
           notify(
             `${event.isError ? mt("main.notify.replyFailed") : mt("main.notify.replyDone")} · ${title}`,
-            event.isError ? (event.errorText ? msgText(mainI18n(), event.errorMsg, event.errorText) : mt("main.notify.errorFallback")) : mt("main.notify.replyBody", { seconds: (event.durationMs / 1000).toFixed(0), reply: reply.slice(0, 140) || mt("main.notify.replyArrived") }),
+            event.isError ? (event.errorText ? msgText(mainI18n(), event.errorMsg, event.errorText) : mt("main.notify.errorFallback")) : mt("main.notify.replyBody", { seconds: (event.durationMs / 1000).toFixed(0), reply: completionPreview || mt("main.notify.replyArrived") }),
             tabId,
           );
         }
@@ -2489,6 +2498,7 @@ function registerIpc() {
       if (!next.keepBrowserLogin) forgetSessionCookies(app.getPath("userData"));
     }
     if (patch.mobileAccess !== undefined) next.mobileAccess = patch.mobileAccess === true;
+    if (patch.codexComposerPredictions !== undefined) next.codexComposerPredictions = patch.codexComposerPredictions === true;
     if (patch.notifyOnDone !== undefined) {
       if (!isNotifyOnDone(patch.notifyOnDone)) throw new Error(mt("main.error.badNotifySetting"));
       next.notifyOnDone = patch.notifyOnDone;
@@ -2887,6 +2897,30 @@ function registerIpc() {
     sessions.snapshot(tabId),
   );
   ipcMain.handle(IPC.chatEvents, (_e, tabId: string) => sessions.events(tabId));
+  ipcMain.handle(IPC.chatComposerPrediction, async (_e, tabId: unknown, turnId: unknown) => {
+    if (typeof tabId !== "string" || typeof turnId !== "string") return null;
+    const eligibleSession = () => {
+      if (!composerPredictionsEnabled || workspaces.state().model.activeTabId !== tabId || !workspaces.tab(tabId)?.open) return null;
+      const s = sessions.snapshot(tabId);
+      return s.provider === "codex" && s.controller === "app" && s.status === "idle" && !s.pendingPrompts.length ? s.sessionId : null;
+    };
+    const sessionId = eligibleSession();
+    if (!sessionId) return null;
+    return codexPredictions.request(tabId, turnId, sessionId, async (context, signal) => {
+      const runtime = await isolatedCodexPredictionRuntime(tabId, sessionId);
+      if (!runtime || signal.aborted || eligibleSession() !== sessionId) return null;
+      const text = await generateCodexPrediction(runtime, app.getPath("temp"), context, signal);
+      return eligibleSession() === sessionId ? text : null;
+    });
+  });
+  ipcMain.handle(IPC.chatCancelComposerPrediction, (_e, tabId: unknown, turnId: unknown) => {
+    if (typeof tabId === "string" && typeof turnId === "string") codexPredictions.cancel(tabId, turnId);
+  });
+  ipcMain.handle(IPC.chatHistoryPreview, (_e, tabId: unknown) => {
+    if (typeof tabId !== "string" || !workspaces.tab(tabId)?.open) return null;
+    const blocks = store.historyPreview(tabId);
+    return blocks ? { blocks, sequence: chatSequences.get(tabId) ?? 0 } : null;
+  });
   ipcMain.handle(IPC.chatHistory, async (_e, tabId: string, before?: string, includeCompacted?: boolean) => {
     if (typeof tabId !== "string" || (before !== undefined && typeof before !== "string")) throw new Error(mt("main.error.badArgs"));
     let sequence = chatSequences.get(tabId) ?? 0;
@@ -3667,8 +3701,11 @@ function createWindow(): BrowserWindow {
   // 메인 프레임이 실제로 새 문서로 바뀌었을 때만 준비를 푼다. did-start-navigation 은 will-navigate 로 막힌 이동에도 와서,
   // 화면과 리스너는 그대로인데 준비 신호가 다시 오지 않아 이후 요청이 대기열에 갇혔다.
   win.webContents.on("did-navigate", () => {
+    codexPredictions.cancelActive();
     controlOpenReady = false;
   });
+  win.webContents.on("render-process-gone", () => codexPredictions.cancelActive());
+  win.on("closed", () => codexPredictions.cancelActive());
   // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+R·L 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
   // 터미널에 포커스가 있을 때 그 키만 이번 입력에 한해 메뉴를 끈다. 키 입력마다 다시 정하므로 다른 키에는 남지 않는다.
   if (process.platform === "win32") {
@@ -3807,6 +3844,7 @@ app.whenReady().then(async () => {
 /** 세션 쿠키 저장은 비동기다 — 종료를 한 번만 미루고, 두 번째 호출에서 원래 정리를 한다. */
 let sessionCookiesSaved = false;
 app.on("before-quit", (e) => {
+  codexPredictions.clear();
   if (!sessionCookiesSaved && appSettings().keepBrowserLogin) {
     sessionCookiesSaved = true;
     e.preventDefault();

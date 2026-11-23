@@ -102,10 +102,12 @@ interface LiveCodex {
   ambientRequest?: CodexTurnRequest;
   key: string;
   cwd: string;
+  runtime: CodexRuntime;
   server: CodexAppServer;
   /** 스레드 start/resume 까지 끝나면 resolve. 예열 중 들어온 첫 턴이 이걸 기다린다. */
   ready: Promise<void>;
   threadId: string | null;
+  modelProvider?: string;
   codexAgents: NonNullable<AppServerTurnContext["codexAgents"]>;
   agentStartedAt: Map<string, number>;
   onAmbientEvent?: CodexTurnRequest["onAmbientEvent"];
@@ -257,7 +259,7 @@ function openSession(runtime: CodexRuntime, key: string, cwd: string, log?: (lin
 }
 
 async function openSessionNow(runtime: CodexRuntime, key: string, cwd: string, log?: (line: string) => void): Promise<LiveCodex> {
-  const s: LiveCodex = { key, cwd, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, codexAgents: new Map(), agentStartedAt: new Map(), model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
+  const s: LiveCodex = { key, cwd, runtime, server: null as unknown as CodexAppServer, ready: Promise.resolve(), threadId: null, codexAgents: new Map(), agentStartedAt: new Map(), model: null, policy: "ask", turn: null, fileChanges: new Map(), dead: false, idleTimer: null, langDrift: false, toolsSinceReminder: 0, log };
   const server = new CodexAppServer({
     log,
     onNotification: (method, params) => handleNotification(s, method, params),
@@ -471,8 +473,9 @@ async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey"
   if (req.sessionId) {
     try {
       // 기록은 앱이 갖고 있으니 지난 턴 내용은 받지 않는다(전체 히스토리 하이드레이션은 deprecated).
-      const r = await s.server.request<{ thread?: { id?: string }; model?: string }>("thread/resume", { ...base, threadId: req.sessionId, excludeTurns: true });
+      const r = await s.server.request<CodexOpenedThread>("thread/resume", { ...base, threadId: req.sessionId, excludeTurns: true });
       s.threadId = r.thread?.id ?? req.sessionId;
+      s.modelProvider = r.modelProvider ?? r.thread?.modelProvider;
       s.model = r.model || null;
       return;
     } catch (e) {
@@ -487,10 +490,41 @@ async function openThread(s: LiveCodex, req: Pick<CodexTurnRequest, "sessionKey"
       req.onEvent?.({ type: "error", ts: Date.now(), fatal: false, ...appMsg("session.msg.codexThreadMissing", { id: req.sessionId.slice(0, 8), detail }) });
     }
   }
-  const r = await s.server.request<{ thread?: { id?: string }; model?: string }>("thread/start", base);
+  const r = await s.server.request<CodexOpenedThread>("thread/start", base);
   s.threadId = r.thread?.id ?? null;
+  s.modelProvider = r.modelProvider ?? r.thread?.modelProvider;
   s.model = r.model || null;
   if (!s.threadId) throw new MsgError("session.msg.codexThreadOpen");
+}
+
+interface CodexOpenedThread {
+  thread?: { id?: string; modelProvider?: string };
+  model?: string;
+  modelProvider?: string;
+}
+
+export type CodexCredentialStore = "auto" | "file" | "keyring";
+
+/** The separate process ignores user config, so only use it when that preserves
+ * the source turn's connection. Carry over the credential store explicitly. */
+export async function isolatedCodexPredictionRuntime(key: string, threadId: string): Promise<(CodexRuntime & { credentialStore: CodexCredentialStore }) | null> {
+  const s = live.get(key);
+  if (!s || s.dead || s.threadId !== threadId || s.modelProvider !== "openai") return null;
+  const { config } = await s.server.request<{ config?: Record<string, unknown> }>("config/read", { cwd: s.cwd, includeLayers: false }, 3_000);
+  if (!config || live.get(key) !== s || s.dead || s.threadId !== threadId) return null;
+  const sameUrl = (value: unknown, expected: string) =>
+    value == null || (typeof value === "string" && value.replace(/\/$/, "") === expected);
+  if ((config.model_provider != null && config.model_provider !== "openai") ||
+      !sameUrl(config.chatgpt_base_url, "https://chatgpt.com/backend-api") ||
+      !sameUrl(config.openai_base_url, "https://api.openai.com/v1") ||
+      config.forced_login_method != null || config.forced_chatgpt_workspace_id != null ||
+      (config.model_providers != null &&
+        (typeof config.model_providers !== "object" || Object.hasOwn(config.model_providers, "openai")))) return null;
+  const credentialStore = config.cli_auth_credentials_store;
+  if (credentialStore !== "auto" && credentialStore !== "file" && credentialStore !== "keyring") return null;
+  const env = { ...s.runtime.env };
+  delete env.SUDAL_TAB_ID;
+  return { ...s.runtime, env, credentialStore };
 }
 
 export type CodexWarmRequest = Pick<CodexTurnRequest, "sessionKey" | "cwd" | "sessionId" | "policy" | "model" | "effort" | "log" | "codexMode" | "onGoalChanged" | "onAmbientEvent" | "requestAmbientPermission">;

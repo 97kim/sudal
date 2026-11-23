@@ -675,6 +675,15 @@ function GeneralSection() {
         </div>
       </div>
 
+      <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-panel p-4" data-setting="codex-composer-predictions">
+        <input type="checkbox" className="mt-0.5" checked={settings?.codexComposerPredictions ?? false} disabled={!settings}
+          onChange={(e) => void save({ codexComposerPredictions: e.target.checked })} />
+        <span>
+          <span className="block font-medium">{t("settings.codexComposerPredictions.title")}</span>
+          <span className="block text-[12px] leading-5 text-muted">{t("settings.codexComposerPredictions.description")}</span>
+        </span>
+      </label>
+
       <div className="mb-4 rounded-lg border border-line bg-panel p-4" data-setting="otter">
         <div className="mb-1 flex items-center gap-2 font-medium">
           <Logo size={14} className="text-accent" />

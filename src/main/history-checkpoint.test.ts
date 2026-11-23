@@ -4,9 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Store } from "./persistence";
+import { historyFileStamp } from "./history-checkpoint";
 import { SessionManager } from "./session-manager";
 import { replaySession } from "@shared/session-state";
-import type { ChatEvent } from "@shared/chat-events";
+import { ZERO_USAGE, type ChatEvent } from "@shared/chat-events";
 
 function fixture() { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-compact-cache-")); return { dir, store: new Store(dir) }; }
 function manager(store: Store) { return new SessionManager({ store, emit() {}, claudeRuntime: async () => { throw Error("unused"); }, codexRuntime: async () => { throw Error("unused"); } }); }
@@ -70,6 +71,100 @@ test("rebuilt compact caches retain the recent tail and resume at EOF", async ()
   assert.equal(page.state.blocks[0].kind === "user" && page.state.blocks[0].text, "tail body 150");
   assert.equal(page.hasMore, true);
   sessions.shutdown();
+});
+
+test("legacy null-digest metadata is rebuilt on first open or compaction", async () => {
+  for (const compact of [false, true]) {
+    const { store } = fixture();
+    const file = store.threadPath("tab");
+    store.appendEvent("tab", { type: "user_message", ts: 1, id: "old", text: "old" });
+    store.flush();
+    fs.writeFileSync(file + ".compact-meta.json", JSON.stringify({ version: 1, stamp: historyFileStamp(file), digest: null }));
+    if (compact) store.appendEvent("tab", { type: "compacted", ts: 2, trigger: "auto" });
+    const checkpoint = await store.historyCheckpoint("tab");
+    assert.ok(checkpoint);
+    assert.equal(checkpoint.offset, fs.statSync(file).size);
+    assert.equal(checkpoint.state.blocks.some(block => block.kind === "compacted"), compact);
+    assert.match(JSON.parse(fs.readFileSync(file + ".compact-meta.json", "utf8")).digest, /^[0-9a-f]{64}$/);
+  }
+});
+
+test("cold construction catches up with a completion or large tail written while it runs", async () => {
+  for (const complete of [true, false]) {
+    const { store } = fixture();
+    const file = store.threadPath("tab");
+    for (let i = 0; i < 400; i++)
+      store.appendEvent("tab", { type: "user_message", ts: i, id: "u" + i, text: "old" });
+    const pending = store.historyCheckpoint("tab");
+    await Promise.resolve(); // Start reading before the second batch is appended.
+    store.appendEvent("tab", { type: "text_delta", ts: 401, blockId: "new", text: complete ? "latest" : "x".repeat(160 * 1024) });
+    if (complete) store.appendEvent("tab", { type: "turn_result", ts: 402, isError: false, usage: ZERO_USAGE, modelUsage: {}, costUsd: 0, durationMs: 1, numTurns: 1 });
+    store.flush();
+    const size = fs.statSync(file).size;
+    const first = await pending;
+    assert.ok(first && first.offset < size);
+    const deadline = performance.now() + 2000;
+    let checkpoint = store.currentHistoryCheckpoint("tab");
+    // Do not call historyCheckpoint(): the background refresh must do this
+    // without a new visit to the tab.
+    while ((checkpoint?.offset ?? 0) < size && performance.now() < deadline) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      checkpoint = store.currentHistoryCheckpoint("tab");
+    }
+    assert.equal(checkpoint?.offset, size);
+    assert.ok(checkpoint?.state.blocks.some(block => block.kind === "text" && block.id === "new"));
+  }
+});
+
+test("a large incomplete final record does not trigger repeated refreshes", async () => {
+  const { store } = fixture();
+  const file = store.threadPath("tab");
+  store.appendEvent("tab", { type: "user_message", ts: 1, id: "first", text: "first" });
+  store.flush();
+  const completePrefix = fs.statSync(file).size;
+  fs.appendFileSync(file, '{"type":"assistant_text","ts":2,"blockId":"tail","text":"' + "x".repeat(160 * 1024));
+  try {
+    const first = await store.historyCheckpoint("tab");
+    assert.ok(first);
+    assert.equal(first.offset, completePrefix);
+    for (let i = 0; i < 3; i++) await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(store.currentHistoryCheckpoint("tab"), first, "an unchanged incomplete tail must not rewrite the cache");
+
+    fs.appendFileSync(file, '"}\n');
+    const completed = await store.historyCheckpoint("tab");
+    assert.equal(completed?.offset, fs.statSync(file).size);
+    assert.ok(completed?.state.blocks.some(block => block.kind === "text" && block.id === "tail"));
+  } finally {
+    store.resetThread("tab");
+  }
+});
+
+test("live appends advance a checkpoint safely, including appends during a refresh", async () => {
+  const { dir, store } = fixture();
+  const file = store.threadPath("tab");
+  store.appendEvent("tab", { type: "user_message", ts: 1, id: "original", text: "original" });
+  store.appendEvent("tab", { type: "verify", ts: 2, runId: "pending", cwd: dir, head: null, status: "running", commands: [{ cmd: "check", status: "running", output: "diagnostic" }] });
+  const initial = await store.historyCheckpoint("tab");
+  assert.ok(initial);
+  for (let i = 0; i < 280; i++)
+    store.appendEvent("tab", { type: "text_delta", ts: 3 + i, blockId: "live", text: "x".repeat(528) });
+  const refresh = store.historyCheckpoint("tab");
+  // Start reading the snapshot before adding the completion event.
+  await Promise.resolve();
+  store.appendEvent("tab", { type: "turn_result", ts: 300, usage: ZERO_USAGE, modelUsage: {}, costUsd: 0, durationMs: 1, numTurns: 1, isError: false });
+  store.flush();
+  assert.ok((await refresh)?.offset && (store.currentHistoryCheckpoint("tab")?.offset ?? 0) > initial.offset);
+  const finished = await store.historyCheckpoint("tab");
+  assert.ok(finished);
+  assert.equal(finished.offset, fs.statSync(file).size);
+  assert.ok(finished.restore.some(e => e.type === "verify" && e.runId === "pending"));
+  assert.deepEqual(finished.state, replaySession(store.readEvents("tab")));
+  store.appendEvent("tab", { type: "compacted", ts: 301, trigger: "auto" });
+  const compacted = await store.historyCheckpoint("tab");
+  assert.ok(compacted);
+  assert.equal(compacted.offset, fs.statSync(file).size);
+  assert.equal(compacted.state.blocks[0].kind === "user" && compacted.state.blocks[0].text, "");
+  assert.ok(compacted.state.blocks.some(block => block.kind === "compacted"));
 });
 
 test("cached restoration retains pending verification output and clears stale runs", async () => {

@@ -48,6 +48,7 @@ export function MessageList({
   onExpandCompacted,
   onCollapseCompacted,
   readOnly = false,
+  previewing = false,
 }: {
   tabId: string;
   blocks: Block[];
@@ -82,6 +83,7 @@ export function MessageList({
   onExpandCompacted?: () => Promise<void>;
   onCollapseCompacted?: () => void;
   readOnly?: boolean;
+  previewing?: boolean;
 }) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,6 +95,7 @@ export function MessageList({
   const [revealTick, setRevealTick] = useState(0);
   useEffect(() => onReveal(() => setRevealTick((n) => n + 1)), []);
   useEffect(() => {
+    if (previewing) return;
     const blockId = pendingReveal(tabId);
     if (!blockId) return;
     const block = blocks.find((b) => b.id === blockId);
@@ -116,7 +119,7 @@ export function MessageList({
       setTimeout(() => el.classList.remove("reveal-flash"), 1600);
     });
     return () => cancelAnimationFrame(frame);
-  }, [tabId, blocks, revealTick, hasMore, loadingOlder, historyError, onLoadOlder, compactBoundary, compactedExpanded, onExpandCompacted]);
+  }, [tabId, blocks, revealTick, hasMore, loadingOlder, historyError, onLoadOlder, compactBoundary, compactedExpanded, onExpandCompacted, previewing]);
   // 자동 스크롤: 사용자가 맨 아래에 있을 때만 따라간다. 위로 올려 읽는 중이면 새 블록(툴카드·응답)이 와도 끌어내리지 않는다 —
   // 자동으로 내려가는데 사람이 올리면 위아래로 튀기 때문. 예외는 사용자가 방금 보낸 메시지(자기 메시지는 보고 싶으니 맨 아래로).
   // 내용 높이가 바뀔 때(스트리밍·이미지·코드 하이라이트)도 같은 규칙으로 따라간다. "맨 아래로" pill 로 언제든 복귀.

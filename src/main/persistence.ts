@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import { readJsonl } from "./jsonl-reader";
 import { HistoryCheckpoints, historyFileStamp } from "./history-checkpoint";
+import { HISTORY_PREVIEW_MIN_FILE_BYTES, readHistoryPreview } from "./history-preview";
 import path from "node:path";
 import { isInsideRel } from "./path-within";
 import type { ChatEvent } from "@shared/chat-events";
@@ -37,7 +38,7 @@ export class Store {
   private readonly threadsDir: string;
   private readonly attentionPath: string;
   private readonly buffers = new Map<string, string[]>();
-  private readonly compactedBuffers = new Set<string>();
+  private readonly checkpointBoundaries = new Map<string, "compacted" | "completed">();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private checkpoints = new HistoryCheckpoints(id => this.threadPath(id));
 
@@ -194,7 +195,8 @@ export class Store {
   /** 이벤트를 버퍼에 쌓고 잠시 뒤 한 번에 append 한다 (text_delta 가 초당 수십 개라서). */
   appendEvent(tabId: string, event: ChatEvent): void {
     this.onAgentEvent?.(tabId, event);
-    if (event.type === "compacted") this.compactedBuffers.add(tabId);
+    if (event.type === "compacted") this.checkpointBoundaries.set(tabId, "compacted");
+    else if (event.type === "turn_result" && !this.checkpointBoundaries.has(tabId)) this.checkpointBoundaries.set(tabId, "completed");
     const buf = this.buffers.get(tabId) ?? [];
     buf.push(JSON.stringify(event));
     this.buffers.set(tabId, buf);
@@ -210,10 +212,12 @@ export class Store {
     fs.mkdirSync(this.threadsDir, { recursive: true });
     const flushed: string[] = [];
     for (const [tabId, lines] of this.buffers) {
+      const boundary = this.checkpointBoundaries.get(tabId);
+      this.checkpointBoundaries.delete(tabId);
       try {
         const before = historyFileStamp(this.threadPath(tabId));
         fs.appendFileSync(this.threadPath(tabId), `${lines.join("\n")}\n`, "utf8");
-        this.checkpoints.advance(tabId, before, this.compactedBuffers.delete(tabId));
+        this.checkpoints.advance(tabId, before, boundary);
         flushed.push(tabId);
       } catch (e) {
         console.error(`[store] thread append 실패 (${tabId}):`, e);
@@ -271,6 +275,15 @@ export class Store {
   async historyCheckpoint(tabId: string) { if (this.buffers.has(tabId)) this.flush(); return this.checkpoints.ensure(tabId); }
   currentHistoryCheckpoint(tabId: string) { if (this.buffers.has(tabId)) this.flush(); return this.checkpoints.current(tabId); }
 
+  historyPreview(tabId: string) {
+    if (this.buffers.has(tabId)) this.flush();
+    const file = this.threadPath(tabId);
+    const stamp = historyFileStamp(file);
+    if (!stamp || stamp.size < HISTORY_PREVIEW_MIN_FILE_BYTES || this.checkpoints.current(tabId)) return null;
+    const blocks = readHistoryPreview(file);
+    return blocks.length ? blocks : null;
+  }
+
   *iterateEvents(tabId: string, offset = 0): Generator<ChatEvent> {
     // 아직 디스크에 안 내려간 버퍼가 있으면 먼저 내린다.
     if (this.buffers.has(tabId)) this.flush();
@@ -318,7 +331,7 @@ export class Store {
   resetThread(tabId: string): void {
     this.onThreadReset?.(tabId);
     try { fs.rmSync(this.agentCachePath(tabId), {force:true}); } catch {}
-    this.compactedBuffers.delete(tabId);
+    this.checkpointBoundaries.delete(tabId);
     this.checkpoints.invalidate(tabId);
     this.buffers.delete(tabId);
     try {
