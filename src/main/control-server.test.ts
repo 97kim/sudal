@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createConnection } from "node:net";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { ControlServer, controlPipeName, isPipePath, type ControlDeps } from "./control-server";
+import { CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_MAX_COUNT } from "./chat-attachments";
 import type { ChatEvent } from "@shared/chat-events";
 import type { WorkspaceStateDto } from "@shared/ipc";
 
@@ -49,6 +50,7 @@ function fakeDeps() {
       statuses.t4 = "idle";
       return "t4";
     },
+    defaultNewTabProvider: () => "claude",
     configure: (tabId, patch) => calls.push(`configure ${tabId} ${JSON.stringify(patch)}`),
     renameTab: (tabId, title) => {
       calls.push(`rename ${tabId} ${title}`);
@@ -285,8 +287,89 @@ test("ControlServer: 소켓으로 줄 단위 JSON 요청·응답, 잘못된 줄�
     assert.equal(bad.error.code, "error");
     const unknown = JSON.parse(await roundtrip(JSON.stringify({ id: 8, method: "tab.status", params: { tab: "zzz" } })));
     assert.equal(unknown.error.code, "not_found");
+    const tooLarge = JSON.parse(await roundtrip(JSON.stringify({ id: 9, method: "status", params: { ignored: "a".repeat(1024 * 1024) } })));
+    assert.equal(tooLarge.error.code, "too_large", "plain requests keep the one MiB limit");
+    const wrongFrame = JSON.parse(await roundtrip('@{"id":10,"method":"status"}'));
+    assert.equal(wrongFrame.error.code, "bad_request");
   } finally {
     srv.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: tab new and tab send deliver image attachments over the control socket", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sudal-cli-attach-"));
+  const socket = process.platform === "win32" ? controlPipeName(dir) : join(dir, "c.sock");
+  const { deps, calls } = fakeDeps();
+  const server = new ControlServer(deps, socket);
+  const sent: Parameters<ControlDeps["send"]>[] = [];
+  const send = deps.send;
+  deps.send = (tabId, text, images) => {
+    sent.push([tabId, text, images]);
+    return send(tabId, text);
+  };
+  const cli = resolve("cli/sudal.cjs");
+  const run = (...args: string[]) => promisify(execFile)(process.execPath, [cli, "tab", ...args], {
+    cwd: dir, env: { ...process.env, SUDAL_SOCKET: socket, SUDAL_TAB_ID: "", SUDAL_LANG: "en" }, timeout: 15000,
+  });
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+V8s8AAAAASUVORK5CYII=", "base64");
+  const large = Buffer.concat([png, Buffer.alloc(CHAT_IMAGE_MAX_BYTES - png.length)]);
+  const first = "첫 시안.PNG";
+  const second = "후속 시안.png";
+  try {
+    writeFileSync(join(dir, first), large);
+    writeFileSync(join(dir, second), png);
+    writeFileSync(join(dir, "too-large.png"), Buffer.concat([large, Buffer.alloc(1)]));
+    writeFileSync(join(dir, "wrong.png"), "not a PNG");
+    mkdirSync(join(dir, "directory.png"));
+    await server.start();
+
+    const created = JSON.parse((await run("new", "--provider", "codex", "--attach", first)).stdout);
+    assert.equal(created.send.ok, true);
+    assert.equal(sent[0][0], created.tab.id);
+    assert.equal(sent[0][1], "", "tab new can send an image without a prompt");
+    assert.equal(sent[0][2]?.[0].input.name, first);
+    assert.ok(sent[0][2]?.[0].bytes.equals(large), "a six MiB file arrives in full");
+
+    const result = JSON.parse((await run(
+      "send", "--tab", "t1", "--text", "비교해 줘",
+      "--attach", first, `--attach=${join(dir, first)}`, "--attach", first, "--attach", first,
+      "--wait", "--timeout-ms", "5000",
+    )).stdout);
+    assert.equal(result.wait.satisfied, true);
+    assert.equal(result.reply, "네, 했습니다.");
+    assert.equal(sent[1][0], "t1");
+    assert.equal(sent[1][1], "비교해 줘");
+    assert.deepEqual(sent[1][2]?.map((img) => img.input.name), Array<string>(CHAT_IMAGE_MAX_COUNT).fill(first));
+    assert.ok(sent[1][2]?.every((img) => img.bytes.equals(large)), "four six MiB files arrive in full");
+
+    const before = calls.length;
+    const tooMany = Array.from({ length: CHAT_IMAGE_MAX_COUNT + 1 }, () => ["--attach", second]).flat();
+    for (const [args, message] of [
+      [["new", "--attach"], /needs a value/],
+      [["new", "--attach="], /needs a value/],
+      [["new", "--attach", "report.pdf"], /Only PNG/],
+      [["new", "--attach", "wrong.png"], /Only PNG/],
+      [["new", "--attach", "too-large.png"], /6 MiB/],
+      [["new", "--attach", "directory.png"], /Could not read/],
+      [["new", "--attach", second, "--attach", "missing.png"], /Could not read/],
+      [["new", ...tooMany], /up to 4/],
+      [["status", "--attach", second], /available on tab new and tab send/],
+      [["new", "--provider", "antigravity", "--attach", second], /Antigravity/],
+    ] as const) {
+      await assert.rejects(run(...args), (error: Error & { stdout?: string }) => message.test(JSON.parse(error.stdout ?? "{}").error?.message));
+    }
+    await assert.rejects(server.dispatch("tab.new", { images: [{ name: "bad.png", mime: "constructor", base64: png.toString("base64") }] }));
+    deps.defaultNewTabProvider = () => "agy";
+    const snapshot = deps.snapshot;
+    deps.snapshot = (tabId) => ({ ...snapshot(tabId), provider: "agy" });
+    for (const args of [["new", "--cwd", dir, "--attach", second], ["send", "--tab", "t1", "--attach", second]]) {
+      await assert.rejects(run(...args), (error: Error & { stdout?: string }) => JSON.parse(error.stdout ?? "{}").error?.code === "unsupported");
+    }
+    assert.equal(calls.length, before, "invalid attachments neither send a partial message nor create a tab");
+    assert.equal(sent.length, 2);
+  } finally {
+    server.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
