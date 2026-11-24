@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PreviewServer } from "./preview-server";
 
+// Match fs.promises.realpath in the server, including expanded Windows 8.3 names.
+const canonicalPath = realpathSync.native;
+
 async function get(url: string, init?: RequestInit) {
   const r = await fetch(url, init);
   return { status: r.status, type: r.headers.get("content-type"), cache: r.headers.get("cache-control"),
@@ -12,7 +15,7 @@ async function get(url: string, init?: RequestInit) {
 }
 
 test("Codex visualizations grant access to one standalone HTML file", async t => {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "sudal-codex-visualization-")));
+  const base = canonicalPath(mkdtempSync(join(tmpdir(), "sudal-codex-visualization-")));
   const project = join(base, "project");
   const home = join(base, "codex-home");
   const alias = join(base, "codex-home-link");
@@ -89,14 +92,14 @@ test("Codex visualizations grant access to one standalone HTML file", async t =>
     assert.equal(await preview(join(linkedHome, "visualizations", "report draft.html"), linkedHome), null);
   } finally {
     server.close();
-    assert.equal(base.startsWith(realpathSync(tmpdir())), true);
+    assert.equal(base.startsWith(canonicalPath(tmpdir())), true);
     assert.equal(base.includes("sudal-codex-visualization-"), true);
     rmSync(base, { recursive: true, force: true });
   }
 });
 
 test("a Codex visualization never falls back to project-wide access when verification fails", async t => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "sudal-preview-fallback-")));
+  const root = canonicalPath(mkdtempSync(join(tmpdir(), "sudal-preview-fallback-")));
   const home = join(root, "codex-home");
   const directory = join(home, "visualizations");
   mkdirSync(directory, { recursive: true });
@@ -119,14 +122,14 @@ test("a Codex visualization never falls back to project-wide access when verific
   } finally {
     refuseOpen.mock.restore();
     server.close();
-    assert.equal(dirname(root), realpathSync(tmpdir()));
+    assert.equal(dirname(root), canonicalPath(tmpdir()));
     assert.ok(root.includes("sudal-preview-fallback-"));
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("artifact preview classification and grant share one resolved path", async t => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "sudal-preview-resolve-")));
+  const root = canonicalPath(mkdtempSync(join(tmpdir(), "sudal-preview-resolve-")));
   const home = join(root, "codex-home");
   const directory = join(home, "visualizations");
   mkdirSync(directory, { recursive: true });
@@ -154,14 +157,14 @@ test("artifact preview classification and grant share one resolved path", async 
   } finally {
     changingAlias.mock.restore();
     server.close();
-    assert.equal(dirname(root), realpathSync(tmpdir()));
+    assert.equal(dirname(root), canonicalPath(tmpdir()));
     assert.ok(root.includes("sudal-preview-resolve-"));
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("initial Codex preview approval rejects a file or directory that changes before open finishes", async t => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "sudal-preview-grant-")));
+  const root = canonicalPath(mkdtempSync(join(tmpdir(), "sudal-preview-grant-")));
   const home = join(root, "codex-home");
   const directory = join(home, "visualizations", "session");
   mkdirSync(directory, { recursive: true });
@@ -218,14 +221,14 @@ test("initial Codex preview approval rejects a file or directory that changes be
     assert.equal((await get(stable)).body, "<h1>replacement</h1>");
   } finally {
     server.close();
-    assert.equal(dirname(root), realpathSync(tmpdir()));
+    assert.equal(dirname(root), canonicalPath(tmpdir()));
     assert.ok(root.includes("sudal-preview-grant-"));
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("explicit artifact previews expose only .sudal/previews and retain hidden-file and symlink boundaries", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "sudal-artifact-preview-")));
+  const root = canonicalPath(mkdtempSync(join(tmpdir(), "sudal-artifact-preview-")));
   const directory = join(root, ".sudal", "previews");
   mkdirSync(join(directory, "assets"), { recursive: true });
   mkdirSync(join(directory, ".hidden"));
@@ -251,15 +254,15 @@ test("explicit artifact previews expose only .sudal/previews and retain hidden-f
     assert.equal(await preview(join(directory, ".hidden", "index.html")), null);
   } finally {
     server.close();
-    assert.equal(root.startsWith(realpathSync(tmpdir())), true);
+    assert.equal(root.startsWith(canonicalPath(tmpdir())), true);
     assert.equal(root.includes("sudal-artifact-preview-"), true);
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("PreviewServer: 루트 안 파일만 토큰 경로로 서비스하고, 밖·추측 경로·심링크 탈출은 404", async () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "wb-preview-")));
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), "wb-outside-")));
+  const dir = canonicalPath(mkdtempSync(join(tmpdir(), "wb-preview-")));
+  const outside = canonicalPath(mkdtempSync(join(tmpdir(), "wb-outside-")));
   mkdirSync(join(dir, "site", "css"), { recursive: true });
   writeFileSync(join(dir, "site", "index.html"), "<h1>hi</h1><link rel=stylesheet href=css/a.css>");
   writeFileSync(join(dir, "site", "css", "a.css"), "h1{color:red}");
