@@ -3190,10 +3190,17 @@ function registerIpc() {
   ipcMain.handle(IPC.previewUrl, async (_e, cwd: string, path: string, artifact?: boolean) => {
     if (typeof cwd !== "string" || typeof path !== "string") return { ok: false, error: mt("main.error.badArgs") };
     if (!isKnownCwd(cwd)) return { ok: false, error: unknownCwd() };
-    const root = await repoRoot(cwd, await cliDiscovery().buildEnv());
+    const env = await cliDiscovery().buildEnv();
+    const root = await repoRoot(cwd, env);
     const file = isAbsolute(path) ? path : resolve(cwd, path);
-    const url = await previewServer.urlFor(root, file) ?? (artifact === true ? await previewServer.artifactUrlFor(root, file) : null);
-    return url ? { ok: true, url } : { ok: false, error: mt("main.error.previewRepoOnly") };
+    // process.env is case-insensitive on Windows, unlike the CLI environment copy.
+    const configuredCodexHome = (env.CODEX_HOME ?? (isWin ? process.env.CODEX_HOME : undefined))?.trim();
+    const codexHome = configuredCodexHome ? resolve(cwd, configuredCodexHome) : join(app.getPath("home"), ".codex");
+    const url = artifact === true
+      ? await previewServer.urlForArtifact(root, file, codexHome)
+      : await previewServer.urlFor(root, file);
+    return url ? { ok: true, url } : { ok: false,
+      error: mt(artifact === true ? "main.error.previewArtifactUnavailable" : "main.error.previewRepoOnly") };
   });
   ipcMain.handle(IPC.backgroundJobs, () => allBackgroundJobs());
 

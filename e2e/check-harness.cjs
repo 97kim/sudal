@@ -22,6 +22,15 @@ const {_electron} = require('playwright-core');
   const previewDirectory=path.join(project,'.sudal','previews');fs.mkdirSync(previewDirectory,{recursive:true});
   const previewFile=path.join(previewDirectory,'index.html');fs.writeFileSync(previewFile,'<h1>Preview</h1><script src="asset.js"></script>');
   fs.writeFileSync(path.join(previewDirectory,'asset.js'),'window.previewLoaded=true;');
+  const codexHome=path.join(home,'codex-profile');
+  const codexHomeAlias=path.join(home,'codex-profile-link');
+  const visualizations=path.join(codexHome,'visualizations','2026','10','31','session');
+  fs.mkdirSync(visualizations,{recursive:true});
+  fs.symlinkSync(codexHome,codexHomeAlias,process.platform==='win32'?'junction':'dir');
+  const codexPreview=path.join(visualizations,'첫 번째 시안.html');
+  const anotherCodexPreview=path.join(visualizations,'second.html');
+  fs.writeFileSync(codexPreview,'<button onclick="this.textContent=\'Five photos\'">One photo</button>');
+  fs.writeFileSync(anotherCodexPreview,'<p>Second Codex preview</p>');
   const holdRepair=path.join(profile,'hold-repair');
   const fake=path.join(profile,'codex.cjs');
   fs.writeFileSync(fake,`
@@ -72,6 +81,8 @@ const {_electron} = require('playwright-core');
   let app;
   try{
     const env={...process.env,USERPROFILE:home,HOME:home,SUDAL_APPROVED_ROOTS:project};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL;
+    for(const key of Object.keys(env))if(key.toUpperCase()==='CODEX_HOME')delete env[key];
+    env[process.platform==='win32'?'CoDeX_Home':'CODEX_HOME']=codexHomeAlias;
     app=await _electron.launch({args:[bootstrap],cwd:repo,env,timeout:30000});
     const page=await app.firstWindow();const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.locator('[data-composer] textarea').waitFor({timeout:15000});
@@ -149,6 +160,8 @@ const {_electron} = require('playwright-core');
     const marker=data=>'\uE200visualize\uE202'+JSON.stringify(data)+'\uE201';
     const literalMarker=marker({path:previewFile});
     fs.writeFileSync(responseFile,'완료 조건을 제안합니다.\n\n```sudal-task\n'+JSON.stringify({goal:'요청 기록 보존',criteria:[{description:'재시작 후 기록 유지',method:'앱 재시작 후 직접 확인'},{description:'검증 명령 통과',method:'node check.cjs'}]})+'\n```\n\n시안입니다.\n'+marker({path:previewFile,title:'  '})+'\n'+marker({path:secondPreview.replaceAll('\\','/')})+' 뒤\n\n`'+literalMarker+'`\n\n```text\n'+literalMarker+'\n```');
+    fs.appendFileSync(responseFile,'\n\n'+marker({path:codexPreview.replaceAll('\\','/'),title:'Codex 첫 시안'})+
+      '\n\n'+marker({path:anotherCodexPreview,title:'Codex 두 번째 시안'}));
     await page.evaluate(id=>window.sudal.chat.send(id,{text:'요청 기록 보존 작업의 완료 조건을 제안해줘'}),tabId);
     const proposal=page.locator('[data-harness-proposal]');
     await proposal.waitFor({timeout:15000});
@@ -158,13 +171,36 @@ const {_electron} = require('playwright-core');
     assert.equal(await previewControls.count(),2);
     assert.equal((await page.locator('code').allTextContents()).some(text=>text.includes(literalMarker)),true);
     await app.evaluate(({shell})=>{shell.openExternal=async url=>{globalThis.__harnessPreviewUrl=url;};});
-    await previewControl.click();
-    const previewDeadline=Date.now()+10000;let previewUrl;
-    do {previewUrl=await app.evaluate(()=>globalThis.__harnessPreviewUrl);if(previewUrl)break;await new Promise(resolve=>setTimeout(resolve,50));}while(Date.now()<previewDeadline);
-    assert.ok(previewUrl);
+    const openPreview=async control=>{
+      await app.evaluate(()=>globalThis.__harnessPreviewUrl=null);
+      await control.click();
+      const deadline=Date.now()+10000;
+      while(Date.now()<deadline){
+        const url=await app.evaluate(()=>globalThis.__harnessPreviewUrl);
+        if(url)return url;
+        await new Promise(resolve=>setTimeout(resolve,50));
+      }
+      throw Error('Preview URL was not opened');
+    };
+    const previewUrl=await openPreview(previewControl);
     assert.equal((await fetch(previewUrl)).status,200);
     assert.match(await (await fetch(new URL('asset.js',previewUrl))).text(),/previewLoaded/);
     assert.equal((await fetch(new URL('..%2Fgh-auth.cjs',previewUrl))).status,404);
+    const codexUrl=await openPreview(page.getByRole('button',{name:'Codex 첫 시안',exact:true}));
+    const anotherUrl=await openPreview(page.getByRole('button',{name:'Codex 두 번째 시안',exact:true}));
+    assert.notEqual(codexUrl,anotherUrl);
+    assert.match(await (await fetch(anotherUrl)).text(),/Second Codex preview/);
+    assert.equal((await fetch(new URL('second.html',codexUrl))).status,404);
+    const text=await app.evaluate(async ({BrowserWindow},url)=>{
+      const preview=new BrowserWindow({show:false,webPreferences:{sandbox:true}});
+      try{
+        await preview.loadURL(url);
+        return await preview.webContents.executeJavaScript("const button=document.querySelector('button');button.click();button.textContent;");
+      }finally{
+        preview.destroy();
+      }
+    },codexUrl);
+    assert.equal(text,'Five photos');
     await page.screenshot({path:path.join(repo,'.sudal/harness-actual-proposal.png')});
     const proposalAnchor=await anchorOf(proposal);
     await assertAligned(proposal);
@@ -378,7 +414,7 @@ const {_electron} = require('playwright-core');
     const restoredCompletion=reopened.locator('[data-harness-completed]').filter({has:reopened.getByRole('heading',{name:'자동 수정 후 근거 확인',exact:true})});
     await restoredCompletion.waitFor();assert.equal(await anchorOf(restoredCompletion),repairCompletionAnchor);
     assert.equal(restored.tasks.find(item=>item.id===repairTask.id).completedAfterBlockId,repairCompletionAnchor);
-    console.log(JSON.stringify({passed:true,projectToggle:true,taskCard:true,realVerification:true,evidenceAssociation:true,contextInjection:true,rawUserHistoryPreserved:true,staleEvidence:true,completionReason:true,recordsPreserved:true,preventionApplyCancelConfirm:true,configurationReload:true,applicationRestart:true}));
+    console.log(JSON.stringify({passed:true,codexPreviews:true,projectToggle:true,taskCard:true,realVerification:true,evidenceAssociation:true,contextInjection:true,rawUserHistoryPreserved:true,staleEvidence:true,completionReason:true,recordsPreserved:true,preventionApplyCancelConfirm:true,configurationReload:true,applicationRestart:true}));
   }catch(error){if(app){const page=await app.firstWindow();console.error((await page.locator('body').innerText()).slice(-5000));await page.screenshot({path:path.join(repo,'.sudal/verification-feedback-failure.png')});}throw error;}
   finally{await app?.close();const target=path.resolve(profile);if(path.dirname(target)!==path.resolve(os.tmpdir())||!path.basename(target).startsWith('sudal-feedback-e2e-'))throw Error('Unexpected cleanup path');await fs.promises.rm(target,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

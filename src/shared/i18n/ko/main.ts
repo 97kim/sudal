@@ -120,6 +120,7 @@ export const main = {
     unapprovedDir: "디렉토리 선택 창으로 고른 경로만 쓸 수 있습니다.",
     unknownLsp: "알 수 없는 언어 서버",
     previewRepoOnly: "저장소 안의 파일만 미리 볼 수 있습니다.",
+    previewArtifactUnavailable: "미리보기 파일을 열 수 없습니다. 프로젝트나 Codex 시각화 폴더에 파일이 있는지 확인해 주세요.",
     claudeCliMissing: "Claude CLI를 찾을 수 없습니다.",
     codexCliMissing: "Codex CLI를 찾을 수 없습니다.",
     cliLaunchFailed: "CLI 를 띄우지 못했습니다.",
