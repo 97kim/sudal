@@ -118,6 +118,7 @@ export const main: DeepPartial<typeof ko> = {
     unapprovedDir: "Only folders chosen in the folder picker can be used.",
     unknownLsp: "Unknown language server",
     previewRepoOnly: "Only files inside the repository can be previewed.",
+    previewArtifactUnavailable: "Couldn't open the preview. Check whether the file is in the project or the Codex visualizations folder.",
     claudeCliMissing: "Couldn't find the Claude CLI.",
     codexCliMissing: "Couldn't find the Codex CLI.",
     cliLaunchFailed: "Couldn't start the CLI.",
