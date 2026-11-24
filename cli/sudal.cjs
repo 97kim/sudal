@@ -8,6 +8,18 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+// Keep the CLI checks aligned with the chat limits in src/main/chat-attachments.ts.
+const IMAGE_MAX_COUNT = 4;
+const IMAGE_MAX_BYTES = 6 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+]);
+const PNG_HEADER = Buffer.from("89504e470d0a1a0a", "hex");
+const JPEG_HEADER = Buffer.from("ffd8ff", "hex");
+
 function userDataDir() {
   if (process.env.SUDAL_USERDATA) return process.env.SUDAL_USERDATA;
   const home = os.homedir();
@@ -41,6 +53,11 @@ const MESSAGES = {
   // i18n-ignore: 한국어 문구 표
   ko: {
     valueNeeded: "--{{flag}} 에는 값이 필요합니다.",
+    attachCommand: "--attach는 tab new와 tab send에서 사용할 수 있습니다.",
+    attachCount: "이미지는 한 메시지에 {{max}}장까지 첨부할 수 있습니다.",
+    attachFormat: "{{name}}: PNG, JPEG, WebP 이미지만 첨부할 수 있습니다.",
+    attachSize: "{{name}}: 이미지 크기는 장당 {{max}} MiB 이하여야 합니다.",
+    attachRead: "{{name}}: 이미지 파일을 읽을 수 없습니다. 경로와 파일 상태를 확인하세요.",
     timeout: "응답이 {{sec}}초 안에 오지 않았습니다.",
     badResponse: "응답을 읽지 못했습니다: {{line}}",
     disconnected: "응답 전에 연결이 끊겼습니다(앱이 종료 중일 수 있습니다).",
@@ -61,9 +78,9 @@ const MESSAGES = {
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
   sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex|antigravity] [--policy ask|auto_edit|auto_review|full]
-                  [--model <id>] [--title <text>] [--prompt <text>] [--parent <sel>] [--activate]   # 기본은 독립 탭. 작업 위임 시에만 --parent self. --ws 생략 = 호출한 탭의 워크스페이스, 탭 밖이면 활성 탭 기준
+                  [--model <id>] [--title <text>] [--prompt <text>] [--attach <이미지>]... [--parent <sel>] [--activate]   # 기본은 독립 탭. 작업 위임 시에만 --parent self. --ws 생략 = 호출한 탭의 워크스페이스, 탭 밖이면 활성 탭 기준
   sudal tab status --tab <sel>
-  sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
+  sudal tab send --tab <sel> [--text <text>] [--attach <이미지>]... [--wait] [--timeout-ms N]
   sudal tab wait --tab <sel> [--timeout-ms N]
   sudal tab read --tab <sel> [--last N]
   sudal tab activate --tab <sel>
@@ -105,10 +122,16 @@ const MESSAGES = {
 
   <sel> = self(이 명령을 부른 에이전트의 탭) | active(화면에서 보고 있는 탭) | 탭 id | 정확한 제목 | 유일한 제목 접두
   --text / --prompt 에 "-" 를 주면 stdin 에서 읽는다.
+  --attach는 Codex·Claude 탭에서 PNG·JPEG·WebP 이미지 최대 4장(장당 6 MiB)을 보낸다. 상대 경로는 명령을 실행한 폴더 기준이다. 이미지만 보낼 때는 --text / --prompt를 생략한다.
 `,
   },
   en: {
     valueNeeded: "--{{flag}} needs a value.",
+    attachCommand: "--attach is available on tab new and tab send.",
+    attachCount: "A message can include up to {{max}} images.",
+    attachFormat: "{{name}}: Only PNG, JPEG, and WebP images can be attached.",
+    attachSize: "{{name}}: Each image must be at most {{max}} MiB.",
+    attachRead: "{{name}}: Could not read the image. Check the path and the file.",
     timeout: "No response within {{sec}} seconds.",
     badResponse: "Could not read the response: {{line}}",
     disconnected: "The connection closed before a response arrived (the app may be quitting).",
@@ -129,9 +152,9 @@ const MESSAGES = {
   sudal ws add --path /abs/dir
   sudal tab list [--ws <id|name>] [--all]
   sudal tab new [--ws <id|name>] [--cwd /abs/dir] [--provider claude|codex|antigravity] [--policy ask|auto_edit|auto_review|full]
-                  [--model <id>] [--title <text>] [--prompt <text>] [--parent <sel>] [--activate]   # independent by default; use --parent self only for delegated work. No --ws = caller's workspace, or active tab's outside a tab
+                  [--model <id>] [--title <text>] [--prompt <text>] [--attach <image>]... [--parent <sel>] [--activate]   # independent by default; use --parent self only for delegated work. No --ws = caller's workspace, or active tab's outside a tab
   sudal tab status --tab <sel>
-  sudal tab send --tab <sel> --text <text> [--wait] [--timeout-ms N]
+  sudal tab send --tab <sel> [--text <text>] [--attach <image>]... [--wait] [--timeout-ms N]
   sudal tab wait --tab <sel> [--timeout-ms N]
   sudal tab read --tab <sel> [--last N]
   sudal tab activate --tab <sel>
@@ -173,6 +196,7 @@ const MESSAGES = {
 
   <sel> = self (the tab of the agent running this command) | active (the tab shown in the app) | tab id | exact title | unique title prefix
   Pass "-" to --text / --prompt to read it from stdin.
+  --attach sends up to 4 PNG, JPEG, or WebP images (6 MiB each) to a Codex or Claude tab. Relative paths start from your current directory. For an image-only message, omit --text / --prompt.
 `,
   },
 };
@@ -213,7 +237,7 @@ function parseArgs(argv) {
 }
 
 /** 값이 있어야 하는 플래그. `--tab` 처럼 값 없이 쓰면 서버가 active 로 오해하기 전에 여기서 거절한다. */
-const VALUE_FLAGS = ["tab", "parent", "text", "prompt", "ws", "cwd", "provider", "policy", "model", "title", "path", "url", "line", "last", "timeoutMs", "cmd", "run", "key", "spec", "task", "agent", "dispatch", "capability", "question", "options", "resume", "id", "body", "subject", "type", "to", "outcome", "filesModified", "types", "ack", "objective", "coordinator", "reason", "requestId", "deps", "terminal", "resolution", "name", "cron", "timezone", "precheck", "precheckTimeout", "grace", "workspace", "enabled", "selector", "out", "by", "level", "limit", "timeout"];
+const VALUE_FLAGS = ["tab", "parent", "text", "prompt", "attach", "ws", "cwd", "provider", "policy", "model", "title", "path", "url", "line", "last", "timeoutMs", "cmd", "run", "key", "spec", "task", "agent", "dispatch", "capability", "question", "options", "resume", "id", "body", "subject", "type", "to", "outcome", "filesModified", "types", "ack", "objective", "coordinator", "reason", "requestId", "deps", "terminal", "resolution", "name", "cron", "timezone", "precheck", "precheckTimeout", "grace", "workspace", "enabled", "selector", "out", "by", "level", "limit", "timeout"];
 function checkValueFlags(flags) {
   for (const k of VALUE_FLAGS) if (flags[k] === true || (Array.isArray(flags[k]) && flags[k].includes(true))) fail(t("valueNeeded", { flag: k.replace(/([A-Z])/g, (m) => "-" + m.toLowerCase()) }), "bad_request");
 }
@@ -221,6 +245,48 @@ function checkValueFlags(flags) {
 function readStdinIfDash(v) {
   if (v !== "-") return v;
   return fs.readFileSync(0, "utf8").replace(/\n$/, "");
+}
+
+function hasImageHeader(bytes, mime) {
+  if (mime === "image/png") return bytes.subarray(0, PNG_HEADER.length).equals(PNG_HEADER);
+  if (mime === "image/jpeg") return bytes.subarray(0, JPEG_HEADER.length).equals(JPEG_HEADER);
+  return bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+}
+
+function readAttachments(value) {
+  if (value === undefined) return undefined;
+  const files = Array.isArray(value) ? value : [value];
+  if (files.length > IMAGE_MAX_COUNT) fail(t("attachCount", { max: IMAGE_MAX_COUNT }), "bad_request");
+  return files.map((file) => {
+    if (!file.trim()) fail(t("valueNeeded", { flag: "attach" }), "bad_request");
+    const name = path.basename(file);
+    const mime = IMAGE_EXTENSIONS.get(path.extname(name).toLowerCase());
+    if (!mime) fail(t("attachFormat", { name }), "bad_request");
+    try {
+      // Read under the CLI caller's permissions. Only bytes and the display name reach the app.
+      const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
+      try {
+        const stat = fs.fstatSync(fd);
+        if (!stat.isFile() || stat.size === 0) fail(t("attachRead", { name }), "bad_request");
+        if (stat.size > IMAGE_MAX_BYTES) fail(t("attachSize", { name, max: IMAGE_MAX_BYTES / 1024 / 1024 }), "bad_request");
+        const bytes = Buffer.allocUnsafe(stat.size + 1);
+        let total = 0;
+        while (total < bytes.length) {
+          const count = fs.readSync(fd, bytes, total, bytes.length - total, null);
+          if (count === 0) break;
+          total += count;
+        }
+        if (total !== stat.size) fail(t("attachRead", { name }), "bad_request");
+        const image = bytes.subarray(0, total);
+        if (!hasImageHeader(image, mime)) fail(t("attachFormat", { name }), "bad_request");
+        return { name, mime, base64: image.toString("base64") };
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return fail(t("attachRead", { name }), "bad_request");
+    }
+  });
 }
 
 /**
@@ -240,7 +306,8 @@ function request(method, params, deadlineMs) {
     };
     const timer = setTimeout(() => finish(reject, Object.assign(new Error(t("timeout", { sec: Math.round(deadlineMs / 1000) })), { code: "timeout" })), deadlineMs);
     sock.setEncoding("utf8");
-    sock.on("connect", () => sock.write(JSON.stringify({ id: 1, method, params }) + "\n"));
+    // The attachment frame has its own size cap. Older servers reject it instead of dropping images.
+    sock.on("connect", () => sock.write((params.images ? "@" : "") + JSON.stringify({ id: 1, method, params }) + "\n"));
     sock.on("data", (d) => {
       buf += d;
       const i = buf.indexOf("\n");
@@ -284,6 +351,9 @@ async function main() {
   }
   const [group, cmd] = pos;
   checkValueFlags(flags);
+  if (flags.attach !== undefined && (group !== "tab" || (cmd !== "new" && cmd !== "send"))) {
+    return fail(t("attachCommand"), "bad_request");
+  }
   // `self` = 이 CLI 를 부른 에이전트의 탭. 앱이 탭의 에이전트를 띄울 때 SUDAL_TAB_ID 로 알려 준다.
   // `active`(사람이 화면에서 고른 탭)와 다르다 — 에이전트가 화면에 떠 있지 않은 탭에서 도는 일이 흔하다.
   const selfTab = process.env.SUDAL_TAB_ID || undefined;
@@ -358,11 +428,11 @@ async function main() {
   else if (group === "tab" && cmd === "list") { method = "tab.list"; params = { workspace: flags.ws, all: flags.all === true }; }
   else if (group === "tab" && cmd === "new") {
     method = "tab.new";
-    params = { workspace: flags.ws, cwd: flags.cwd, provider: flags.provider, policy: flags.policy, model: flags.model, title: flags.title, parent: flags.parent, prompt: flags.prompt !== undefined ? readStdinIfDash(String(flags.prompt)) : undefined, activate: flags.activate === true };
+    params = { workspace: flags.ws, cwd: flags.cwd, provider: flags.provider, policy: flags.policy, model: flags.model, title: flags.title, parent: flags.parent, prompt: flags.prompt !== undefined ? readStdinIfDash(String(flags.prompt)) : undefined, images: readAttachments(flags.attach), activate: flags.activate === true };
   } else if (group === "tab" && cmd === "status") { method = "tab.status"; params = { tab: flags.tab }; }
   else if (group === "tab" && cmd === "send") {
     method = "tab.send";
-    params = { tab: flags.tab, text: flags.text !== undefined ? readStdinIfDash(String(flags.text)) : undefined, wait: flags.wait === true, timeoutMs };
+    params = { tab: flags.tab, text: flags.text !== undefined ? readStdinIfDash(String(flags.text)) : undefined, images: readAttachments(flags.attach), wait: flags.wait === true, timeoutMs };
   } else if (group === "tab" && cmd === "wait") { method = "tab.wait"; params = { tab: flags.tab, timeoutMs }; }
   else if (group === "tab" && cmd === "read") { method = "tab.read"; params = { tab: flags.tab, last: flags.last !== undefined ? Number(flags.last) : undefined }; }
   else if (group === "tab" && cmd === "activate") { method = "tab.activate"; params = { tab: flags.tab }; }

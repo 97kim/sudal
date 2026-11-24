@@ -131,6 +131,14 @@ test("saveChatImages: <threadId>/<timestamp>-<i>.<ext> 로 저장", () => {
     ],
   );
   assert.equal(fs.readFileSync(got.stored[0].filePath).toString(), "fake-png-bytes");
+
+  const second = prepareChatImages([image({ base64: Buffer.from("second message image").toString("base64") })]);
+  assert.ok(second.ok);
+  const alsoSaved = saveChatImages({ baseDir, threadId: "thread-1", images: second.prepared, now: 1700000000000 });
+  assert.ok(alsoSaved.ok);
+  assert.notEqual(alsoSaved.stored[0].filePath, got.stored[0].filePath);
+  assert.equal(fs.readFileSync(alsoSaved.stored[0].filePath, "utf8"), "second message image");
+  assert.equal(fs.readFileSync(got.stored[0].filePath, "utf8"), "fake-png-bytes");
   fs.rmSync(baseDir, { recursive: true, force: true });
 });
 

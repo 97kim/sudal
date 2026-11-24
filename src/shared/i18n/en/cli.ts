@@ -131,6 +131,7 @@ export const cli: DeepPartial<typeof ko> = {
     tooMany: "A connection can have at most {{max}} requests in flight.",
     responseFailed: "Could not build the response: {{detail}}",
     methodMissing: "method is missing.",
+    attachmentFrameInvalid: "An attachment request must include images and use tab new or tab send.",
     pathAbsolute: "--path must be an absolute path.",
     cwdAbsolute: "--cwd must be an absolute path.",
     cronInvalidFormat: "Not a valid cron expression (minute hour day month weekday).",

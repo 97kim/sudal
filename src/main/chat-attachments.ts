@@ -3,6 +3,7 @@
 
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "node:crypto";
 import { mt } from "./i18n";
 
 // 타입만 사용하므로 `import(...)` 타입 구문으로 가져온다.
@@ -39,7 +40,7 @@ const MIME_EXTENSIONS: Record<ChatImageMime, string> = {
 };
 
 export function isChatImageMime(mime: unknown): mime is ChatImageMime {
-  return typeof mime === "string" && mime in MIME_EXTENSIONS;
+  return typeof mime === "string" && Object.hasOwn(MIME_EXTENSIONS, mime);
 }
 
 /** 지원 mime 이 아니면 null. 확장자는 mime 으로만 정한다 — 사용자 파일명은 신뢰하지 않는다. */
@@ -157,17 +158,41 @@ export function saveChatImages({
 }): SaveResult {
   if (images.length === 0) return { ok: true, stored: [] };
   const dir = path.join(baseDir, threadId);
+  const created: string[] = [];
   try {
     fs.mkdirSync(dir, { recursive: true });
     const stored = images.map(({ input, bytes }, i) => {
-      const filePath = path.join(dir, attachmentFileName(now, i, input.mime));
-      fs.writeFileSync(filePath, bytes);
+      const name = attachmentFileName(now, i, input.mime);
+      let filePath = path.join(dir, name);
+      let fd: number;
+      try {
+        fd = fs.openSync(filePath, "wx");
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        // Two sends to the same tab can share a timestamp. Never replace the earlier attachment.
+        filePath = path.join(dir, `${randomUUID()}-${name}`);
+        fd = fs.openSync(filePath, "wx");
+      }
+      created.push(filePath);
+      try {
+        fs.writeFileSync(fd, bytes);
+      } finally {
+        fs.closeSync(fd);
+      }
       return { name: input.name, mime: input.mime, base64: input.base64, filePath };
     });
     return { ok: true, stored };
   } catch (e) {
+    discardChatImageFiles(created);
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: mt("session.error.image.saveFailed", { detail: msg }) };
+  }
+}
+
+/** Best-effort cleanup after a write or send fails. Preserve the original error. */
+export function discardChatImageFiles(paths: string[]): void {
+  for (const filePath of paths) {
+    try { fs.unlinkSync(filePath); } catch { /* The original failure is reported by the caller. */ }
   }
 }
 

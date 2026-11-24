@@ -43,9 +43,11 @@ import {
 } from "@shared/usage";
 import { tabCwd, tabTitle, tabsUsingPath, type WorktreeMeta } from "@shared/workspace-model";
 import {
+  discardChatImageFiles,
   prepareChatImages,
   saveChatImages,
   toHistoryImages,
+  type PreparedChatImage,
 } from "./chat-attachments";
 import { forkClaudeSession, setClaudeSessionIdleMs, type ClaudeRuntime } from "./claude-adapter";
 import { buildCliDiscovery, codexSupportsNoDaemon, type CliDiscovery } from "./cli-discovery";
@@ -954,6 +956,7 @@ async function startControlServer() {
       readyForNewSession: () => cliDefaultsReady,
       addWorkspace: (path) => workspaces.addWorkspace(path),
       createTab: (workspaceId) => workspaces.createTab(workspaceId),
+      defaultNewTabProvider: () => workspaces.defaultNewTabProvider(),
       configure: (tabId, patch) => void sessions.configure(tabId, patch),
       renameTab: (tabId, title) => workspaces.renameTab(tabId, title),
       linkAgentTab: (tabId, parentTabId) => workspaces.linkAgentTab(tabId, parentTabId),
@@ -964,7 +967,7 @@ async function startControlServer() {
         return { status: s.status, provider: s.provider, cwd: s.cwd, sessionId: s.sessionId, controller: s.controller, pending: s.pendingPrompts.length, limitWait: s.limitWait !== null };
       },
       events: (tabId) => sessions.events(tabId),
-      send: (tabId, text) => handleChatSend(tabId, { text }),
+      send: sendChatMessage,
       abort: (tabId) => { if (feedbackRunner?.active(tabId)) void feedbackRunner.stop(tabId); else sessions.abort(tabId); },
       verify: (tabId, commands) => startVerify(tabId, commands),
       verifyAbort: (tabId) => { if (feedbackRunner?.active(tabId)) { void feedbackRunner.stop(tabId); return true; } return verifyRunner.abort(tabId); },
@@ -2206,33 +2209,41 @@ async function handleChatSend(
   tabId: string,
   payload: ChatSendDto,
 ): Promise<ChatSendResult> {
+  const prepared = prepareChatImages(payload?.images);
+  if (!prepared.ok) return { ok: false, error: prepared.error };
+  return sendChatMessage(tabId, payload?.text ?? "", prepared.prepared);
+}
+
+async function sendChatMessage(tabId: string, input: string, images: PreparedChatImage[] = []): Promise<ChatSendResult> {
+  const text = input.trim();
+  const { provider } = sessions.snapshot(tabId);
+  if (provider === "codex" && isCodexSlashCommand(text)) return { ok: false, error: mt("session.msg.codexControl.unsupported", { command: text.split(/\s/)[0] }) };
+  if (provider === "agy" && images.length)
+    return { ok: false, error: mt("session.error.agyImagesUnsupported") };
+  if (!text && images.length === 0)
+    return { ok: false, error: mt("main.error.emptyContent") };
+
   await feedbackRunner?.stop(tabId);
   const feedbackCwd = workspaces.tab(tabId) ? sessions.snapshot(tabId).cwd : null;
   if (feedbackCwd) await feedbackRunner?.stopForCwd(feedbackCwd);
-  const text = (payload?.text ?? "").trim();
-  if (sessions.snapshot(tabId).provider === "codex" && isCodexSlashCommand(text)) return { ok: false, error: mt("session.msg.codexControl.unsupported", { command: text.split(/\s/)[0] }) };
-  if (sessions.snapshot(tabId).provider === "agy" && payload?.images?.length)
-    return { ok: false, error: mt("session.error.agyImagesUnsupported") };
-  const prepared = prepareChatImages(payload?.images);
-  if (!prepared.ok) return { ok: false, error: prepared.error };
-  if (!text && prepared.prepared.length === 0)
-    return { ok: false, error: mt("main.error.emptyContent") };
 
   const saved = saveChatImages({
     baseDir: attachmentsDir(),
     threadId: tabId,
-    images: prepared.prepared,
+    images,
   });
   if (!saved.ok) return { ok: false, error: saved.error };
 
   const ts = Date.now();
-  return sessions.send(tabId, text || mt("main.chat.imageOnly"), saved.stored, {
+  const result = await sessions.send(tabId, text || mt("main.chat.imageOnly"), saved.stored, {
     type: "user_message",
     ts,
     id: `u-${ts}-${Math.random().toString(36).slice(2, 8)}`,
     text,
     images: saved.stored.length > 0 ? toHistoryImages(saved.stored) : undefined,
   });
+  if (!result.ok) discardChatImageFiles(saved.stored.map(({ filePath }) => filePath));
+  return result;
 }
 
 async function pickDirectory(

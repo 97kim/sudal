@@ -97,6 +97,11 @@ export class WorkspaceService {
     return this.availableProviders.length === 1 ? this.availableProviders[0] : preferred ?? "claude";
   }
 
+  defaultNewTabProvider(): Provider {
+    const active = this.model.tabs.find((tab) => tab.id === this.model.activeTabId);
+    return this.newTabProvider(active?.provider);
+  }
+
   /** 새 워크스페이스의 첫 탭: 이어받을 탭이 없으니 설정의 기본값만. */
   private firstTabDefaults() {
     const provider = this.newTabProvider();
@@ -240,7 +245,7 @@ export class WorkspaceService {
     // 정책은 설정이 정해 두었으면 그것, 아니면 활성 탭을 따른다.
     // 작업 경로는 inheritedCwd 가 정한다(다른 워크스페이스면 그쪽 최근 경로).
     const active = this.model.tabs.find((t) => t.id === this.model.activeTabId);
-    const provider = this.newTabProvider(active?.provider);
+    const provider = this.defaultNewTabProvider();
     const now = Date.now();
     const { model, tab } = createTab(this.model, ws.id, now, randomUUID(), {
       provider,

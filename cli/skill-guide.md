@@ -36,6 +36,17 @@ sudal tab send --tab "auth bug" --text "Add a test too" --wait --timeout-ms 9000
 - With `satisfied:true`, `reply` holds the assistant text after the last user message, joined together. If you also need the tool calls, use `tab read`.
 - Pass long text through stdin with `--text -` / `--prompt -`.
 
+Attach local images to a Codex or Claude message:
+
+```text
+sudal tab new --provider codex --title "UI review" --prompt "Review this screenshot" --attach "before.png"
+sudal tab send --tab "UI review" --text "Compare these screenshots" --attach "before.png" --attach "after.png" --wait
+```
+
+- `--attach` is repeatable. Use PNG, JPEG, or WebP files, up to 4 per message and 6 MiB per image. Relative paths use the CLI's current directory.
+- To send only images, omit `--text` or `--prompt`. Antigravity and non-image files are currently unsupported by `--attach`.
+- For other local files, include an accessible path in the prompt and ask the agent to read it.
+
 See state:
 
 ```text

@@ -1,5 +1,6 @@
 // `sudal` CLI(cli/sudal.cjs)가 붙는 제어 서버. userData 의 유닉스 소켓(0600, 이 사용자만)으로 줄 단위 JSON 을 주고받는다.
 //   요청  {"id":1,"method":"tab.list","params":{...}}
+//   이미지가 있는 채팅 요청은 줄 앞에 @ 를 붙인다. 이 형식에만 이미지 크기만큼 별도 여유를 둔다.
 //   응답  {"id":1,"result":{...}}  또는  {"id":1,"error":{"code":"...","message":"..."}}
 // 앱 상태를 건드리는 일은 전부 deps 로 위임한다 — 이 파일은 프로토콜·선택자·대기 로직만 알고, 테스트는 가짜 deps 로 돈다.
 // 신뢰 모델: 소켓에 붙을 수 있는 건 같은 사용자(UID)뿐이고, 그 사용자는 앱을 직접 조작할 수 있는 사람이다. 그래서 CLI 는
@@ -22,6 +23,7 @@ import type { ConsoleLine, NetFailure } from "@shared/browser-diagnostics";
 import { tabTitle as sharedTabTitle, type TabMeta } from "@shared/workspace-model";
 import { mainI18n, mt } from "./i18n";
 import { verifyOutputText } from "@shared/verify";
+import { CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_MAX_COUNT, prepareChatImages, type PreparedChatImage } from "./chat-attachments";
 
 /** 이름 없는 탭의 표시 제목은 지금 언어로. */
 const tabTitle = (t: TabMeta): string => sharedTabTitle(t, mt("shared.untitledTab"));
@@ -45,6 +47,7 @@ export interface ControlDeps {
   state(): WorkspaceStateDto;
   addWorkspace(path: string): { workspaceId: string; tabId: string };
   createTab(workspaceId?: string): string | null;
+  defaultNewTabProvider(): Provider;
   /** cwd 는 승인된 루트 안이어야 한다 — 호출자가 approveRoot 로 먼저 허용한다. */
   configure(tabId: string, patch: { cwd?: string; provider?: Provider; policy?: PermissionPolicy; model?: string }): void;
   renameTab(tabId: string, title: string): void;
@@ -53,7 +56,7 @@ export interface ControlDeps {
   closeTab(tabId: string): void;
   snapshot(tabId: string): ControlSnapshot;
   events(tabId: string): ChatEvent[];
-  send(tabId: string, text: string): Promise<ChatSendResult>;
+  send(tabId: string, text: string, images?: PreparedChatImage[]): Promise<ChatSendResult>;
   abort(tabId: string): void;
   /** 검증 실행(저장한 명령 또는 commands). 결과는 탭 기록의 verify 블록으로 남는다. */
   verify(tabId: string, commands?: string[]): Promise<{ ok: true; runId: string } | { ok: false; error: string }>;
@@ -96,6 +99,7 @@ type Json = unknown;
 const BUSY: SessionStatus[] = ["running", "queued", "waiting_permission"];
 /** 한 줄(요청 하나)의 최대 바이트. 넘으면 연결을 끊는다 — 개행 없는 입력이 메모리에 쌓이지 않게. */
 const MAX_LINE_BYTES = 1024 * 1024;
+const MAX_IMAGE_LINE_BYTES = MAX_LINE_BYTES + CHAT_IMAGE_MAX_COUNT * (4 * Math.ceil(CHAT_IMAGE_MAX_BYTES / 3));
 /** 연결 하나가 동시에 걸어 둘 수 있는 요청 수(wait 를 무한정 쌓지 못하게). */
 const MAX_INFLIGHT = 8;
 
@@ -268,30 +272,41 @@ export class ControlServer {
   }
 
   private onConnection(sock: Socket) {
-    let buf = "";
+    const parts: string[] = [];
+    let lineBytes = 0;
+    let maxBytes = MAX_LINE_BYTES;
     let inflight = 0;
     // 연결이 끊기면 그 연결이 걸어 둔 대기(ask·check --wait)를 풀어 준다 — 질문·메시지는 남고 waiter 만 사라진다
     const ac = new AbortController();
     sock.on("close", () => ac.abort());
     sock.setEncoding("utf8");
     sock.on("data", (chunk: string) => {
-      buf += chunk;
-      if (Buffer.byteLength(buf) > MAX_LINE_BYTES) {
-        sock.write(JSON.stringify({ id: null, error: { code: "too_large", message: mt("cli.control.tooLarge", { max: MAX_LINE_BYTES }) } }) + "\n");
-        sock.destroy();
-        return;
-      }
-      let i: number;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, i).trim();
-        buf = buf.slice(i + 1);
+      if (sock.writableEnded) return;
+      let start = 0;
+      while (start < chunk.length) {
+        const end = chunk.indexOf("\n", start);
+        const part = chunk.slice(start, end === -1 ? undefined : end);
+        if (lineBytes === 0) maxBytes = part.startsWith("@") ? MAX_IMAGE_LINE_BYTES : MAX_LINE_BYTES;
+        lineBytes += Buffer.byteLength(part);
+        if (lineBytes > maxBytes) {
+          sock.end(JSON.stringify({ id: null, error: { code: "too_large", message: mt("cli.control.tooLarge", { max: maxBytes }) } }) + "\n");
+          sock.destroySoon();
+          return;
+        }
+        if (part) parts.push(part);
+        if (end === -1) break;
+        start = end + 1;
+        const attachmentFrame = maxBytes === MAX_IMAGE_LINE_BYTES;
+        const line = parts.join("").trim();
+        parts.length = 0;
+        lineBytes = 0;
         if (!line) continue;
         if (inflight >= MAX_INFLIGHT) {
           sock.write(JSON.stringify({ id: null, error: { code: "too_many", message: mt("cli.control.tooMany", { max: MAX_INFLIGHT }) } }) + "\n");
           continue;
         }
         inflight++;
-        void this.handleLine(line, ac.signal).then((out) => {
+        void this.handleLine(line, attachmentFrame, ac.signal).then((out) => {
           inflight--;
           if (sock.destroyed) return;
           try {
@@ -307,14 +322,17 @@ export class ControlServer {
     });
   }
 
-  private async handleLine(line: string, signal?: AbortSignal): Promise<Json> {
+  private async handleLine(line: string, attachmentFrame: boolean, signal?: AbortSignal): Promise<Json> {
     let id: unknown = null;
     try {
-      const req = JSON.parse(line) as { id?: unknown; method?: unknown; params?: unknown };
+      const req = JSON.parse(attachmentFrame ? line.slice(1) : line) as { id?: unknown; method?: unknown; params?: unknown };
       // id 는 그대로 돌려주므로 문자열·유한 숫자·null 만 받는다(중첩 객체를 되돌려 주다 직렬화가 터지지 않게)
       id = typeof req.id === "string" || (typeof req.id === "number" && Number.isFinite(req.id)) ? req.id : null;
       if (typeof req.method !== "string") throw new ControlError(mt("cli.control.methodMissing"));
       const params = (req.params && typeof req.params === "object" && !Array.isArray(req.params) ? req.params : {}) as Params;
+      if (attachmentFrame && ((req.method !== "tab.new" && req.method !== "tab.send") || !Array.isArray(params.images) || !params.images.length)) {
+        throw new ControlError(mt("cli.control.attachmentFrameInvalid"));
+      }
       const result = await this.dispatch(req.method, params, signal);
       return { id, result };
     } catch (e) {
@@ -503,11 +521,16 @@ export class ControlServer {
         if (model) patch.model = model;
         const title = params.title !== undefined ? this.requireString(params, "title") : undefined;
         const prompt = params.prompt !== undefined ? this.requireString(params, "prompt") : undefined;
+        const images = this.parseImages(params.images);
+        if (images.length && (provider ?? this.deps.defaultNewTabProvider()) === "agy") {
+          throw new ControlError(mt("session.error.agyImagesUnsupported"), "unsupported");
+        }
+        const shouldSend = !!prompt || images.length > 0;
         // 호출자는 워크스페이스 선택용이다. 작업 위임 관계는 명시한 부모에만 연결한다.
         const parent = params.parent !== undefined ? this.resolveTab(this.requireString(params, "parent")) : undefined;
         if (parent && parent.workspaceId !== ws.id) throw new ControlError(mt("cli.control.parentWorkspaceMismatch"));
         // 프롬프트를 보내려면 작업 경로가 있어야 한다: --cwd 나 워크스페이스 기본 경로. 없으면 만들기 전에 거절.
-        if (prompt && !cwd && !ws.path) throw new ControlError(mt("cli.control.promptNeedsCwd"));
+        if (shouldSend && !cwd && !ws.path) throw new ControlError(mt("cli.control.promptNeedsCwd"));
         if (cwd) this.deps.approveRoot(cwd);
         // createTab 은 새 탭을 활성화한다 — --activate 가 아니면 보고 있던 탭으로 되돌린다(사람의 화면을 빼앗지 않게)
         const prevActive = st.model.activeTabId;
@@ -519,8 +542,8 @@ export class ControlServer {
         if (params.activate === true) this.deps.activateTab(tabId);
         else if (prevActive && prevActive !== tabId) this.deps.activateTab(prevActive);
         let sent: ChatSendResult | null = null;
-        if (prompt) {
-          sent = await this.deps.send(tabId, prompt);
+        if (shouldSend) {
+          sent = await this.deps.send(tabId, prompt ?? "", images);
           if (!sent.ok) throw new ControlError(mt("cli.control.tabCreatedSendFailed", { detail: sent.error }), "send_failed", { tabId });
         }
         const tab = this.deps.state().model.tabs.find((t) => t.id === tabId)!;
@@ -533,9 +556,13 @@ export class ControlServer {
       case "tab.send": {
         const tab = this.resolveTab(params.tab);
         if (params.wait === true) this.rejectSelfWait(tab, params);
-        const text = this.requireString(params, "text");
+        const images = this.parseImages(params.images);
+        if (images.length && this.deps.snapshot(tab.id).provider === "agy") {
+          throw new ControlError(mt("session.error.agyImagesUnsupported"), "unsupported");
+        }
+        const text = params.text === undefined && images.length ? "" : this.requireString(params, "text");
         const since = this.deps.events(tab.id).length;
-        const r = await this.deps.send(tab.id, text);
+        const r = await this.deps.send(tab.id, text, images);
         if (!r.ok) throw new ControlError(r.error, "send_failed");
         if (params.wait === true) {
           const w = await this.waitTurn(tab.id, since, num(params.timeoutMs) ?? 600_000);
@@ -725,6 +752,12 @@ export class ControlServer {
     const s = str(params[key]);
     if (!s) throw new ControlError(mt("cli.control.valueRequired", { key }));
     return s;
+  }
+
+  private parseImages(value: unknown): PreparedChatImage[] {
+    const result = prepareChatImages(value);
+    if (!result.ok) throw new ControlError(result.error);
+    return result.prepared;
   }
 
   /** orch.* — 오케스트레이션. 코디네이터 명령은 --run/--key, 워커 명령은 --run/--dispatch/--capability(preamble 값). */

@@ -129,6 +129,7 @@ export const cli = {
     tooMany: "연결 하나에 동시 요청은 {{max}}개까지입니다.",
     responseFailed: "응답을 만들지 못했습니다: {{detail}}",
     methodMissing: "method 가 없습니다.",
+    attachmentFrameInvalid: "첨부 요청은 이미지를 포함해야 하며 tab new 또는 tab send를 사용해야 합니다.",
     pathAbsolute: "--path 는 절대 경로여야 합니다.",
     cwdAbsolute: "--cwd 는 절대 경로여야 합니다.",
     cronInvalidFormat: "cron 형식이 아닙니다(분 시 일 월 요일).",
