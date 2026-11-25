@@ -230,6 +230,217 @@ test("UsageScanner includes persisted Antigravity history and does not duplicate
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("UsageScanner resumes Codex byte ranges across restart, partial lines, and read failures", async t => {
+  const { default: fs } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = fs.mkdtempSync(join(tmpdir(), "sudal-codex-usage-resume-"));
+  try {
+    const codexDir = join(dir, "codex");
+    fs.mkdirSync(codexDir);
+    const file = join(codexDir, "rollout.jsonl");
+    const options = { codexDir, claudeDir: join(dir, "claude"), cachePath: join(dir, "cache.json") };
+    const meta = JSON.stringify({ type: "session_meta", payload: { id: "s", cwd: "/원본" } });
+    const context = JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.5" } });
+    const first = codexTc("2026-11-24T01:00:00Z", { input_tokens: 100, cached_input_tokens: 30, output_tokens: 10 }, 4);
+    const nextContext = JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.5", cwd: "/변경" } });
+    const next = codexTc("2026-11-24T01:00:01Z", { input_tokens: 155, cached_input_tokens: 45, cache_write_input_tokens: 10, output_tokens: 17 }, 5);
+    const repeated = codexTc("2026-11-24T01:00:02Z", { input_tokens: 155, cached_input_tokens: 45, cache_write_input_tokens: 10, output_tokens: 17 }, 6);
+    const padding = (JSON.stringify({ type: "tool_result", text: "x".repeat(1024) }) + "\n").repeat(2048);
+    fs.writeFileSync(file, [meta, context, first].join("\r\n") + "\r\n" + padding);
+    const originalOpen = fs.promises.open;
+    let bytes = 0;
+    let failAt: number | undefined;
+    const tracked = t.mock.method(fs.promises, "open", async (name: string, flags: string) => {
+      const handle = await originalOpen(name, flags);
+      if (name !== file) return handle;
+      const read = handle.read.bind(handle);
+      t.mock.method(handle, "read", async (buffer: Buffer, offset: number, length: number, position: number) => {
+        if (position === failAt) throw new Error("temporary fixture read failure");
+        const result = await read(buffer, offset, length, position);
+        bytes += result.bytesRead;
+        return result;
+      });
+      return handle;
+    });
+    const warn = t.mock.method(console, "warn", () => {});
+    let scanner = new UsageScanner(options);
+    await scanner.scan();
+    const boundary = fs.statSync(file).size;
+    assert.ok(bytes >= boundary, "initial scan reads the full log");
+    assert.deepEqual(scanner.records(), parseCodexLines([meta, context, first]).records);
+
+    const unicode = Buffer.from(nextContext);
+    const split = unicode.indexOf(Buffer.from("변")) + 1;
+    fs.appendFileSync(file, unicode.subarray(0, split));
+    bytes = 0;
+    await scanner.scan();
+    assert.ok(bytes < 20 * 1024);
+    assert.deepEqual(scanner.records(), parseCodexLines([meta, context, first]).records);
+
+    fs.appendFileSync(file, Buffer.concat([unicode.subarray(split), Buffer.from(`\r\n${next}`)]));
+    scanner = new UsageScanner(options);
+    bytes = 0;
+    failAt = boundary;
+    await scanner.scan();
+    assert.equal(warn.mock.callCount(), 1);
+    assert.deepEqual(scanner.records(), parseCodexLines([meta, context, first]).records);
+    failAt = undefined;
+    bytes = 0;
+    await scanner.scan();
+    assert.ok(bytes < 20 * 1024, "resuming after restart reads the append plus bounded samples");
+    assert.deepEqual(scanner.records(), parseCodexLines([meta, context, first, nextContext, next]).records);
+
+    fs.appendFileSync(file, `\r\n${repeated}\r\n`);
+    bytes = 0;
+    await scanner.scan();
+    const expected = parseCodexLines([meta, context, first, nextContext, next, repeated]);
+    assert.ok(bytes < 20 * 1024);
+    assert.deepEqual(scanner.records(), expected.records, "a previously unterminated record is counted only once");
+    assert.deepEqual(scanner.getStatus().codexRateLimit, expected.rateLimit);
+    const filter = { from: Date.parse("2026-11-24T00:00:00Z"), to: Date.parse("2026-11-24T23:59:59Z") };
+    assert.equal(usageCsv(scanner.records(), filter), usageCsv(expected.records, filter));
+    const opens = tracked.mock.callCount();
+    await scanner.scan();
+    assert.equal(tracked.mock.callCount(), opens, "unchanged files are not reopened");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner rebuilds replaced, shortened, and rewritten Codex files", async () => {
+  const { default: fs } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = fs.mkdtempSync(join(tmpdir(), "sudal-codex-usage-rewritten-"));
+  try {
+    const codexDir = join(dir, "codex");
+    fs.mkdirSync(codexDir);
+    const file = join(codexDir, "rollout.jsonl");
+    const scanner = new UsageScanner({ codexDir, claudeDir: join(dir, "claude"), cachePath: join(dir, "cache.json") });
+    const log = (id: string, tokens: number) => [
+      JSON.stringify({ type: "session_meta", payload: { id } }),
+      codexTc("2026-11-24T01:00:00Z", { input_tokens: tokens, cached_input_tokens: 0, output_tokens: 1 }, 4),
+    ].join("\n") + "\n";
+    fs.writeFileSync(file, log("old", 500));
+    await scanner.scan();
+    fs.renameSync(file, `${file}.old`);
+    fs.writeFileSync(file, log("new", 650) + "\n".repeat(512));
+    await scanner.scan();
+    assert.deepEqual(scanner.records().map(r => [r.sessionId, r.input]), [["new", 650]]);
+    fs.writeFileSync(file, log("cut", 90));
+    await scanner.scan();
+    assert.deepEqual(scanner.records().map(r => [r.sessionId, r.input]), [["cut", 90]]);
+    fs.writeFileSync(file, log("regrown", 450) + "\n".repeat(8192));
+    await scanner.scan();
+    assert.deepEqual(scanner.records().map(r => [r.sessionId, r.input]), [["regrown", 450]]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner commits a consistent Codex snapshot when an append or rewrite races with reading", async t => {
+  const { default: fs } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = fs.mkdtempSync(join(tmpdir(), "sudal-codex-usage-race-"));
+  try {
+    const codexDir = join(dir, "codex");
+    fs.mkdirSync(codexDir);
+    const file = join(codexDir, "rollout.jsonl");
+    const cachePath = join(dir, "cache.json");
+    const scanner = new UsageScanner({ codexDir, claudeDir: join(dir, "claude"), cachePath });
+    const header = (id: string) => JSON.stringify({ type: "session_meta", payload: { id } }) + "\n";
+    const turn = (tokens: number) => codexTc("2026-11-24T01:00:00Z", { input_tokens: tokens, cached_input_tokens: 0, output_tokens: 5 }, 4) + "\n";
+    const rows = () => scanner.records().map(r => [r.sessionId, r.input]);
+    const open = fs.promises.open;
+    let boundary = 0;
+    let update: (() => void) | undefined;
+    t.mock.method(fs.promises, "open", async (name: string, flags: string) => {
+      const handle = await open(name, flags);
+      if (name !== file) return handle;
+      const read = handle.read.bind(handle);
+      t.mock.method(handle, "read", async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const result = await read(buffer, offset, length, position);
+        if (position === boundary && update) {
+          const apply = update;
+          update = undefined;
+          apply();
+        }
+        return result;
+      });
+      return handle;
+    });
+    const warn = t.mock.method(console, "warn", () => {});
+
+    fs.writeFileSync(file, header("original") + turn(100));
+    await scanner.scan();
+    boundary = fs.statSync(file).size;
+    fs.appendFileSync(file, turn(150));
+    update = () => fs.appendFileSync(file, turn(200));
+    await scanner.scan();
+    assert.equal(update, undefined);
+    assert.deepEqual(rows(), [["original", 150]], "a safe concurrent append is excluded from this snapshot");
+    await scanner.scan();
+    assert.deepEqual(rows(), [["original", 200]]);
+
+    const previousCache = fs.readFileSync(cachePath, "utf8");
+    const stat = fs.statSync(file, { bigint: true });
+    assert.equal(JSON.parse(previousCache).files[file].codex.identity, `${stat.dev}:${stat.ino}:${stat.birthtimeNs}`);
+    boundary = Number(stat.size);
+    fs.appendFileSync(file, turn(250));
+    update = () => fs.writeFileSync(file, header("replacement") + turn(900) + "\n".repeat(1024));
+    await scanner.scan();
+    assert.equal(update, undefined);
+    assert.equal(warn.mock.callCount(), 1);
+    assert.deepEqual(rows(), [["original", 200]], "a raced rewrite keeps the last complete aggregate");
+    assert.equal(fs.readFileSync(cachePath, "utf8"), previousCache, "the corrupted snapshot cannot seed later scans");
+    await scanner.scan();
+    assert.deepEqual(rows(), [["replacement", 900]]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("UsageScanner upgrades a Codex v5 cache and preserves pricing tiers through append and reclassification", async t => {
+  const { default: fs } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = fs.mkdtempSync(join(tmpdir(), "sudal-codex-usage-pricing-"));
+  try {
+    const codexDir = join(dir, "codex");
+    fs.mkdirSync(codexDir);
+    const file = join(codexDir, "rollout.jsonl");
+    const cachePath = join(dir, "cache.json");
+    const cutoff = Date.parse("2026-11-24T01:30:00Z");
+    const flat = { match: "gpt-6.2-astra", label: "fixture", input: 1, output: 0, cacheRead: 0, cacheWrite: 0 };
+    const table: PricingEntry[] = [
+      { ...flat, effectiveFrom: cutoff, input: 2, longContext: { inputThreshold: 100_000, input: 4, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      flat,
+    ];
+    const options = { codexDir, claudeDir: join(dir, "claude"), cachePath, pricing: () => table };
+    const turn = (ts: number, tokens: number) => codexTc(new Date(ts).toISOString(), { input_tokens: tokens, cached_input_tokens: 0, output_tokens: 0 }, 4) + "\n";
+    fs.writeFileSync(file, JSON.stringify({ type: "turn_context", payload: { model: "gpt-6.2-astra" } }) + "\n" + turn(cutoff - 1, 90_000));
+    await new UsageScanner(options).scan();
+    const cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    delete cache.files[file].codex;
+    cache.files[file].mtimeMs = fs.statSync(file).mtimeMs;
+    fs.writeFileSync(cachePath, JSON.stringify(cache));
+    const scanner = new UsageScanner(options);
+    const open = fs.promises.open;
+    const opened = t.mock.method(fs.promises, "open", (name: string, flags: string) => open(name, flags));
+    const filter = { from: cutoff - 3_600_000, to: cutoff + 3_600_000 };
+    const cost = () => summarizeUsage(scanner.records(), filter, { now: cutoff, pricing: scanner.getPricing().entries }).totals.costUsd.toFixed(6);
+    await scanner.scan();
+    assert.equal(opened.mock.callCount(), 0, "existing v5 rows remain usable for an unchanged file");
+    fs.appendFileSync(file, turn(cutoff, 210_000));
+    await scanner.scan();
+    assert.equal(cost(), "0.570000");
+    assert.equal(JSON.parse(fs.readFileSync(cachePath, "utf8")).files[file].codex.offset, fs.statSync(file).size);
+    fs.appendFileSync(file, turn(cutoff + 1, 250_000));
+    await scanner.scan();
+    assert.equal(cost(), "0.650000");
+    table[0].longContext!.inputThreshold = 130_000;
+    await scanner.scan();
+    assert.equal(cost(), "0.410000");
+    assert.deepEqual(usageCsv(scanner.records(), filter, scanner.getPricing().entries).split("\n").slice(1).map(line => line.split(",").at(-1)), ["0.090000", "0.320000"]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("UsageScanner retains old totals on read failure and refreshes them later without discarding unaffected files", async t => {
   const fs = await import("node:fs");
   const path = await import("node:path");
