@@ -1,13 +1,16 @@
 // 로컬 트랜스크립트 스캐너 — 터미널에서 쓴 사용량까지 합산한다.
 //   Claude Code: ~/.claude/projects/<cwd-encoded>/*.jsonl  (assistant 항목의 message.usage, 메시지 id 중복 제거)
 //   Codex:       ~/.codex/sessions/**/*.jsonl              (event_msg/token_count 의 누적값 차분)
-// 파서는 한 줄씩 받아 집계 상태만 보관한다. 스캐너는 mtime+size 기준 증분 캐시와 fs.watch 를 맡는다.
+// 파서는 한 줄씩 받아 집계 상태만 보관한다. Codex는 마지막 줄의 위치와 누적값도 보관한다.
 
 import fs from "node:fs";
+import { createHash } from "node:crypto";
+import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { DEFAULT_PRICING, isPricingTable, matchingPrices, priceAt, usageLongContext, type PricingEntry, type UsageRecord } from "@shared/usage";
 import type { ProviderRateLimitDto, RateLimitWindowDto, Provider } from "@shared/ipc";
+import { JSONL_CHUNK_BYTES } from "./jsonl-reader";
 
 const HOUR = 3_600_000;
 
@@ -122,13 +125,20 @@ export function parseCodexLines(lines: Iterable<string>): ParseResult {
   return parseLines(lines, createCodexParser());
 }
 
-function createCodexParser(): LineParser {
+interface CodexParserState {
+  cwd: string;
+  sessionId: string;
+  model: string;
+  prev: { input: number; cached: number; written: number; output: number };
+  rateLimit?: CodexRateLimit;
+}
+
+function createCodexParser(initial?: CodexParserState) {
   const records: UsageRecord[] = [];
-  let cwd = "";
-  let sessionId = "";
-  let model = "";
-  let prev = { input: 0, cached: 0, written: 0, output: 0 };
-  let rateLimit: CodexRateLimit | undefined;
+  let {
+    cwd = "", sessionId = "", model = "",
+    prev = { input: 0, cached: 0, written: 0, output: 0 }, rateLimit,
+  } = initial ?? {};
 
   const push = (line: string) => {
     if (!line.includes("session_meta") && !line.includes("turn_context") && !line.includes("token_count")) return;
@@ -182,7 +192,11 @@ function createCodexParser(): LineParser {
       requests: 1,
     });
   };
-  return { push, finish: pricing => ({ records: compactRecords(records, pricing), rateLimit }) };
+  return {
+    push,
+    finish: (pricing?: PricingEntry[]): ParseResult => ({ records: compactRecords(records, pricing), rateLimit }),
+    state: (): CodexParserState => ({ cwd, sessionId, model, prev, rateLimit }),
+  };
 }
 
 function codexWindow(raw: unknown): RateLimitWindowDto | null {
@@ -268,6 +282,17 @@ interface FileCache {
   rateLimit?: CodexRateLimit;
   pricingRules?: string;
   writeTokensParsed?: true;
+  codex?: CodexCheckpoint;
+}
+
+interface CodexCheckpoint {
+  identity: string;
+  ctimeNs: string;
+  offset: number;
+  signature: string;
+  state: CodexParserState;
+  /** Usage before the last newline if an unterminated record also contributed to the view. */
+  completeRecords?: UsageRecord[];
 }
 
 interface CacheFile {
@@ -368,7 +393,7 @@ export class UsageScanner {
     return out;
   }
 
-  /** 전체 1회 스캔. 캐시와 mtime/size 가 같으면 파싱을 건너뛴다. */
+  /** 캐시가 유효하면 파일을 건너뛰고, 이어서 쓴 Codex 파일은 추가된 줄만 읽는다. */
   scan(): Promise<void> {
     if (this.inflight) return this.inflight;
     this.inflight = this.doScan().finally(() => {
@@ -395,22 +420,22 @@ export class UsageScanner {
 
     for (const { file, kind } of targets) {
       seen.add(file);
-      let st: fs.Stats;
+      let st: Pick<fs.Stats, "size" | "mtimeMs"> | CodexFileStamp;
       try {
-        st = fs.statSync(file);
+        st = kind === "codex" ? await statCodexFile(file) : await fs.promises.stat(file);
       } catch {
         continue;
       }
       try {
         const cached = files[file];
-        if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size && !needsCacheWriteRefresh(cached, kind) &&
-            (cached.pricingRules ?? "") === pricingRulesForRecords(cached.records, pricing, keysByModel)) continue;
-        const parser = kind === "claude" ? createClaudeParser() : kind === "codex" ? createCodexParser() : createSudalAgyParser();
-        const result = await parseFile(file, parser, pricing);
-        files[file] = {
-          mtimeMs: st.mtimeMs, size: st.size, records: result.records, rateLimit: result.rateLimit,
-          pricingRules: pricingRulesForRecords(result.records, pricing, keysByModel), writeTokensParsed: true,
-        };
+        const reusable = cached && !needsCacheWriteRefresh(cached, kind) &&
+          (cached.pricingRules ?? "") === pricingRulesForRecords(cached.records, pricing, keysByModel) ? cached : undefined;
+        if (reusable && reusable.mtimeMs === st.mtimeMs && reusable.size === st.size &&
+            (!reusable.codex || ("identity" in st && reusable.codex.identity === st.identity && reusable.codex.ctimeNs === st.ctimeNs.toString()))) continue;
+        const result = kind === "codex"
+          ? await parseCodexFile(file, pricing, reusable)
+          : { ...await parseFile(file, kind === "claude" ? createClaudeParser() : createSudalAgyParser(), pricing), mtimeMs: st.mtimeMs, size: st.size };
+        files[file] = { ...result, pricingRules: pricingRulesForRecords(result.records, pricing, keysByModel), writeTokensParsed: true };
         changed = true;
       } catch (e) {
         console.warn(`[usage] parse 실패 ${file}:`, e instanceof Error ? e.message : e);
@@ -547,6 +572,151 @@ function listFiles(root: string, ext: string): string[] {
     }
   }
   return out;
+}
+
+interface CodexFileStamp {
+  identity: string;
+  inode: bigint;
+  size: number;
+  mtimeMs: number;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}
+
+function codexFileStamp(stat: fs.BigIntStats): CodexFileStamp {
+  const size = Number(stat.size);
+  if (!stat.isFile() || !Number.isSafeInteger(size) || size < 0) throw new Error("Invalid Codex transcript file or size");
+  const { mtimeNs, ctimeNs } = stat;
+  // Match the legacy numeric mtime so unchanged v5 entries can still be reused.
+  const mtimeMs = Number(mtimeNs / 1_000_000_000n) * 1000 + Number(mtimeNs % 1_000_000_000n) / 1_000_000;
+  return { identity: `${stat.dev}:${stat.ino}:${stat.birthtimeNs}`, inode: stat.ino, size, mtimeMs, mtimeNs, ctimeNs };
+}
+
+async function statCodexFile(file: string): Promise<CodexFileStamp> {
+  return codexFileStamp(await fs.promises.stat(file, { bigint: true }));
+}
+
+async function readExactly(handle: FileHandle, buffer: Buffer, length: number, position: number): Promise<void> {
+  for (let offset = 0; offset < length;) {
+    const { bytesRead } = await handle.read(buffer, offset, length - offset, position + offset);
+    if (bytesRead === 0) throw new Error("Codex transcript was truncated while reading");
+    offset += bytesRead;
+  }
+}
+
+const CODEX_SAMPLE_BYTES = 4096;
+
+interface CodexSamples { head: Buffer; tail: Buffer }
+
+// Check bounded samples at both ends of a prefix so common truncate/regrow
+// events are detectable even when the file identity has not changed.
+async function readCodexSamples(handle: FileHandle, offset: number): Promise<CodexSamples> {
+  const length = Math.min(offset, CODEX_SAMPLE_BYTES);
+  const head = Buffer.allocUnsafe(length);
+  await readExactly(handle, head, head.length, 0);
+  if (offset === length) return { head, tail: head };
+  const tail = Buffer.allocUnsafe(length);
+  await readExactly(handle, tail, tail.length, offset - length);
+  return { head, tail };
+}
+
+function codexSignature({ head, tail }: CodexSamples): string {
+  return createHash("sha256").update(head).update(tail).digest("hex");
+}
+
+function codexResumePoint(cached: FileCache | undefined, stat: CodexFileStamp): CodexCheckpoint | undefined {
+  const checkpoint = cached?.codex;
+  if (!checkpoint || !cached || stat.size <= cached.size || stat.inode === 0n || checkpoint.identity !== stat.identity ||
+      !Number.isSafeInteger(checkpoint.offset) || checkpoint.offset <= 0 || checkpoint.offset > cached.size) return;
+  const { state, completeRecords } = checkpoint;
+  if (!state || typeof state.cwd !== "string" || typeof state.sessionId !== "string" || typeof state.model !== "string" ||
+      !state.prev || ![state.prev.input, state.prev.cached, state.prev.written, state.prev.output].every(Number.isFinite) ||
+      (completeRecords !== undefined && (!Array.isArray(completeRecords) || !completeRecords.every(record => typeof record?.model === "string")))) return;
+  return checkpoint;
+}
+
+function appendCodexTail(tail: Buffer, bytes: Buffer): Buffer {
+  const take = CODEX_SAMPLE_BYTES - bytes.length;
+  if (take <= 0) return Buffer.from(bytes.subarray(-CODEX_SAMPLE_BYTES));
+  return Buffer.concat([tail.subarray(-take), bytes]);
+}
+
+/** Read a fixed byte range asynchronously. Return the last incomplete line separately. */
+async function readCodexLines(handle: FileHandle, start: number, size: number, push: (line: string) => void, prefix?: CodexSamples) {
+  const buffer = Buffer.allocUnsafe(JSONL_CHUNK_BYTES);
+  let offset = start;
+  let completeEnd = start;
+  let head = prefix?.head ?? Buffer.alloc(0);
+  let tail = prefix?.tail ?? Buffer.alloc(0);
+  let completeTail = tail;
+  let parts: Buffer[] = [];
+  while (offset < size) {
+    const length = Math.min(buffer.length, size - offset);
+    await readExactly(handle, buffer, length, offset);
+    const chunk = buffer.subarray(0, length);
+    let lineStart = 0;
+    for (let newline = chunk.indexOf(10); newline !== -1; newline = chunk.indexOf(10, lineStart)) {
+      const end = chunk.subarray(lineStart, newline);
+      const line = parts.length === 0 ? end : Buffer.concat([...parts, end]);
+      push(line.toString("utf8"));
+      parts = [];
+      lineStart = newline + 1;
+    }
+    if (head.length < CODEX_SAMPLE_BYTES) head = Buffer.concat([head, chunk.subarray(0, CODEX_SAMPLE_BYTES - head.length)]);
+    if (lineStart > 0) {
+      completeEnd = offset + lineStart;
+      completeTail = appendCodexTail(tail, chunk.subarray(0, lineStart));
+    }
+    tail = lineStart === length ? completeTail : appendCodexTail(tail, chunk);
+    if (lineStart < length) parts.push(Buffer.from(chunk.subarray(lineStart)));
+    offset += length;
+  }
+  return {
+    completeEnd,
+    trailing: parts.length ? Buffer.concat(parts).toString("utf8") : "",
+    signature: codexSignature({ head: head.subarray(0, completeEnd), tail: completeTail }),
+    snapshotSignature: codexSignature({ head, tail }),
+  };
+}
+
+async function parseCodexFile(file: string, pricing: PricingEntry[], cached?: FileCache): Promise<FileCache> {
+  const handle = await fs.promises.open(file, "r");
+  try {
+    const stat = codexFileStamp(await handle.stat({ bigint: true }));
+    let resume = codexResumePoint(cached, stat);
+    const prefix = resume ? await readCodexSamples(handle, resume.offset) : undefined;
+    if (resume && prefix && codexSignature(prefix) !== resume.signature) resume = undefined;
+    const parser = createCodexParser(resume?.state);
+    const { completeEnd, trailing, signature, snapshotSignature } =
+      await readCodexLines(handle, resume?.offset ?? 0, stat.size, parser.push, resume ? prefix : undefined);
+    const complete = parser.finish(pricing);
+    const priorRows = resume?.completeRecords ?? (resume ? cached?.records : undefined);
+    const completeRecords = priorRows ? compactRecords([...priorRows, ...complete.records], pricing) : complete.records;
+    const state = parser.state();
+
+    // A valid EOF line is visible as before. Its contribution is provisional
+    // until a newline arrives, so the next append can replace it without duplication.
+    const eofParser = createCodexParser(state);
+    if (trailing) eofParser.push(trailing);
+    const eof = eofParser.finish(pricing);
+    const records = eof.records.length ? compactRecords([...completeRecords, ...eof.records], pricing) : completeRecords;
+    const matchesSnapshot = codexSignature(await readCodexSamples(handle, stat.size)) === snapshotSignature;
+    const after = await statCodexFile(file);
+    const grew = after.size > stat.size;
+    // On growth, also check the old resume boundary, which can now be in the middle.
+    const matchesResume = !grew || !resume || codexSignature(await readCodexSamples(handle, resume.offset)) === resume.signature;
+    if (!matchesSnapshot || !matchesResume || after.identity !== stat.identity || after.size < stat.size ||
+        (!grew && (after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs))) {
+      throw new Error("Codex transcript changed while reading");
+    }
+    return {
+      mtimeMs: stat.mtimeMs, size: stat.size, records, rateLimit: eof.rateLimit,
+      codex: { identity: stat.identity, ctimeNs: stat.ctimeNs.toString(), offset: completeEnd, signature, state,
+        ...(eof.records.length ? { completeRecords } : {}) },
+    };
+  } finally {
+    await handle.close();
+  }
 }
 
 /** 원문은 쌓지 않고 한 줄을 읽을 때마다 처리한다. 오류 시에도 파일 스트림을 닫는다. */
