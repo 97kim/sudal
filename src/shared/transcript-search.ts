@@ -1,5 +1,4 @@
 // 대화 검색·내보내기 순수 함수. 이벤트 로그(threads/*.jsonl)만 입력으로 받는다.
-import { Buffer } from "node:buffer";
 import type { TFunction } from "i18next";
 import type { ChatEvent } from "./chat-events";
 
@@ -110,7 +109,15 @@ const TOOL_OUTPUT_MAX = 1500;
 // the same JS lengths and even lone surrogates at a truncation boundary.
 function copiedHead(value: string, limit: number): string {
   if (value.length <= limit) return value;
-  return Buffer.from(value.slice(0, limit), "utf16le").toString("utf16le");
+  if (!limit) return "";
+  const parts: string[] = [];
+  const codes = new Uint16Array(Math.min(limit, 4096));
+  for (let start = 0; start < limit; start += codes.length) {
+    const count = Math.min(codes.length, limit - start);
+    for (let i = 0; i < count; i++) codes[i] = value.charCodeAt(start + i);
+    parts.push(String.fromCharCode(...codes.subarray(0, count)));
+  }
+  return parts.join("");
 }
 
 function firstLine(value: string): string {
