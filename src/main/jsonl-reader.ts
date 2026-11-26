@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 
 export const JSONL_CHUNK_BYTES = 64 * 1024;
 
@@ -7,7 +8,8 @@ export function* readJsonl(file: string, includeTrailing = true, from = 0, until
   const fd = fs.openSync(file, "r");
   const buffer = Buffer.allocUnsafe(JSONL_CHUNK_BYTES);
   const size = Math.min(fs.fstatSync(fd).size, Math.max(0, Math.floor(until)));
-  let parts: Buffer[] = [];
+  let decoder: StringDecoder | undefined;
+  let parts: string[] = [];
   let offset = Math.max(0, Math.min(size, Math.floor(from)));
   try {
     for (;;) {
@@ -17,17 +19,32 @@ export function* readJsonl(file: string, includeTrailing = true, from = 0, until
       const chunk = buffer.subarray(0, count);
       let start = 0;
       for (let i = chunk.indexOf(10); i >= 0; i = chunk.indexOf(10, start)) {
-        parts.push(chunk.subarray(start, i));
-        const line = (parts.length === 1 ? parts[0] : Buffer.concat(parts)).toString("utf8").replace(/\r$/, "");
-        parts = [];
-        yield { line, end: offset + i + 1 };
+        const bytes = chunk.subarray(start, i);
+        let text: string;
+        if (decoder) {
+          parts.push(decoder.end(bytes));
+          text = parts.join("");
+          parts = [];
+          decoder = undefined;
+        } else {
+          text = bytes.toString("utf8");
+        }
+        yield { line: text.replace(/\r$/, ""), end: offset + i + 1 };
         start = i + 1;
       }
-      // The shared read buffer is overwritten on the next iteration.
-      if (start < count) parts.push(Buffer.from(buffer.subarray(start, count)));
+      // Decode each piece before reusing the read buffer. StringDecoder
+      // preserves split UTF-8 sequences without keeping raw chunks and then
+      // allocating a second full-size binary buffer for a very large line.
+      if (start < count) {
+        decoder ??= new StringDecoder("utf8");
+        parts.push(decoder.write(chunk.subarray(start)));
+      }
       offset += count;
     }
-    if (includeTrailing && parts.length) yield { line: Buffer.concat(parts).toString("utf8"), end: offset };
+    if (includeTrailing && decoder) {
+      parts.push(decoder.end());
+      yield { line: parts.join(""), end: offset };
+    }
   } finally {
     fs.closeSync(fd);
   }

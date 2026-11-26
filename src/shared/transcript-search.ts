@@ -1,4 +1,5 @@
 // 대화 검색·내보내기 순수 함수. 이벤트 로그(threads/*.jsonl)만 입력으로 받는다.
+import { Buffer } from "node:buffer";
 import type { TFunction } from "i18next";
 import type { ChatEvent } from "./chat-events";
 
@@ -18,7 +19,7 @@ export const TOOL_TEXT_MAX = 20_000;
 
 /** 텍스트 블록(사용자 메시지·어시스턴트 텍스트·툴 호출+출력)을 모은다. 스트리밍 조각은 blockId 로 합친다. */
 export function collectTexts(
-  events: ChatEvent[],
+  events: Iterable<ChatEvent>,
 ): { blockId: string; kind: SearchBlockKind; ts: number; text: string }[] {
   const out: { blockId: string; kind: SearchBlockKind; ts: number; text: string }[] = [];
   const idx = new Map<string, number>();
@@ -44,7 +45,7 @@ export function collectTexts(
     } else if (e.type === "tool_result") {
       const key = `tool:${e.toolUseId}`;
       const i = idx.get(key);
-      const body = `\n${e.output.slice(0, TOOL_TEXT_MAX)}`;
+      const body = `\n${copiedHead(e.output, TOOL_TEXT_MAX)}`;
       if (i === undefined) {
         idx.set(key, out.length);
         out.push({ blockId: e.toolUseId, kind: "tool", ts: e.ts, text: `tool${body}` });
@@ -70,7 +71,7 @@ export interface IndexedBlock {
   lower: string;
 }
 
-export function indexBlocks(events: ChatEvent[]): IndexedBlock[] {
+export function indexBlocks(events: Iterable<ChatEvent>): IndexedBlock[] {
   return collectTexts(events).map((b) => ({ ...b, lower: b.text.toLowerCase() }));
 }
 
@@ -88,7 +89,7 @@ export function searchBlocks(blocks: IndexedBlock[], q: string, limit = 50): Sea
 }
 
 /** 대소문자 무시 부분 일치. 블록당 첫 일치만. */
-export function searchEvents(events: ChatEvent[], query: string, limit = 50): SearchHit[] {
+export function searchEvents(events: Iterable<ChatEvent>, query: string, limit = 50): SearchHit[] {
   return searchBlocks(indexBlocks(events), query.trim().toLowerCase(), limit);
 }
 
@@ -104,6 +105,19 @@ export interface ExportMeta {
 
 const TOOL_OUTPUT_MAX = 1500;
 
+// An ordinary slice can retain the entire original V8 string, which defeats
+// keeping only a preview after a large event has been consumed. UTF-16 keeps
+// the same JS lengths and even lone surrogates at a truncation boundary.
+function copiedHead(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  return Buffer.from(value.slice(0, limit), "utf16le").toString("utf16le");
+}
+
+function firstLine(value: string): string {
+  const newline = value.indexOf("\n");
+  return newline < 0 ? value : copiedHead(value, newline);
+}
+
 function timeOf(ts: number, locale?: string): string {
   return new Date(ts).toLocaleString(locale, { hour12: false });
 }
@@ -113,7 +127,7 @@ function toolLine(name: string, input: unknown): string {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   const detail =
     str(i.description) ||
-    str(i.command).split("\n")[0] ||
+    firstLine(str(i.command)) ||
     str(i.file_path) ||
     str(i.notebook_path) ||
     str(i.pattern) ||
@@ -123,7 +137,7 @@ function toolLine(name: string, input: unknown): string {
 }
 
 /** 이벤트 로그를 읽기 좋은 마크다운으로. 툴 출력은 길면 자른다. */
-export function eventsToMarkdown(t: TFunction, events: ChatEvent[], meta: ExportMeta): string {
+export function eventsToMarkdown(t: TFunction, events: Iterable<ChatEvent>, meta: ExportMeta): string {
   const lines: string[] = [`# ${meta.title}`, ""];
   const head = [
     meta.workspace ? `${t("repo.export.workspace")}: ${meta.workspace}` : null,
@@ -135,7 +149,7 @@ export function eventsToMarkdown(t: TFunction, events: ChatEvent[], meta: Export
 
   const textBlocks = new Map<string, string>();
   const order: { kind: "user" | "assistant" | "tool" | "turn" | "error"; ref: string; ts: number }[] = [];
-  const tools = new Map<string, { name: string; input: unknown; output?: string; isError?: boolean }>();
+  const tools = new Map<string, { line: string; output?: string; omitted?: number; isError?: boolean }>();
   const turns = new Map<string, string>();
   let lastRole: "user" | "assistant" | null = null;
 
@@ -154,12 +168,18 @@ export function eventsToMarkdown(t: TFunction, events: ChatEvent[], meta: Export
         break;
       case "tool_use":
         if (!tools.has(e.toolUseId)) order.push({ kind: "tool", ref: e.toolUseId, ts: e.ts });
-        tools.set(e.toolUseId, { ...tools.get(e.toolUseId), name: e.name, input: e.input });
+        tools.set(e.toolUseId, { ...tools.get(e.toolUseId), line: toolLine(e.name, e.input) });
         break;
       case "tool_result": {
-        const prev = tools.get(e.toolUseId) ?? { name: "tool", input: {} };
-        tools.set(e.toolUseId, { ...prev, output: e.output, isError: e.isError });
-        if (!order.some((o) => o.kind === "tool" && o.ref === e.toolUseId))
+        const prev = tools.get(e.toolUseId);
+        const hasOutput = /\S/.test(e.output);
+        tools.set(e.toolUseId, {
+          line: prev?.line ?? "tool",
+          output: hasOutput ? copiedHead(e.output, TOOL_OUTPUT_MAX) : undefined,
+          omitted: hasOutput ? Math.max(0, e.output.length - TOOL_OUTPUT_MAX) : 0,
+          isError: e.isError,
+        });
+        if (!prev)
           order.push({ kind: "tool", ref: e.toolUseId, ts: e.ts });
         break;
       }
@@ -201,9 +221,9 @@ export function eventsToMarkdown(t: TFunction, events: ChatEvent[], meta: Export
           lines.push(`## ${meta.provider}`, "");
           lastRole = "assistant";
         }
-        lines.push(`> 🔧 ${toolLine(tool.name, tool.input)}${tool.isError ? ` (${t("repo.export.toolError")})` : ""}`);
-        if (tool.output && tool.output.trim()) {
-          const out = tool.output.length > TOOL_OUTPUT_MAX ? `${tool.output.slice(0, TOOL_OUTPUT_MAX)}\n${t("repo.export.truncated", { count: tool.output.length - TOOL_OUTPUT_MAX })}` : tool.output;
+        lines.push(`> 🔧 ${tool.line}${tool.isError ? ` (${t("repo.export.toolError")})` : ""}`);
+        if (tool.output) {
+          const out = tool.omitted ? `${tool.output}\n${t("repo.export.truncated", { count: tool.omitted })}` : tool.output;
           lines.push("", "```", out.replace(/```/g, "'''"), "```");
         }
         lines.push("");

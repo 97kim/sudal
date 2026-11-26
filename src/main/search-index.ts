@@ -5,7 +5,7 @@ import { indexBlocks, searchBlocks, type IndexedBlock, type SearchHit } from "@s
 
 export interface SearchIndexSource {
   threadStat(tabId: string): { mtimeMs: number; size: number } | null;
-  readEvents(tabId: string): ChatEvent[];
+  iterateEvents(tabId: string): Iterable<ChatEvent>;
 }
 
 interface Entry {
@@ -18,6 +18,8 @@ interface Entry {
 
 /** 캐시가 붙들 수 있는 문자 수 상한(대략 2바이트/문자로 ~64MB). 넘으면 가장 오래 안 쓴 탭부터 비운다. */
 export const SEARCH_INDEX_BUDGET_CHARS = 32 * 1024 * 1024;
+const MAX_CACHED_TABS = 128;
+const BLOCK_OVERHEAD_CHARS = 64;
 
 export class SearchIndex {
   /** Map 의 삽입 순서를 LRU 로 쓴다 — 읽을 때마다 뒤로 옮긴다. */
@@ -45,20 +47,22 @@ export class SearchIndex {
       return cur.blocks;
     }
     this.parses++;
-    const blocks = indexBlocks(this.source.readEvents(tabId));
-    const chars = blocks.reduce((n, b) => n + b.text.length + b.lower.length, 0);
+    const blocks = indexBlocks(this.source.iterateEvents(tabId));
+    const chars = blocks.reduce((n, b) => n + b.text.length + b.lower.length + b.blockId.length + BLOCK_OVERHEAD_CHARS, 0);
     this.forget(tabId);
+    // A large tab remains fully searchable, but must not pin an oversized
+    // index in the cache or evict every other tab on each search.
+    if (chars > this.budgetChars) return blocks;
     this.entries.set(tabId, { mtimeMs: st.mtimeMs, size: st.size, blocks, chars });
     this.chars += chars;
-    this.evict(tabId);
+    this.evict();
     return blocks;
   }
 
-  /** 예산을 넘으면 가장 오래 안 쓴 것부터 비운다(방금 넣은 것은 남긴다). */
-  private evict(keep: string) {
+  /** 예산을 넘으면 가장 오래 안 쓴 것부터 비운다. */
+  private evict() {
     for (const [id, e] of this.entries) {
-      if (this.chars <= this.budgetChars) break;
-      if (id === keep) continue;
+      if (this.chars <= this.budgetChars && this.entries.size <= MAX_CACHED_TABS) break;
       this.entries.delete(id);
       this.chars -= e.chars;
     }

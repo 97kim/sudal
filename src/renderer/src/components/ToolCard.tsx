@@ -15,6 +15,8 @@ import { formatElapsed, useNow } from "../hooks/useNow";
 import { IS_WIN } from "../platform";
 import { openSubagentHistory, SubagentHistoryContext } from '../subagent-history';
 
+import { toolOutputPage, TOOL_OUTPUT_PAGE_CHARS } from "@shared/tool-output-page";
+
 const OUTPUT_PREVIEW_LINES = 12;
 
 type Input = Record<string, unknown>;
@@ -351,10 +353,13 @@ function ToolBody({ name, input }: { name: string; input: Input }) {
 function ToolOutput({ output, isError }: { output: string; isError: boolean }) {
   const { t } = useTranslation();
   const [full, setFull] = useHistoryRowState("tool-full", false);
-  const lines = output.split("\n");
+  const [pageNumber, setPageNumber] = useHistoryRowState("tool-output-page", 0);
+  const paged = output.length > TOOL_OUTPUT_PAGE_CHARS;
+  const page = toolOutputPage(output, pageNumber);
+  const lines = paged || full ? [] : output.split("\n");
   const truncated = !full && lines.length > OUTPUT_PREVIEW_LINES;
-  const text = truncated ? lines.slice(0, OUTPUT_PREVIEW_LINES).join("\n") : output;
-  if (!output.trim()) return null;
+  const text = paged ? page.text : truncated ? lines.slice(0, OUTPUT_PREVIEW_LINES).join("\n") : output;
+  if (!output.length || (!paged && !output.trim())) return null;
   return (
     <div className="mt-2">
       <pre
@@ -365,6 +370,13 @@ function ToolOutput({ output, isError }: { output: string; isError: boolean }) {
       >
         {text}
       </pre>
+      {paged && (
+        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
+          <button type="button" className="hover:text-fg disabled:opacity-40" disabled={!page.index} onClick={() => setPageNumber(page.index - 1)}>{t("toolCard.outputPrevious")}</button>
+          <span>{t("toolCard.outputPage", { current: page.index + 1, total: page.total })}</span>
+          <button type="button" className="hover:text-fg disabled:opacity-40" disabled={page.index + 1 >= page.total} onClick={() => setPageNumber(page.index + 1)}>{t("toolCard.outputNext")}</button>
+        </div>
+      )}
       {truncated && (
         <button onClick={() => setFull(true)} className="mt-1 text-[11px] text-muted hover:text-fg">
           {t("toolCard.moreLines", { count: lines.length - OUTPUT_PREVIEW_LINES })}

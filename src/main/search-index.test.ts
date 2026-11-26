@@ -49,3 +49,22 @@ test("SearchIndex: 예산을 넘으면 오래 안 쓴 탭부터 비우고, retai
   assert.equal(idx.cachedChars, 0);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("SearchIndex: oversized tabs remain searchable without retaining their index", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "wb-sidx-large-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new Store(dir);
+  store.appendEvent("small", { type: "user_message", id: "small-1", ts: 1, text: "another tab" });
+  for (let i = 0; i < 6; i++) {
+    store.appendEvent("large", { type: "tool_result", toolUseId: `tool-${i}`, ts: i, output: "x".repeat(2 * 1024 * 1024), isError: false });
+  }
+  store.appendEvent("large", { type: "user_message", id: "large-last", ts: 8, text: "last search target" });
+  const idx = new SearchIndex(store, 2000);
+  assert.equal(idx.search("small", "another")[0]?.blockId, "small-1");
+  const smallChars = idx.cachedChars;
+  assert.equal(idx.search("large", "last search target")[0]?.blockId, "large-last");
+  assert.equal(idx.cachedChars, smallChars);
+  assert.equal(idx.size, 1);
+  assert.equal(idx.search("large", "last search target")[0]?.blockId, "large-last");
+  assert.equal(idx.parses, 3);
+});

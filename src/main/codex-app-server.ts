@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { appMsg, mt } from "./i18n";
 import { launchSpec } from "./cli-launch";
 import { aiReviewNotice } from "./ai-review";
+import { observePerf, performanceNotice } from "./performance-diagnostics";
 import type { ChatEvent, CompactedEvent, ModelUsageEntry, TokenUsage } from "@shared/chat-events";
 import { codexAgentStatus, type CodexAgentInput, type CodexAgentInfo } from "@shared/codex-agents";
 
@@ -66,6 +67,7 @@ export class CodexAppServer {
     const spec = launchSpec(codexPath, [...reasoningSummaryArgs(env), ...sudalEnvArgs(env), ...extraArgs, "app-server"]);
     const proc = spawn(spec.command, spec.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], shell: spec.shell, windowsHide: true });
     this.proc = proc;
+    if (proc.pid !== undefined) performanceNotice("codex-process-open", { pid: proc.pid });
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (chunk: string) => this.onData(chunk));
     proc.stderr.on("data", (chunk: Buffer) => this.handlers.log?.(`[codex app-server] ${chunk.toString().trim().slice(0, 300)}`));
@@ -73,6 +75,7 @@ export class CodexAppServer {
     const end = (code: number | null, error?: string) => {
       if (this.ended) return;
       this.ended = true;
+      if (proc.pid !== undefined) performanceNotice("codex-process-exit", { pid: proc.pid, exitCode: code ?? undefined });
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
         p.reject(new AppServerError("exited", error ?? mt("session.error.appServerExited", { code: code ?? "?" })));
@@ -144,13 +147,19 @@ export class CodexAppServer {
       this.buffer = this.buffer.slice(nl + 1);
       if (!line) continue;
       let msg: Json;
+      const started = performance.now();
       try {
         msg = JSON.parse(line) as Json;
       } catch {
         this.handlers.log?.(`[codex app-server] 깨진 줄: ${line.slice(0, 120)}`);
         continue;
       }
-      this.dispatch(msg);
+      try {
+        this.dispatch(msg);
+      } finally {
+        const elapsed = performance.now() - started;
+        if (elapsed >= 100 || line.length >= 256 * 1024) observePerf("codex-frame", elapsed, { bytes: Buffer.byteLength(line), pid: this.proc?.pid });
+      }
     }
   }
 

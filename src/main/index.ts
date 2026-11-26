@@ -108,6 +108,7 @@ import { ScheduleEngine } from "./schedule-engine";
 import { runPrecheckCommand } from "./precheck";
 import { isScheduleWorkspace, runReason, type Run, type Schedule, type ScheduleTarget } from "@shared/schedules";
 import { createFileLogger, type FileLogger } from "./logger";
+import { observePerf, performanceNotice, startPerformanceDiagnostics } from "./performance-diagnostics";
 import { brewUpgrade, caskVersion, compareVersions, fetchLatestRelease, type UpdateProgress } from "./app-update";
 import { winDownloadUpdate, winQuitAndInstall } from "./app-update-win";
 import { Store } from "./persistence";
@@ -165,6 +166,7 @@ const logger: FileLogger = createFileLogger(
   join(app.getPath("userData"), "logs"),
 );
 logger.patchConsole();
+let diagnostics: ReturnType<typeof startPerformanceDiagnostics> | undefined;
 // Codex 탭의 언어 리마인더 훅 스크립트가 사는 곳(codex-lang-hooks).
 setCodexHookDir(join(app.getPath("userData"), "codex-hooks"));
 console.log(
@@ -180,14 +182,16 @@ process.on("unhandledRejection", (reason) =>
 // 정상 종료(clean-exit)와 외부 kill(SIGTERM 등)은 크래시가 아니므로 로그에 남기지 않는다.
 const benignExit = (reason: string) =>
   reason === "clean-exit" || reason === "killed";
-app.on("render-process-gone", (_e, contents, details) => {
+app.on("render-process-gone", (_e, _contents, details) => {
   if (benignExit(details.reason)) return;
+  performanceNotice("renderer-gone", { reason: details.reason, exitCode: details.exitCode });
   console.error(
-    `[main] render-process-gone: ${details.reason} (exit ${details.exitCode}) url=${contents.getURL()}`,
+    `[main] render-process-gone: ${details.reason} (exit ${details.exitCode})`,
   );
 });
 app.on("child-process-gone", (_e, details) => {
   if (benignExit(details.reason)) return;
+  performanceNotice("child-gone", { reason: details.reason, exitCode: details.exitCode });
   console.error(
     `[main] child-process-gone: ${details.type} ${details.reason} (exit ${details.exitCode}) ${details.name ?? ""}`,
   );
@@ -1856,7 +1860,14 @@ function bootstrap() {
       }
       const sequence = (chatSequences.get(tabId) ?? 0) + 1;
       chatSequences.set(tabId, sequence);
+      const dispatchStarted = performance.now();
       sendAll(IPC.chatEvent, { tabId, event, sequence } satisfies ChatEventEnvelope);
+      const elapsed = performance.now() - dispatchStarted;
+      const output = event.type === "tool_result" ? event.output : undefined;
+      if (elapsed >= 100 || (output?.length ?? 0) >= 256 * 1024) {
+        observePerf("chat-dispatch", elapsed, { bytes: output === undefined ? undefined : Buffer.byteLength(output) });
+      }
+      if (event.type === "turn_result") performanceNotice("turn-result", undefined, event.durationMs);
       attention.event(tabId, event);
       if (scheduleEngine?.watches(tabId)) {
         // 회차의 끝은 이 신호들로만 판정한다(실측으로 고정한 규칙).
@@ -2925,14 +2936,19 @@ function registerIpc() {
   });
   ipcMain.handle(IPC.chatHistoryPreview, (_e, tabId: unknown) => {
     if (typeof tabId !== "string" || !workspaces.tab(tabId)?.open) return null;
+    const started = performance.now();
     const blocks = store.historyPreview(tabId);
+    observePerf("history-preview", performance.now() - started, { count: blocks?.length });
     return blocks ? { blocks, sequence: chatSequences.get(tabId) ?? 0 } : null;
   });
   ipcMain.handle(IPC.chatHistory, async (_e, tabId: string, before?: string, includeCompacted?: boolean) => {
     if (typeof tabId !== "string" || (before !== undefined && typeof before !== "string")) throw new Error(mt("main.error.badArgs"));
     let sequence = chatSequences.get(tabId) ?? 0;
-    const page = await sessions.history(tabId, before, includeCompacted === true, () => { sequence = chatSequences.get(tabId) ?? 0; });
-    return { ...page, sequence };
+    const started = performance.now();
+    try {
+      const page = await sessions.history(tabId, before, includeCompacted === true, () => { sequence = chatSequences.get(tabId) ?? 0; });
+      return { ...page, sequence };
+    } finally { observePerf("history-read", performance.now() - started); }
   });
   ipcMain.handle(IPC.chatClear, async (_e, tabId: string) => { await feedbackRunner?.stop(tabId); return sessions.clear(tabId); });
   ipcMain.handle(IPC.chatSubagentHistory, async (_e, tabId: unknown, agentId: unknown, before: unknown, after: import('@shared/subagent-history').SubagentHistoryCursor | undefined) => {
@@ -3036,6 +3052,7 @@ function registerIpc() {
   ipcMain.handle(IPC.chatSearch, (_e, query: string): SearchResultDto[] => {
     const q = query.trim();
     if (!q) return [];
+    const started = performance.now();
     const model = workspaces.state().model;
     const out: SearchResultDto[] = [];
     // 인덱스는 store 파일을 stat 해 바뀐 탭만 다시 읽는다(sessions.events() 는 닫힌 탭까지 Session 객체를 만들어 붙들기 때문에 안 쓴다).
@@ -3056,6 +3073,7 @@ function registerIpc() {
       });
       if (out.length >= 60) break;
     }
+    observePerf("history-search", performance.now() - started, { count: out.length });
     return out;
   });
   ipcMain.handle(IPC.chatExport, async (e, tabId: string) => {
@@ -3072,7 +3090,8 @@ function registerIpc() {
       ? await dialog.showSaveDialog(win, opts)
       : await dialog.showSaveDialog(opts);
     if (r.canceled || !r.filePath) return null;
-    const md = eventsToMarkdown(mt, store.readEvents(tabId), {
+    const started = performance.now();
+    const md = eventsToMarkdown(mt, store.iterateEvents(tabId), {
       title,
       workspace: model.workspaces.find((w) => w.id === tab.workspaceId)?.name ?? null,
       provider: PROVIDER_LABEL[tab.provider],
@@ -3085,6 +3104,7 @@ function registerIpc() {
     } catch (e) {
       throw new Error(mt("main.export.failed", { detail: e instanceof Error ? e.message : String(e) }));
     }
+    observePerf("history-export", performance.now() - started);
     return r.filePath;
   });
 
@@ -3719,7 +3739,20 @@ function createWindow(): BrowserWindow {
     codexPredictions.cancelActive();
     controlOpenReady = false;
   });
-  win.webContents.on("render-process-gone", () => codexPredictions.cancelActive());
+  let unresponsiveAt: number | undefined;
+  win.on("unresponsive", () => {
+    unresponsiveAt ??= performance.now();
+    performanceNotice("renderer-unresponsive", { pid: win.webContents.getOSProcessId() });
+  });
+  win.on("responsive", () => {
+    if (unresponsiveAt === undefined) return;
+    performanceNotice("renderer-responsive", { pid: win.webContents.getOSProcessId() }, performance.now() - unresponsiveAt);
+    unresponsiveAt = undefined;
+  });
+  win.webContents.on("render-process-gone", () => {
+    unresponsiveAt = undefined;
+    codexPredictions.cancelActive();
+  });
   win.on("closed", () => codexPredictions.cancelActive());
   // Windows 는 ⌘ 자리에 Ctrl 을 써서 앱 단축키(Ctrl+R·L 등)가 셸 편집키와 겹친다. 메뉴 가속기는 터미널보다 먼저 키를 가져가므로,
   // 터미널에 포커스가 있을 때 그 키만 이번 입력에 한해 메뉴를 끈다. 키 입력마다 다시 정하므로 다른 키에는 남지 않는다.
@@ -3800,6 +3833,9 @@ function configureWindowsAppIdentity() {
 }
 
 app.whenReady().then(async () => {
+  diagnostics = startPerformanceDiagnostics(logger.dir, () => app.getAppMetrics());
+  powerMonitor.on("suspend", () => diagnostics?.setSuspended(true));
+  powerMonitor.on("resume", () => diagnostics?.setSuspended(false));
   configureWindowsAppIdentity();
   bootstrap();
   registerIpc();
@@ -3888,6 +3924,7 @@ app.on("before-quit", (e) => {
   terminals?.closeAll();
   usage?.unwatch();
   store?.flush();
+  diagnostics?.stop();
 });
 
 app.on("window-all-closed", () => {

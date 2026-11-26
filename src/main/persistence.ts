@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import { readJsonl } from "./jsonl-reader";
+import { observePerf } from "./performance-diagnostics";
 import { HistoryCheckpoints, historyFileStamp } from "./history-checkpoint";
 import { HISTORY_PREVIEW_MIN_FILE_BYTES, readHistoryPreview } from "./history-preview";
 import path from "node:path";
@@ -214,13 +215,19 @@ export class Store {
     for (const [tabId, lines] of this.buffers) {
       const boundary = this.checkpointBoundaries.get(tabId);
       this.checkpointBoundaries.delete(tabId);
+      const started = performance.now();
+      let batch = "";
       try {
         const before = historyFileStamp(this.threadPath(tabId));
-        fs.appendFileSync(this.threadPath(tabId), `${lines.join("\n")}\n`, "utf8");
+        batch = `${lines.join("\n")}\n`;
+        fs.appendFileSync(this.threadPath(tabId), batch, "utf8");
         this.checkpoints.advance(tabId, before, boundary);
         flushed.push(tabId);
       } catch (e) {
         console.error(`[store] thread append 실패 (${tabId}):`, e);
+      } finally {
+        const elapsed = performance.now() - started;
+        if (elapsed >= 100 || batch.length >= 256 * 1024) observePerf("history-flush", elapsed, { bytes: Buffer.byteLength(batch), count: lines.length });
       }
     }
     this.buffers.clear();
