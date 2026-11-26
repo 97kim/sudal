@@ -41,6 +41,9 @@ function harness() {
   const app = new EventEmitter();
   let start!: () => Promise<void>;
   let ipcReady = false;
+  const powerMonitor = new EventEmitter();
+  const suspendStates: boolean[] = [];
+  let diagnosticStarts = 0;
   const windows: { ipcReady: boolean; focused: number }[] = [];
   const createdTabs: Provider[][] = [];
   let find: (provider: Provider) => Promise<{ installed: boolean }> = async (provider) => {
@@ -59,6 +62,12 @@ function harness() {
       getPath: () => "unused",
       whenReady: () => ({ then: (cb: () => Promise<void>) => { start = cb; } }),
     }),
+    logger: { dir: "test-logs" }, powerMonitor,
+    startPerformanceDiagnostics: (dir: string) => {
+      assert.equal(dir, "test-logs");
+      diagnosticStarts++;
+      return { setSuspended: (state: boolean) => suspendStates.push(state) };
+    },
     process: { platform: "win32", env: {} },
     console: { log() {}, error() {} },
     PROVIDERS: ["claude", "codex"], workspaces,
@@ -79,7 +88,7 @@ function harness() {
     ipcMain: { handle: (_channel: string, handler: unknown) => { ctx.tabCreate = handler; } },
   });
   const code = [
-    variable("mainWindow"), variable("mainWindowReady"), variable("cliDefaultsReady"),
+    variable("mainWindow"), variable("mainWindowReady"), variable("cliDefaultsReady"), variable("diagnostics"),
     fn("refreshAvailableProviders"), fn("liveMainWindow"), fn("showMainWindow"), fn("configureWindowsAppIdentity"),
     statement((s) => ts.isIfStatement(s) && s.expression.getText(source).includes("app.requestSingleInstanceLock()")),
     statement((s) => ts.isExpressionStatement(s) && s.getText(source).startsWith("app.whenReady().then(")),
@@ -87,7 +96,8 @@ function harness() {
   ].join("\n");
   runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, ctx);
   return {
-    app, scan, cookies, windows, createdTabs, workspaces,
+    app, scan, cookies, windows, createdTabs, workspaces, powerMonitor, suspendStates,
+    diagnosticStarts: () => diagnosticStarts,
     start: () => start(),
     tabCreate: () => ctx.tabCreate(null, "workspace") as Promise<string>,
     refresh: () => runInContext("refreshAvailableProviders()", ctx) as Promise<void>,
@@ -95,6 +105,18 @@ function harness() {
     setFind: (next: typeof find) => { find = next; },
   };
 }
+
+test("startup diagnostics ignore machine suspend and resume without delaying startup", async () => {
+  const h = harness();
+  const starting = h.start();
+  assert.equal(h.diagnosticStarts(), 1);
+  h.powerMonitor.emit("suspend");
+  h.powerMonitor.emit("resume");
+  assert.deepEqual(h.suspendStates, [true, false]);
+  h.cookies.resolve(0);
+  h.scan.resolve();
+  await starting;
+});
 
 test("Windows 알림 등록은 설치본과 개발 실행의 ID·이름을 분리하고 데이터 경로를 유지한다", () => {
   const packagedId = /appId:\s*"([^"]+)"/.exec(readFileSync(new URL("../../electron-builder.config.cjs", import.meta.url), "utf8"))![1];
