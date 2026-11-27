@@ -30,5 +30,8 @@ export const toolCard = {
   aiReviewing: "AI 검토 중",
   subagentViaCodexHint: "codex-companion 이 띄운 Codex 의 진행(rollout 미러)",
   subagentTools: "도구 {{count}}회",
+  outputPrevious: "이전",
+  outputPage: "출력 {{current}} / {{total}}",
+  outputNext: "다음",
   moreLines: "… {{count}}줄 더 보기",
 };

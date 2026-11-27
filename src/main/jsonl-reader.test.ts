@@ -24,3 +24,20 @@ test("JSONL reads span chunks, keep UTF-8 and exact resume offsets, and defer un
     fs.unlinkSync(file); // generator cleanup must release the descriptor, including on Windows
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("JSONL split decoding matches Buffer replacement on malformed UTF-8 and preserves trailing CR", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-jsonl-malformed-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "history.jsonl");
+  const prefix = Buffer.alloc(JSONL_CHUNK_BYTES - 1, 0x61);
+  const invalid = Buffer.from([0xe2, 0x82, 0x20, 0x0d, 0x0a, 0xff, 0x0d]);
+  fs.writeFileSync(file, Buffer.concat([prefix, invalid]));
+  const expected = Buffer.concat([prefix, invalid.subarray(0, 3)]).toString("utf8");
+  assert.deepEqual([...readJsonl(file)], [
+    { line: expected, end: prefix.length + 5 },
+    { line: "\ufffd\r", end: prefix.length + invalid.length },
+  ]);
+  assert.deepEqual([...readJsonl(file, true, 0, JSONL_CHUNK_BYTES)], [
+    { line: prefix.toString("ascii") + "\ufffd", end: JSONL_CHUNK_BYTES },
+  ]);
+});

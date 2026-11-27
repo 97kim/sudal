@@ -33,5 +33,8 @@ export const toolCard: DeepPartial<typeof ko> = {
   aiReviewing: "AI reviewing",
   subagentViaCodexHint: "Progress of the Codex launched by codex-companion (rollout mirror)",
   subagentTools: "{{count}} tool calls",
+  outputPrevious: "Previous",
+  outputPage: "Output {{current}} / {{total}}",
+  outputNext: "Next",
   moreLines: "… show {{count}} more lines",
 };

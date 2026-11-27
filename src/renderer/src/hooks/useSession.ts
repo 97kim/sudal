@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { ChatEvent } from "@shared/chat-events";
 import type { ChatEventEnvelope, SessionSnapshotDto } from "@shared/ipc";
-import { collapseCompactedHistory, initialHistoryState, isHistoryPreviewEvent, mergeHistoryPage, reduceHistoryEvent, updateHistoryPreview, type HistoryState, type SessionHistoryPage } from "@shared/session-history";
+import { collapseCompactedHistory, initialHistoryState, isHistoryPreviewEvent, mergeHistoryPage, reduceHistoryEvent, reduceLiveTextBatch, updateHistoryPreview, type HistoryState, type SessionHistoryPage } from "@shared/session-history";
+import { LiveTextDeltas, type LiveTextBatch } from "@shared/live-chat-deltas";
 import type { Block } from "@shared/session-state";
 
-type Action = { kind: "event"; event: ChatEvent } | { kind: "page"; page: SessionHistoryPage; older: boolean; events: ChatEvent[] } | { kind: "collapse" };
+type Action = { kind: "text"; batch: LiveTextBatch } | { kind: "event"; event: ChatEvent } | { kind: "page"; page: SessionHistoryPage; older: boolean; events: ChatEvent[] } | { kind: "collapse" };
 
 function reducer(state: HistoryState, action: Action): HistoryState {
+  if (action.kind === "text") return reduceLiveTextBatch(state, action.batch);
   if (action.kind === "event") return reduceHistoryEvent(state, action.event);
   if (action.kind === "collapse") return collapseCompactedHistory(state);
   return mergeHistoryPage(state, action.page, action.older, action.events);
@@ -15,6 +17,7 @@ function reducer(state: HistoryState, action: Action): HistoryState {
 /** Page history separately from live events; fence buffered pushes at the snapshot sequence. */
 export function useSession(tabId: string) {
   const [history, dispatch] = useReducer(reducer, undefined, initialHistoryState);
+  const [liveText] = useState(() => new LiveTextDeltas(batch => dispatch({ kind: "text", batch })));
   const [config, setConfig] = useState<SessionSnapshotDto | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [historyPreview, setHistoryPreview] = useState<Block[] | null>(null);
@@ -30,6 +33,7 @@ export function useSession(tabId: string) {
   const read = useCallback(async (older: boolean, openingArchive = false) => {
     const o = owner.current;
     if (!o.alive || o.loading || o.pendingCompact || (older && !o.before)) return;
+    liveText.flush();
     const generation = o.generation;
     o.loading = true;
     o.buffered = [];
@@ -80,7 +84,7 @@ export function useSession(tabId: string) {
         setLoaded(true);
       }
     }
-  }, [tabId]);
+  }, [tabId, liveText]);
 
   useEffect(() => {
     const o = owner.current;
@@ -101,6 +105,8 @@ export function useSession(tabId: string) {
       if (!o.ready && o.previewSequence !== null && (envelope.sequence ?? Infinity) > o.previewSequence && isHistoryPreviewEvent(event))
         setHistoryPreview(blocks => blocks ? updateHistoryPreview(blocks, event, true) : null);
       if (o.ready) {
+        if (event.type === "text_delta" && !o.loading) { liveText.push(event); return; }
+        liveText.flush();
         if (envelope.event.type === "compacted") {
           o.generation++; o.loading = false; o.buffered = []; o.includeCompacted = false; o.pendingCompact = true;
           setCompactedExpanded(false); setLoadingOlder(false); setHistoryError(null);
@@ -115,8 +121,8 @@ export function useSession(tabId: string) {
     const offSnap = window.sudal.chat.onSnapshotChanged((s) => {
       if (s.tabId === tabId) { pushed = true; setConfig(s); }
     });
-    return () => { o.alive = false; o.generation++; o.lifetime++; o.buffered = []; off(); offSnap(); };
-  }, [tabId, read]);
+    return () => { o.alive = false; o.generation++; o.lifetime++; o.buffered = []; liveText.clear(); off(); offSnap(); };
+  }, [tabId, read, liveText]);
 
   useEffect(() => {
     const o = owner.current;
@@ -127,6 +133,7 @@ export function useSession(tabId: string) {
   }, [history]);
 
   const reload = useCallback(() => {
+    liveText.flush();
     const o = owner.current;
     o.generation++;
     o.loading = false;
@@ -134,7 +141,7 @@ export function useSession(tabId: string) {
     o.includeCompacted = false; o.pendingCompact = false; setCompactedExpanded(false);
     dispatch({ kind: "collapse" });
     void read(false);
-  }, [read]);
+  }, [read, liveText]);
   const loadOlder = useCallback(() => read(true), [read]);
   const expandCompacted = useCallback(async () => {
     const o = owner.current;
@@ -143,10 +150,11 @@ export function useSession(tabId: string) {
     await read(true, true);
   }, [read]);
   const collapseCompacted = useCallback(() => {
+    liveText.flush();
     const o = owner.current;
     o.generation++; o.loading = false; o.includeCompacted = false; o.buffered = []; o.pendingCompact = true;
     setCompactedExpanded(false); setLoadingOlder(false); setHistoryError(null); dispatch({ kind: "collapse" });
-  }, []);
+  }, [liveText]);
   return { state: history.state, config, setConfig, loaded, reload, hasMore, loadingOlder, loadOlder, historyError, historyPreview, predictionTurnId,
     compactBoundary: history.compactBoundary, compactedExpanded, expandCompacted, collapseCompacted };
 }

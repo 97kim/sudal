@@ -1,5 +1,6 @@
 import { initialSessionState, reduceSession, type SessionState, type Block } from "./session-state";
 import type { ChatEvent } from "./chat-events";
+import type { LiveTextBatch } from "./live-chat-deltas";
 import { readCodexAgentInput } from "./codex-agents";
 
 export const HISTORY_PAGE_SIZE = 200;
@@ -107,6 +108,12 @@ export function reduceHistoryEvent(history: HistoryState, event: ChatEvent): His
     prefix: next.blocks.slice(0, prefix.length).map((block, index) => block === prefix[index] ? block : slimHistoryBlock(block)),
   };
   return event.type === "compacted" ? collapseCompactedHistory(result) : result;
+}
+
+/** One reduction per live batch, with the original event count for stable generated IDs. */
+export function reduceLiveTextBatch(history: HistoryState, batch: LiveTextBatch): HistoryState {
+  const next = reduceHistoryEvent(history, batch.event);
+  return batch.count === 1 ? next : { ...next, state: { ...next.state, eventCount: next.state.eventCount + batch.count - 1 } };
 }
 
 /** Replay pushes after the page's snapshot before merging it with the live tail. */

@@ -4,13 +4,14 @@
 // 파서는 한 줄씩 받아 집계 상태만 보관한다. Codex는 마지막 줄의 위치와 누적값도 보관한다.
 
 import fs from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { DEFAULT_PRICING, isPricingTable, matchingPrices, priceAt, usageLongContext, type PricingEntry, type UsageRecord } from "@shared/usage";
 import type { ProviderRateLimitDto, RateLimitWindowDto, Provider } from "@shared/ipc";
 import { JSONL_CHUNK_BYTES } from "./jsonl-reader";
+import { observePerf } from "./performance-diagnostics";
 
 const HOUR = 3_600_000;
 
@@ -356,6 +357,7 @@ export class UsageScanner {
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private poll: ReturnType<typeof setInterval> | null = null;
   private inflight: Promise<void> | null = null;
+  private cacheLoaded = false;
 
   constructor(private readonly opts: ScannerOptions) {
     this.status = {
@@ -367,9 +369,7 @@ export class UsageScanner {
       codexRateLimit: null,
       roots: { claude: opts.claudeDir, codex: opts.codexDir },
     };
-    this.loadCache();
-    // Legacy caches did not record which rules produced their totals.
-    this.appliedPricing = this.cache.pricing ?? { entries: DEFAULT_PRICING, custom: false };
+    this.appliedPricing = { entries: DEFAULT_PRICING, custom: false };
   }
 
   private readPricing(): UsagePricing {
@@ -389,14 +389,16 @@ export class UsageScanner {
 
   records(): UsageRecord[] {
     const out: UsageRecord[] = [];
-    for (const f of Object.values(this.cache.files)) out.push(...f.records);
+    for (const f of Object.values(this.cache.files)) for (const record of f.records) out.push(record);
     return out;
   }
 
   /** 캐시가 유효하면 파일을 건너뛰고, 이어서 쓴 Codex 파일은 추가된 줄만 읽는다. */
   scan(): Promise<void> {
     if (this.inflight) return this.inflight;
+    const started = performance.now();
     this.inflight = this.doScan().finally(() => {
+      observePerf("usage-scan", performance.now() - started, { count: this.status.records });
       this.status.scanning = false;
       this.inflight = null;
     });
@@ -406,17 +408,22 @@ export class UsageScanner {
   private async doScan(): Promise<void> {
     const started = Date.now();
     this.status.scanning = true;
+    // Capture pricing before yielding: callers joining this scan see one price table.
+    const nextPricing = this.readPricing();
+    if (!this.cacheLoaded) {
+      await this.loadCache();
+      this.cacheLoaded = true;
+    }
     const seen = new Set<string>();
     const files = { ...this.cache.files };
-    const nextPricing = this.readPricing();
     const pricing = nextPricing.entries;
     const keysByModel = new Map<string, string>();
     let changed = JSON.stringify(this.cache.pricing) !== JSON.stringify(nextPricing);
 
     const targets: { file: string; kind: Provider }[] = [];
-    for (const f of listFiles(this.opts.claudeDir, ".jsonl")) targets.push({ file: f, kind: "claude" });
-    for (const f of listFiles(this.opts.codexDir, ".jsonl")) targets.push({ file: f, kind: "codex" });
-    if (this.opts.sudalThreadsDir) for (const f of listFiles(this.opts.sudalThreadsDir, ".jsonl")) targets.push({ file: f, kind: "agy" });
+    for (const f of await listFiles(this.opts.claudeDir, ".jsonl")) targets.push({ file: f, kind: "claude" });
+    for (const f of await listFiles(this.opts.codexDir, ".jsonl")) targets.push({ file: f, kind: "codex" });
+    if (this.opts.sudalThreadsDir) for (const f of await listFiles(this.opts.sudalThreadsDir, ".jsonl")) targets.push({ file: f, kind: "agy" });
 
     for (const { file, kind } of targets) {
       seen.add(file);
@@ -442,7 +449,7 @@ export class UsageScanner {
       }
     }
     for (const file of Object.keys(files)) {
-      if (!seen.has(file) && transcriptMissing(file)) {
+      if (!seen.has(file) && await transcriptMissing(file)) {
         delete files[file];
         changed = true;
       }
@@ -472,7 +479,7 @@ export class UsageScanner {
       lastScanMs: Date.now() - started,
       codexRateLimit: latestRl,
     };
-    if (changed) this.saveCache();
+    if (changed) await this.saveCache();
     this.opts.onChange?.();
   }
 
@@ -514,38 +521,73 @@ export class UsageScanner {
     }, 2000);
   }
 
-  private loadCache() {
+  private async loadCache() {
+    const started = performance.now();
     try {
-      if (!fs.existsSync(this.opts.cachePath)) return;
-      const parsed = JSON.parse(fs.readFileSync(this.opts.cachePath, "utf8")) as CacheFile;
+      const parsed = JSON.parse(await fs.promises.readFile(this.opts.cachePath, "utf8")) as CacheFile;
       if (parsed?.version === 5 && parsed.files) {
         const files = Object.fromEntries(Object.entries(parsed.files).filter(([, entry]) =>
           Array.isArray(entry?.records) && entry.records.every(record => typeof record?.model === "string")));
         const pricing = isPricingTable(parsed.pricing?.entries) && typeof parsed.pricing?.custom === "boolean" ? parsed.pricing : undefined;
         this.cache = { version: 5, files, pricing };
+        // Keep the cache's price table until a consistent replacement is available.
+        this.appliedPricing = pricing ?? { entries: DEFAULT_PRICING, custom: false };
       }
     } catch (e) {
-      console.warn("[usage] cache 로드 실패, 새로 스캔:", e);
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") console.warn("[usage] cache 로드 실패, 새로 스캔:", e);
+    } finally {
+      observePerf("usage-cache-load", performance.now() - started);
     }
   }
 
-  private saveCache() {
+  private async saveCache() {
+    const started = performance.now();
+    // Use an exclusive name across concurrent app/scanner runs. Install only complete snapshots.
+    const tmp = `${this.opts.cachePath}.${process.pid}.${randomUUID()}.tmp`;
+    let handle: FileHandle | undefined;
     try {
-      fs.mkdirSync(path.dirname(this.opts.cachePath), { recursive: true });
-      // 앱 인스턴스가 둘(dev + 패키지) 떠 있으면 같은 .tmp 를 두 프로세스가 rename 해 ENOENT 가 났다 → pid 로 구분.
-      const tmp = `${this.opts.cachePath}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(this.cache), "utf8");
-      fs.renameSync(tmp, this.opts.cachePath);
+      await fs.promises.mkdir(path.dirname(this.opts.cachePath), { recursive: true });
+      handle = await fs.promises.open(tmp, "wx", 0o600);
+      for (const chunk of usageCacheChunks(this.cache)) await handle.writeFile(chunk, "utf8");
+      await handle.close();
+      handle = undefined;
+      await fs.promises.rename(tmp, this.opts.cachePath);
     } catch (e) {
+      await handle?.close().catch(() => {});
+      await fs.promises.rm(tmp, { force: true }).catch(() => {});
       console.warn("[usage] cache 저장 실패:", e);
+    } finally {
+      observePerf("usage-cache-save", performance.now() - started);
     }
   }
 }
 
+// Keep the v5 format readable by older builds, without serializing the whole
+// cache to a second in-memory string. Let the event loop run between writes.
+const USAGE_CACHE_WRITE_CHARS = 128 * 1024;
+function* usageCacheChunks(cache: CacheFile): Generator<string> {
+  let chunk = '{"version":5,"files":{';
+  let comma = "";
+  for (const file in cache.files) {
+    if (!Object.hasOwn(cache.files, file)) continue;
+    const { records, ...meta } = cache.files[file];
+    chunk += comma + JSON.stringify(file) + ':{"records":[';
+    for (let i = 0; i < records.length; i++) {
+      chunk += (i ? "," : "") + JSON.stringify(records[i]);
+      if (chunk.length >= USAGE_CACHE_WRITE_CHARS) { yield chunk; chunk = ""; }
+    }
+    const metadata = JSON.stringify(meta);
+    chunk += "]" + (metadata.length > 2 ? "," + metadata.slice(1, -1) : "") + "}";
+    if (chunk.length >= USAGE_CACHE_WRITE_CHARS) { yield chunk; chunk = ""; }
+    comma = ",";
+  }
+  yield chunk + "}" + (cache.pricing ? ',"pricing":' + JSON.stringify(cache.pricing) : "") + "}";
+}
+
 /** A failed directory read must not be mistaken for a deleted transcript. */
-function transcriptMissing(file: string): boolean {
+async function transcriptMissing(file: string): Promise<boolean> {
   try {
-    fs.statSync(file);
+    await fs.promises.stat(file);
     return false;
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
@@ -553,15 +595,14 @@ function transcriptMissing(file: string): boolean {
   }
 }
 
-function listFiles(root: string, ext: string): string[] {
+async function listFiles(root: string, ext: string): Promise<string[]> {
   const out: string[] = [];
-  if (!fs.existsSync(root)) return out;
   const stack = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
       continue;
     }

@@ -65,3 +65,22 @@ test("collectTexts/searchEvents: 툴 호출의 이름·입력 요약·출력도 
   assert.deepEqual(searchEvents(events as never, "const needle").map((h) => h.blockId), ["tu1"], "출력 본문");
   assert.deepEqual(searchEvents(events as never, "readme.md").map((h) => [h.blockId, h.kind]), [["tu2", "tool"]], "부분 입력은 무시, 최종 입력만");
 });
+
+test("export consumes events lazily and preserves tool omission counts and late revisions", () => {
+  const meta = { title: "Long output", provider: "Codex", exportedAt: 0 };
+  const translate = createI18n("ko").t;
+  const output = "```" + "x".repeat(1496) + "😀" + "z".repeat(2 * 1024 * 1024);
+  function* stream(): Iterable<ChatEvent> {
+    yield { type: "text_delta", blockId: "older", ts: 1, text: "old partial" };
+    yield { type: "tool_result", toolUseId: "command", ts: 2, output, isError: true };
+    yield { type: "tool_use", toolUseId: "command", ts: 2, name: "Bash", input: { command: "first line\nsecond line" } };
+    yield { type: "assistant_text", blockId: "older", ts: 3, text: "complete assistant text" };
+    yield { type: "tool_result", toolUseId: "blank", ts: 4, output: " ".repeat(5000), isError: false };
+  }
+  const md = eventsToMarkdown(translate, stream(), meta);
+  assert.match(md, /complete assistant text[\s\S]*Bash — first line/);
+  assert.ok(md.includes("'''" + "x".repeat(1496) + "\ud83d"));
+  assert.ok(md.includes(translate("repo.export.truncated", { count: output.length - 1500 })));
+  assert.doesNotMatch(md, /old partial|second line|z{20}/);
+  assert.equal(md.match(/생략/g)?.length, 1, "space-only output does not produce a truncation notice");
+});

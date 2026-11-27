@@ -527,7 +527,6 @@ test("UsageScanner publishes usage and changed pricing together for existing log
     await scanner.scan(); // Joins the scan in progress at the old threshold.
     await firstScan;
     assert.equal(cost(), 0.095);
-    assert.equal(cost(new UsageScanner(options)), 0.095, "restart keeps the price table that produced the cache");
 
     const originalRead = fs.default.createReadStream;
     const failRead = t.mock.method(fs.default, "createReadStream", (name: string, streamOptions: Parameters<typeof originalRead>[1]) => {
@@ -535,6 +534,9 @@ test("UsageScanner publishes usage and changed pricing together for existing log
       return Readable.from((async function* () { throw new Error("temporarily unreadable"); })());
     });
     t.mock.method(console, "warn", () => {});
+    const restarted = new UsageScanner(options);
+    await restarted.scan();
+    assert.equal(cost(restarted), 0.095, "restart keeps the price table that produced the cache");
     await scanner.scan();
     assert.equal(cost(), 0.095, "failed reclassification keeps the previous amount");
     failRead.mock.restore();
@@ -660,6 +662,39 @@ test("UsageScanner watches the first Antigravity conversation in a new profile",
     assert.equal(scanner.records()[0]?.input, 100);
   } finally {
     scanner.unwatch();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("UsageScanner writes a multi-batch v5 snapshot without breaking Unicode or restart totals", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sudal-usage-batched-cache-"));
+  try {
+    const claudeDir = path.join(dir, "claude");
+    fs.mkdirSync(claudeDir);
+    const start = Date.UTC(2026, 10, 24);
+    const input = Array.from({ length: 2_500 }, (_, index) => claudeLine({
+      id: String(index), ts: new Date(start + index * 3_600_000).toISOString(),
+      cwd: "C:\\사용자\\팀🚀", sessionId: "팀", usage: { input_tokens: 7, output_tokens: 1 },
+    }));
+    fs.writeFileSync(path.join(claudeDir, "기록-팀.jsonl"), input.join("\n"));
+    const cachePath = path.join(dir, "usage-cache.json");
+    const options = { claudeDir, codexDir: path.join(dir, "codex"), cachePath };
+    const scanner = new UsageScanner(options);
+    await scanner.scan();
+    assert.equal(scanner.records().length, input.length);
+    const bytes = fs.readFileSync(cachePath, "utf8");
+    assert.ok(bytes.length > 128 * 1024 * 2, "fixture crosses multiple cache write batches");
+    const cached = JSON.parse(bytes);
+    assert.equal(cached.version, 5);
+    assert.deepEqual(Object.values(cached.files).flatMap(entry => (entry as { records: unknown[] }).records), scanner.records());
+    const restarted = new UsageScanner(options);
+    await restarted.scan();
+    assert.deepEqual(restarted.records(), scanner.records());
+    assert.equal(fs.readFileSync(cachePath, "utf8"), bytes, "unchanged cache is reused without rewrite");
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

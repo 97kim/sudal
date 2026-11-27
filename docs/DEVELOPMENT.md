@@ -251,3 +251,13 @@ Project configuration uses `sudal.harness.json` with schema version 1. The IPC h
 실계정 확인은 사용 가능한 각 CLI에서 일반 요청을 보내 활성 목표·조건을 참조하는지 확인하고, 입력한 원문이 대화 기록에 유지되는지 비교한다. 구독·설치·모델 한도로 실행하지 못한 제공자는 미검증으로 남긴다. 모의 테스트 통과를 실계정 확인으로 대신 기록하거나, 에이전트 보고를 사용자의 직접 확인으로 저장하지 않는다.
 
 Windows에서 `yarn` 실행 파일 없이 Corepack만 설치돼 있다면 위 명령을 `corepack yarn typecheck`, `corepack yarn test`, `corepack yarn build`로 실행한다. 테스트를 위해 관리자 권한이나 개발자 모드를 요구하지 않는다. 폴더 신뢰 테스트의 디렉터리 링크는 Windows에서 junction을 사용하며, Unix Electron의 `SingletonLock` 링크 형식은 Windows 테스트에서 `readlink` 응답으로 모의하고 실제 파일 이동·정리는 그대로 검사한다. 백그라운드 감시 테스트는 한글 경로 확인을 유지하되 임시 폴더 전체를 생성한 상위 경로에서 정리한다. 이는 로컬 Node.js 24.13.0에서 한글 하위 경로를 `rmSync`의 시작 경로로 지정할 때 재현된 네이티브 종료를 피하면서 임시 상위 폴더도 남기지 않기 위한 것이다.
+
+## Sudal 창이 멈추거나 느릴 때
+
+설정에서 로그 폴더를 열어 `performance.jsonl`을 확인한다. 앱이 종료되어 다시 실행했다면 직전 파일인 `performance.1.jsonl`도 함께 본다. 파일당 512 KiB, 두 개까지만 로컬에 보관하고 전송하지 않는다. 진단 파일에는 시간과 고정된 단계 이름, 프로세스 ID·종류, 실행 중에만 쓰이는 숫자 탭 식별자, 메모리·시간·입출력 크기를 남긴다. 탭 이름과 원래 ID, 프롬프트, 명령, 실행 결과, 토큰, 파일 경로는 이 파일에 쓰지 않는다.
+
+- `main-stall`의 `durationMs`는 메인 이벤트 루프의 타이머가 늦어진 시간이다. 메인 프로세스가 회복해야 기록할 수 있어 종료 직전 기록이 없을 수도 있다.
+- `renderer-unresponsive`와 `renderer-responsive`는 Electron이 감지한 창 렌더러의 멈춤과 회복이다. `renderer-gone`의 `oom`은 렌더러가 실제로 메모리 부족으로 종료되었다는 신호다. 없는 것이 메모리 압박을 배제하지는 않는다.
+- `memory-pressure`와 위 단계에서 `osAvailableMiB`, `osTotalMiB`, `mainRssMiB`, `mainHeapUsedMiB`, `mainExternalMiB`를 비교한다. `processes`는 Electron이 알려 준 앱 프로세스의 작업 집합 상위 12개이고, Codex와 Codex가 실행한 빌드는 여기에 포함되지 않을 수 있다. Windows 작업 관리자에서 별도로 비교한다. `osAvailableMiB`는 OS가 Node에 보고한 값이며 작업 관리자의 계산과 동일하지 않을 수 있다.
+- 같은 `mainPid` 안에서 `tab`을 대조하면 동시 완료를 구분할 수 있다. 창 멈춤·회복에는 멈춤이 감지됐을 때 선택된 탭의 `tab`이 붙는다. `turn-result`의 시간 앞뒤로 `codex-frame`, `chat-dispatch`, `history-flush`, `usage-scan`을 본다. 느린 작업(100 ms 이상)이나 큰 입력(1 MiB 이상)을 중심으로 남긴다. 함께 발생한 일은 조사 단서이며 원인 확정이 아니다.
+- `history-search`는 검색 워커를 기다린 시간까지 포함한다. 워커는 로컬 `chat-search-v1.sqlite`에 검색 대상 텍스트를 저장하고, 원본 JSONL이 바뀐 탭만 다시 색인한다. 캐시가 잠겨 있으면 원본을 검색하고, 손상된 캐시는 다시 만든다. 기록을 비우거나 탭을 삭제하면 해당 검색 인덱스도 제거한다.
