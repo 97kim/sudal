@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { StringDecoder } from "node:string_decoder";
+import type { ChatEvent } from "@shared/chat-events";
 
 export const JSONL_CHUNK_BYTES = 64 * 1024;
 
@@ -47,5 +48,12 @@ export function* readJsonl(file: string, includeTrailing = true, from = 0, until
     }
   } finally {
     fs.closeSync(fd);
+  }
+}
+
+export function* readChatEvents(file: string, from = 0, until = Infinity): Generator<ChatEvent> {
+  for (const { line } of readJsonl(file, true, from, until)) {
+    if (!line.trim()) continue;
+    try { yield JSON.parse(line) as ChatEvent; } catch { /* Skip an interrupted or invalid record. */ }
   }
 }

@@ -25,10 +25,11 @@ type PerfNotice = typeof notices[number];
 type PerfName = PerfPhase | PerfNotice;
 const perfNames = new Set<string>([...phases, ...notices]);
 const reasons = new Set<string>(["oom", "crashed", "abnormal-exit", "launch-failed", "integrity-failure", "memory-eviction", "clean-exit", "killed"]);
-interface Fields { bytes?: number; count?: number; pid?: number; exitCode?: number; reason?: string }
+interface Fields { bytes?: number; count?: number; pid?: number; exitCode?: number; reason?: string; tabId?: string }
 interface ProcessMetric { pid: number; type: string; memory: { workingSetSize: number; peakWorkingSetSize?: number; privateBytes?: number } }
 const metricTypes = new Set(["Browser", "Tab", "GPU", "Utility", "Zygote", "Sandbox helper", "Plugin", "Pepper Plugin Broker", "Unknown"]);
 const withoutSnapshot = new Set<PerfName>(["turn-result", "codex-process-open", "codex-process-exit"]);
+const lifecycle = new Set<PerfName>([...withoutSnapshot, "renderer-unresponsive", "renderer-responsive", "renderer-gone", "child-gone"]);
 
 function safeNumber(value: unknown, negative = false): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER &&
@@ -89,6 +90,7 @@ class BoundedPerformanceLog {
 export class PerformanceDiagnostics {
   private readonly log: BoundedPerformanceLog;
   private readonly last = new Map<PerfName, number>();
+  private readonly tabs = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private lastBeat = 0;
   private suspended = false;
@@ -143,14 +145,18 @@ export class PerformanceDiagnostics {
 
   record(name: PerfName, elapsedMs?: number, fields: Fields = {}): void {
     if (this.stopped || !perfNames.has(name)) return;
-    const now = this.now();
-    const previous = this.last.get(name);
-    const gap = name === "memory-pressure" ? 15_000 : 1_000;
-    if (previous !== undefined && now - previous < gap) return;
-    this.last.set(name, now);
+    if (!lifecycle.has(name)) {
+      const now = this.now();
+      const previous = this.last.get(name);
+      const gap = name === "memory-pressure" ? 15_000 : 1_000;
+      if (previous !== undefined && now - previous < gap) return;
+      this.last.set(name, now);
+    }
     this.log.push({
       ts: new Date().toISOString(),
       phase: name,
+      mainPid: process.pid,
+      tab: this.tabNumber(fields.tabId),
       durationMs: safeNumber(elapsedMs),
       bytes: safeNumber(fields.bytes),
       count: safeNumber(fields.count),
@@ -159,6 +165,15 @@ export class PerformanceDiagnostics {
       reason: typeof fields.reason === "string" ? (reasons.has(fields.reason) ? fields.reason : "other") : undefined,
       ...(!withoutSnapshot.has(name) ? this.memory() : {}),
     });
+  }
+
+  private tabNumber(tabId?: string): number | undefined {
+    if (!tabId) return;
+    const existing = this.tabs.get(tabId);
+    if (existing !== undefined) return existing;
+    const tab = this.tabs.size + 1;
+    this.tabs.set(tabId, tab);
+    return tab;
   }
 
   private memory() {
@@ -179,7 +194,6 @@ export class PerformanceDiagnostics {
     return {
       osAvailableMiB: Math.round(freemem() / MIB),
       osTotalMiB: Math.round(totalmem() / MIB),
-      mainPid: process.pid,
       mainRssMiB: Math.round(main.rss / MIB),
       mainHeapUsedMiB: Math.round(main.heapUsed / MIB),
       mainExternalMiB: Math.round(main.external / MIB),

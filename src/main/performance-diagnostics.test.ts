@@ -67,6 +67,32 @@ test("only one rotation is kept, with both diagnostics files bounded", async t =
   assert.equal(JSON.parse(latest).durationMs, 19);
 });
 
+test("concurrent completions and renderer transitions use app-local tab numbers", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "sudal-perf-tabs-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  let now = 0;
+  const monitor = new PerformanceDiagnostics(dir, { now: () => now });
+  const first = { tabId: "private-tab-id-a" }, second = { tabId: "private-tab-id-b" };
+  monitor.record("renderer-unresponsive", undefined, first);
+  monitor.record("turn-result", 120, first);
+  now += 250;
+  monitor.record("turn-result", 630, second);
+  monitor.record("renderer-responsive", 250, first);
+  monitor.record("codex-process-open", undefined, { pid: 15 });
+  monitor.record("codex-process-open", undefined, { pid: 16 });
+  await monitor.settle();
+
+  const raw = await readFile(join(dir, PERF_LOG_FILE), "utf8");
+  assert.ok(!raw.includes("private-tab-id"));
+  const rows = raw.trim().split("\n").map(line => JSON.parse(line));
+  assert.deepEqual(rows.map(({ phase, tab, pid }) => [phase, tab, pid]), [
+    ["renderer-unresponsive", 1, undefined], ["turn-result", 1, undefined],
+    ["turn-result", 2, undefined], ["renderer-responsive", 1, undefined],
+    ["codex-process-open", undefined, 15], ["codex-process-open", undefined, 16],
+  ]);
+  assert.ok(rows.every(row => row.mainPid === process.pid));
+});
+
 test("main heartbeat records delay but not time the device spent suspended", async t => {
   const dir = await mkdtemp(join(tmpdir(), "sudal-perf-diag-"));
   t.after(() => rm(dir, { recursive: true, force: true }));

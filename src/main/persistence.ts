@@ -2,7 +2,7 @@
 // SQLite 는 Phase 4 에서 node:sqlite 로 갈지 결정 — better-sqlite3 는 쓰지 않는다 (PLAN 참조).
 
 import fs from "node:fs";
-import { readJsonl } from "./jsonl-reader";
+import { readChatEvents } from "./jsonl-reader";
 import { observePerf } from "./performance-diagnostics";
 import { HistoryCheckpoints, historyFileStamp } from "./history-checkpoint";
 import { HISTORY_PREVIEW_MIN_FILE_BYTES, readHistoryPreview } from "./history-preview";
@@ -227,7 +227,7 @@ export class Store {
         console.error(`[store] thread append 실패 (${tabId}):`, e);
       } finally {
         const elapsed = performance.now() - started;
-        if (elapsed >= 100 || batch.length >= 256 * 1024) observePerf("history-flush", elapsed, { bytes: Buffer.byteLength(batch), count: lines.length });
+        if (elapsed >= 100 || batch.length >= 256 * 1024) observePerf("history-flush", elapsed, { tabId, bytes: Buffer.byteLength(batch), count: lines.length });
       }
     }
     this.buffers.clear();
@@ -264,17 +264,6 @@ export class Store {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') console.error('[store] agent cache save failed', tabId, e); }
   }
 
-  /** 스레드 파일의 mtime·크기(검색 인덱스의 캐시 키). 아직 안 내려간 버퍼가 있으면 먼저 내린다. 파일이 없으면 null. */
-  threadStat(tabId: string): { mtimeMs: number; size: number } | null {
-    if (this.buffers.has(tabId)) this.flush();
-    try {
-      const st = fs.statSync(this.threadPath(tabId));
-      return { mtimeMs: st.mtimeMs, size: st.size };
-    } catch {
-      return null;
-    }
-  }
-
   readEvents(tabId: string): ChatEvent[] {
     return [...this.iterateEvents(tabId)];
   }
@@ -295,15 +284,7 @@ export class Store {
     // 아직 디스크에 안 내려간 버퍼가 있으면 먼저 내린다.
     if (this.buffers.has(tabId)) this.flush();
     const p = this.threadPath(tabId);
-    if (!fs.existsSync(p)) return;
-    for (const { line } of readJsonl(p, true, offset)) {
-      if (!line.trim()) continue;
-      try {
-        yield JSON.parse(line) as ChatEvent;
-      } catch {
-        // 마지막 줄이 잘렸을 수 있다(강제 종료). 그 줄만 버린다.
-      }
-    }
+    if (fs.existsSync(p)) yield* readChatEvents(p, offset);
   }
 
   /** 비운 대화의 보관본. 파일명으로만 찾으므로 살아 있는 스레드(`<tabId>.jsonl`)와 섞이지 않는다. */

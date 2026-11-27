@@ -75,7 +75,7 @@ export function indexBlocks(events: Iterable<ChatEvent>): IndexedBlock[] {
 }
 
 /** 대소문자 무시 부분 일치. 블록당 첫 일치만. query 는 이미 trim·소문자. */
-export function searchBlocks(blocks: IndexedBlock[], q: string, limit = 50): SearchHit[] {
+export function searchBlocks(blocks: Iterable<IndexedBlock>, q: string, limit = 50): SearchHit[] {
   if (!q) return [];
   const hits: SearchHit[] = [];
   for (const b of blocks) {
