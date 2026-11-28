@@ -1162,6 +1162,12 @@ export class SessionManager {
     return out;
   }
 
+  iterateControlEvents(tabId: string): Iterable<ChatEvent> {
+    const session = this.ensure(tabId);
+    this.restoreHistory(session);
+    return this.deps.store?.iterateEvents?.(tabId) ?? this.events(tabId).slice();
+  }
+
   events(tabId: string): ChatEvent[] {
     const s = this.ensure(tabId);
     const events = this.loadEvents(s);

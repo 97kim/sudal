@@ -17,7 +17,8 @@ import { parseCron } from "@shared/cron";
 import type { Run, Schedule } from "@shared/schedules";
 import type { ChatSendResult, FanoutStartDto, FanoutStartResult, Provider, WorkspaceStateDto } from "@shared/ipc";
 import { OrchError, type Orchestrator } from "./orchestration";
-import { replaySession, type Block } from "@shared/session-state";
+import { readControlBlocks } from "./control-history";
+import type { Block } from "@shared/session-state";
 import { clickScript, fillScript, focusScript, keyInputEvents, pickConsole, readScript, rectScript, scrollScript, waitProbeScript, type BrowserRect, type KeyInput, type ScrollTarget } from "@shared/browser-control";
 import type { ConsoleLine, NetFailure } from "@shared/browser-diagnostics";
 import { tabTitle as sharedTabTitle, type TabMeta } from "@shared/workspace-model";
@@ -56,6 +57,7 @@ export interface ControlDeps {
   closeTab(tabId: string): void;
   snapshot(tabId: string): ControlSnapshot;
   events(tabId: string): ChatEvent[];
+  iterateEvents?(tabId: string): Iterable<ChatEvent>;
   send(tabId: string, text: string, images?: PreparedChatImage[]): Promise<ChatSendResult>;
   abort(tabId: string): void;
   /** 검증 실행(저장한 명령 또는 commands). 결과는 탭 기록의 verify 블록으로 남는다. */
@@ -566,7 +568,7 @@ export class ControlServer {
         if (!r.ok) throw new ControlError(r.error, "send_failed");
         if (params.wait === true) {
           const w = await this.waitTurn(tab.id, since, num(params.timeoutMs) ?? 600_000);
-          return { send: r, wait: w, ...(w.satisfied ? { reply: this.lastReply(tab.id) } : {}) };
+          return { send: r, wait: w, ...(w.satisfied ? { reply: await this.lastReply(tab.id) } : {}) };
         }
         return { send: r, tab: this.tabInfo(tab) };
       }
@@ -574,12 +576,12 @@ export class ControlServer {
         const tab = this.resolveTab(params.tab);
         this.rejectSelfWait(tab, params);
         const w = await this.waitIdle(tab.id, num(params.timeoutMs) ?? 600_000);
-        return { wait: w, ...(w.satisfied ? { reply: this.lastReply(tab.id) } : {}), tab: this.tabInfo(tab) };
+        return { wait: w, ...(w.satisfied ? { reply: await this.lastReply(tab.id) } : {}), tab: this.tabInfo(tab) };
       }
       case "tab.read": {
         const tab = this.resolveTab(params.tab);
         const last = Math.max(1, Math.min(200, num(params.last) ?? 10));
-        const blocks = replaySession(this.deps.events(tab.id)).blocks;
+        const blocks = await this.readBlocks(tab.id);
         return { tab: this.tabInfo(tab), total: blocks.length, blocks: blocks.slice(-last).map(compactBlock) };
       }
       case "tab.activate": {
@@ -849,7 +851,7 @@ export class ControlServer {
         .slice(since)
         .find((e) => e.type === "verify" && e.runId === runId && e.status !== "running");
       if (done && done.type === "verify") {
-        const block = replaySession(this.deps.events(tabId)).blocks.find((b) => b.kind === "verify" && b.id === runId);
+        const block = (await this.readBlocks(tabId)).find((b) => b.kind === "verify" && b.id === runId);
         return { satisfied: true, result: block ? compactBlock(block) : { status: done.status } };
       }
       if (Date.now() >= deadline) return { satisfied: false };
@@ -866,7 +868,7 @@ export class ControlServer {
         .slice(since)
         .find((e) => e.type === "fanout" && e.fanoutId === fanoutId && e.status !== "running");
       if (done) {
-        const block = replaySession(this.deps.events(tabId)).blocks.find((b) => b.kind === "fanout" && b.id === fanoutId);
+        const block = (await this.readBlocks(tabId)).find((b) => b.kind === "fanout" && b.id === fanoutId);
         return { satisfied: true, result: block ? compactBlock(block) : null };
       }
       if (Date.now() >= deadline) return { satisfied: false };
@@ -1032,9 +1034,13 @@ export class ControlServer {
     }
   }
 
+  private readBlocks(tabId: string): Promise<Block[]> {
+    return readControlBlocks(this.deps.iterateEvents?.(tabId) ?? this.deps.events(tabId).slice());
+  }
+
   /** 마지막 사용자 메시지 뒤의 어시스턴트 텍스트를 이어 붙인 것. */
-  private lastReply(tabId: string): string {
-    const blocks = replaySession(this.deps.events(tabId)).blocks;
+  private async lastReply(tabId: string): Promise<string> {
+    const blocks = await this.readBlocks(tabId);
     let i = blocks.length - 1;
     while (i >= 0 && blocks[i].kind !== "user") i--;
     return blocks
