@@ -686,9 +686,9 @@ function RateLimitBlock({
   const loc = intlLocale(i18n.language as Locale);
   return (
     <div className="border-t border-line pt-3">
-      <div className="mb-1.5 flex items-center justify-between">
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="font-medium">{label}</span>
-        <span className="flex items-center gap-1.5">
+        <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
           <span className="mono text-[10.5px] text-muted">
             {limit ? t("usage.limits.observedAt", { time: fmtTime(limit.observedAt, loc) }) : t("usage.limits.noInfo")}
           </span>
@@ -751,14 +751,19 @@ function RateLimitBar({
   const left = 100 - pct;
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[11px]">
-        <span className="text-muted">
-          {t("usage.limits.windowBasis", { window: fmtWindow(w.windowMinutes, t), suffix })}
+      <div className="mb-1 flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-[11px] text-muted">
+        <span className="mr-auto max-w-full wrap-anywhere">
+          <span className="whitespace-nowrap">{t("usage.limits.windowBasis", { window: fmtWindow(w.windowMinutes, t) })}</span>
+          {suffix}
         </span>
-        <span className="mono text-[10.5px] text-muted">
+        <span className="mono whitespace-nowrap text-[10.5px]">
           {pct >= 100 ? t("usage.limits.reached") : t("usage.limits.usedLeft", { used: Math.round(pct), left: Math.round(left) })}
-          {w.resetsAt ? ` · ${t("usage.limits.resets", { time: fmtDateTime(w.resetsAt * 1000, loc) })}` : ""}
         </span>
+        {w.resetsAt ? (
+          <span className="mono whitespace-nowrap text-[10.5px]">
+            {t("usage.limits.resets", { time: fmtDateTime(w.resetsAt * 1000, loc) })}
+          </span>
+        ) : null}
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-panel-2">
         <div

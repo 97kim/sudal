@@ -77,7 +77,7 @@ export const usage = {
     noInfoHint: "{{hint}} 아직 정보가 없다면 해당 AI에 메시지를 보내 응답을 받은 뒤 다시 확인하세요.",
     allModels: "전체 모델",
     modelOnly: "{{model}} 전용",
-    windowBasis: "{{window}} 기준{{suffix}}",
+    windowBasis: "{{window}} 기준",
     reached: "한도 도달",
     usedLeft: "{{used}}% 사용 · {{left}}% 남음",
     resets: "{{time}} 초기화",

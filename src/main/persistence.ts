@@ -280,6 +280,22 @@ export class Store {
     return blocks.length ? blocks : null;
   }
 
+  controlEventCursor(tabId: string): () => ChatEvent[] {
+    const file = this.threadPath(tabId);
+    const size = () => {
+      if (this.buffers.has(tabId)) this.flush();
+      return fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+    };
+    let offset = size();
+    return () => {
+      const end = size();
+      if (end === offset) return [];
+      const events = end > offset ? [...readChatEvents(file, offset, end)] : [];
+      offset = end;
+      return events;
+    };
+  }
+
   *iterateEvents(tabId: string, offset = 0): Generator<ChatEvent> {
     // 아직 디스크에 안 내려간 버퍼가 있으면 먼저 내린다.
     if (this.buffers.has(tabId)) this.flush();

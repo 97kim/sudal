@@ -79,7 +79,7 @@ export const usage: DeepPartial<typeof ko> = {
     noInfoHint: "{{hint}} If there's no information yet, send that AI a message, wait for the reply, and check again.",
     allModels: "all models",
     modelOnly: "{{model}} only",
-    windowBasis: "{{window}} window{{suffix}}",
+    windowBasis: "{{window}} window",
     reached: "Limit reached",
     usedLeft: "{{used}}% used · {{left}}% left",
     resets: "resets {{time}}",

@@ -63,7 +63,16 @@ function fakeDeps() {
     },
     closeTab: (tabId) => calls.push(`close ${tabId}`),
     snapshot: (tabId) => ({ status: statuses[tabId] as never, provider: "claude", cwd: "/tmp/dev", sessionId: null, controller: "app", pending: pending[tabId] ?? 0, limitWait: false }),
-    events: (tabId) => events[tabId] ?? [],
+    iterateEvents: (tabId) => events[tabId] ?? [],
+    controlEventCursor: (id) => {
+      let offset = events[id]?.length ?? 0;
+      return () => {
+        const snapshot = events[id] ?? [];
+        const added = snapshot.slice(offset);
+        offset = snapshot.length;
+        return added;
+      };
+    },
     send: async (tabId, text) => {
       calls.push(`send ${tabId} ${text}`);
       // 보내면 잠깐 running 이었다가 idle 로 — wait 가 이를 본다
