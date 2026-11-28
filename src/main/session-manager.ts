@@ -39,7 +39,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CompanionMirror } from "./companion-mirror";
 import { appMsg, MsgError, mt } from "./i18n";
-import { staleRunEvents } from "@shared/stale-runs";
+import { staleRunEvents, trackStaleRuns } from "@shared/stale-runs";
 import {
   TranscriptWatcher,
   findClaudeTranscript,
@@ -152,6 +152,7 @@ interface Session {
   events: ChatEvent[] | null;
   completionPreview: CompletionPreview;
   historyRestored: boolean;
+  historyGeneration: number;
   hasUser: boolean;
   agentToolIds: Set<string>;
   /** 이미 기록한 이벤트의 색인. events 를 읽을 때 같이 만든다. */
@@ -195,6 +196,7 @@ function closeProviderSessions(tabId: string) {
 export interface SessionStore {
   appendEvent(tabId: string, event: ChatEvent): void;
   readEvents(tabId: string): ChatEvent[];
+  controlEventCursor?(tabId: string): () => ChatEvent[];
   iterateEvents?(tabId: string, offset?: number): Iterable<ChatEvent>;
   historyCheckpoint?(tabId: string): Promise<HistoryCheckpoint | null>;
   currentHistoryCheckpoint?(tabId: string): HistoryCheckpoint | null;
@@ -394,6 +396,7 @@ export class SessionManager {
         events: null,
         completionPreview: new CompletionPreview(),
         historyRestored: false,
+        historyGeneration: 0,
         hasUser: false,
         agentToolIds: new Set(),
         dedupe: null,
@@ -1162,10 +1165,56 @@ export class SessionManager {
     return out;
   }
 
-  iterateControlEvents(tabId: string): Iterable<ChatEvent> {
+  private controlHistoryGuard(session: Session) {
+    const generation = session.historyGeneration;
+    return () => {
+      if (this.sessions.get(session.tabId) !== session || session.historyGeneration !== generation)
+        throw new MsgError("session.msg.sessionEnded");
+    };
+  }
+
+  controlEventCursor(tabId: string): () => ChatEvent[] {
     const session = this.ensure(tabId);
-    this.restoreHistory(session);
-    return this.deps.store?.iterateEvents?.(tabId) ?? this.events(tabId).slice();
+    const check = this.controlHistoryGuard(session);
+    const cursor = this.deps.store?.controlEventCursor?.(tabId);
+    let index = cursor ? 0 : this.events(tabId).length;
+    return () => {
+      check();
+      if (cursor) return cursor();
+      const events = this.events(tabId);
+      const added = events.slice(index);
+      index = events.length;
+      return added;
+    };
+  }
+
+  *iterateControlEvents(tabId: string): Generator<ChatEvent> {
+    const session = this.ensure(tabId);
+    const check = this.controlHistoryGuard(session);
+    const store = this.deps.store;
+    const events = store?.iterateEvents?.(tabId) ?? store?.readEvents(tabId) ?? session.events?.slice() ?? [];
+    const stale = session.historyRestored ? null : trackStaleRuns(mt);
+    for (const event of events) {
+      check();
+      if (stale) {
+        stale.push(event);
+        if (!session.historyRestored) this.rememberEvent(session, event);
+      }
+      yield event;
+    }
+    check();
+    if (stale) {
+      const corrections = stale.finish();
+      if (!session.historyRestored) {
+        session.historyRestored = true;
+        for (const event of corrections) {
+          if (store) store.appendEvent(tabId, event);
+          else (session.events ??= []).push(event);
+        }
+      }
+      for (const event of corrections) { check(); yield event; }
+      check();
+    }
   }
 
   events(tabId: string): ChatEvent[] {
@@ -1981,6 +2030,7 @@ export class SessionManager {
     if (s.controlBusy) throw new MsgError("session.msg.codexControl.busy");
     this.deps.onResetSession?.(tabId);
     s.completionPreview.reset();
+    s.historyGeneration++;
     this.historyReads.delete(tabId);
     this.externalCliExited(tabId);
     if (s.controller === "terminal") this.detachTerminal(tabId);

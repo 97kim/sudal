@@ -1,4 +1,4 @@
-﻿import { setImmediate as yieldToMain } from "node:timers/promises";
+import { setImmediate as yieldToMain } from "node:timers/promises";
 import type { ChatEvent } from "@shared/chat-events";
 import { initialSessionState, reduceSession, type Block, type SessionState } from "@shared/session-state";
 
@@ -35,12 +35,14 @@ function targetKey(event: ChatEvent, state: SessionState): string | undefined {
   }
 }
 
-export async function readControlBlocks(events: Iterable<ChatEvent>): Promise<Block[]> {
+export async function readControlBlocks(events: Iterable<ChatEvent>, signal?: AbortSignal): Promise<Block[]> {
   const blocks: Block[] = [];
   const byKey = new Map<string, number>();
   const active = new Set<number>();
   let state = initialSessionState();
   let deadline = performance.now() + 8;
+  let batch = 0;
+  signal?.throwIfAborted();
   for (const event of events) {
     const key = targetKey(event, state);
     const target = key === undefined ? undefined : byKey.get(key);
@@ -49,7 +51,10 @@ export async function readControlBlocks(events: Iterable<ChatEvent>): Promise<Bl
     // Nested subagent activity falls back to the most recent unfinished agent.
     if (indices.length > 1) indices.sort((a, b) => a - b);
     const previous = indices.map(i => blocks[i]);
-    state = reduceSession({ ...state, blocks: previous }, event);
+    // CLI responses expose result status and user text, never raw tool output or images.
+    const input = event.type === "tool_result" ? { ...event, output: "" }
+      : event.type === "user_message" && event.images ? { ...event, images: undefined } : event;
+    state = reduceSession({ ...state, blocks: previous }, input);
     for (let i = 0; i < state.blocks.length; i++) {
       const block = state.blocks[i];
       if (block === previous[i]) continue;
@@ -59,8 +64,10 @@ export async function readControlBlocks(events: Iterable<ChatEvent>): Promise<Bl
       if ((block.kind === "tool" && !block.result) || (block.kind === "text" && block.streaming)) active.add(index);
       else active.delete(index);
     }
-    if (performance.now() >= deadline) {
+    if (++batch >= 1024 || performance.now() >= deadline) {
       await yieldToMain();
+      signal?.throwIfAborted();
+      batch = 0;
       deadline = performance.now() + 8;
     }
   }

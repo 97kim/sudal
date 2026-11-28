@@ -164,3 +164,14 @@ test("보관본은 탭마다 최근 것만 남는다", () => {
   store.resetThread("tab1");
   assert.equal(archives().length, 10, "정리하고 나면 10개만 남는다");
 });
+
+test("control cursor starts after buffered history and advances only over new bytes", () => {
+  const { store } = tmpStore();
+  const event: ChatEvent = { type: "user_message", id: "a", ts: 1, text: "한글" };
+  store.appendEvent("tab", event);
+  const poll = store.controlEventCursor("tab");
+  assert.deepEqual(poll(), []);
+  store.appendEvent("tab", event);
+  assert.deepEqual(poll(), [event]);
+  assert.deepEqual(poll(), []);
+});

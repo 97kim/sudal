@@ -903,3 +903,34 @@ test("claudeProjectDirs: macOS 는 예전 규칙을 먼저 두고 다를 때만 
   ]);
   assert.deepEqual(claudeProjectDirs("C:\\Users\\a\\.claude\\projects", "C:\\Users\\a\\proj", "win32", same), ["C:\\Users\\a\\.claude\\projects\\C--Users-a-proj"]);
 });
+
+test("cold CLI reads repair stale runs once and reject a reset or released snapshot", () => {
+  let scans = 0;
+  const events: ChatEvent[] = [{ type: "tool_use", ts: 1, toolUseId: "stale", name: "Bash", input: {} }];
+  const sessions = new SessionManager({
+    emit() {}, claudeRuntime: async () => { throw Error("unused"); }, codexRuntime: async () => { throw Error("unused"); },
+    store: {
+      appendEvent(_id, event) { events.push(event); },
+      readEvents() { throw Error("unexpected bulk read"); },
+      resetThread() { events.length = 0; },
+      *iterateEvents() { scans++; yield* events.slice(); },
+    },
+  });
+  const first = sessions.iterateControlEvents("tab");
+  const second = sessions.iterateControlEvents("tab");
+  first.next(); second.next();
+  assert.equal([...first][0].type, "tool_result");
+  assert.equal([...second][0].type, "tool_result");
+  assert.equal(events.length, 2);
+  assert.equal(scans, 2);
+  const reading = sessions.iterateControlEvents("tab");
+  reading.next();
+  sessions.clear("tab");
+  assert.throws(() => reading.next());
+  sessions.note("tab", { type: "notice", ts: 5, message: "new", level: "notice" });
+  const removed = sessions.iterateControlEvents("tab");
+  removed.next();
+  sessions.release("tab");
+  assert.throws(() => removed.next());
+  sessions.shutdown();
+});

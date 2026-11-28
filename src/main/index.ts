@@ -970,7 +970,7 @@ async function startControlServer() {
         const s = sessions.snapshot(tabId);
         return { status: s.status, provider: s.provider, cwd: s.cwd, sessionId: s.sessionId, controller: s.controller, pending: s.pendingPrompts.length, limitWait: s.limitWait !== null };
       },
-      events: (tabId) => sessions.events(tabId),
+      controlEventCursor: (tabId) => sessions.controlEventCursor(tabId),
       iterateEvents: (tabId) => sessions.iterateControlEvents(tabId),
       send: sendChatMessage,
       abort: (tabId) => { if (feedbackRunner?.active(tabId)) void feedbackRunner.stop(tabId); else sessions.abort(tabId); },

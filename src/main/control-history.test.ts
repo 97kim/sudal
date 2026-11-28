@@ -1,4 +1,4 @@
-﻿import { test } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ChatEvent } from "@shared/chat-events";
 import { replaySession } from "@shared/session-state";
@@ -9,7 +9,7 @@ test("CLI history preserves late card updates, open agent order and generated ID
     { type: "notice", ts: 0, message: "before", level: "notice" },
     { type: "tool_use", ts: 1, toolUseId: "a", name: "Agent", input: {} },
     { type: "tool_use", ts: 2, toolUseId: "b", name: "Agent", input: {} },
-    { type: "tool_result", ts: 3, toolUseId: "a", isError: false, output: "done" },
+    { type: "tool_result", ts: 3, toolUseId: "a", isError: false, output: "" },
     { type: "tool_use", ts: 4, toolUseId: "a", name: "Agent", input: { codexAgent: true, agents: [{ id: "child", status: "running" }] } },
     { type: "subagent_activity", ts: 5, parentToolUseId: "nested", tool: "Bash" },
     { type: "text_delta", ts: 6, blockId: "b", text: "start" },
@@ -39,4 +39,18 @@ test("a long CLI history read lets the main loop service another request", async
   } finally {
     clearImmediate(timer);
   }
+});
+
+test("cancelled CLI replay closes the event iterator at its next yield", async () => {
+  const abort = new AbortController();
+  let closed = false;
+  function* source(): Generator<ChatEvent> {
+    try {
+      for (;;) yield { type: "notice", key: "one", ts: 1, level: "notice", message: "one" };
+    } finally { closed = true; }
+  }
+  const result = readControlBlocks(source(), abort.signal);
+  abort.abort();
+  await assert.rejects(result, { name: "AbortError" });
+  assert.equal(closed, true);
 });

@@ -56,8 +56,8 @@ export interface ControlDeps {
   activateTab(tabId: string): void;
   closeTab(tabId: string): void;
   snapshot(tabId: string): ControlSnapshot;
-  events(tabId: string): ChatEvent[];
-  iterateEvents?(tabId: string): Iterable<ChatEvent>;
+  controlEventCursor(tabId: string): () => ChatEvent[];
+  iterateEvents(tabId: string): Iterable<ChatEvent>;
   send(tabId: string, text: string, images?: PreparedChatImage[]): Promise<ChatSendResult>;
   abort(tabId: string): void;
   /** 검증 실행(저장한 명령 또는 commands). 결과는 탭 기록의 verify 블록으로 남는다. */
@@ -563,25 +563,25 @@ export class ControlServer {
           throw new ControlError(mt("session.error.agyImagesUnsupported"), "unsupported");
         }
         const text = params.text === undefined && images.length ? "" : this.requireString(params, "text");
-        const since = this.deps.events(tab.id).length;
+        const cursor = params.wait === true ? this.deps.controlEventCursor(tab.id) : null;
         const r = await this.deps.send(tab.id, text, images);
         if (!r.ok) throw new ControlError(r.error, "send_failed");
-        if (params.wait === true) {
-          const w = await this.waitTurn(tab.id, since, num(params.timeoutMs) ?? 600_000);
-          return { send: r, wait: w, ...(w.satisfied ? { reply: await this.lastReply(tab.id) } : {}) };
+        if (cursor) {
+          const w = await this.waitTurn(tab.id, cursor, num(params.timeoutMs) ?? 600_000, signal);
+          return { send: r, wait: w, ...(w.satisfied ? { reply: await this.lastReply(tab.id, signal) } : {}) };
         }
         return { send: r, tab: this.tabInfo(tab) };
       }
       case "tab.wait": {
         const tab = this.resolveTab(params.tab);
         this.rejectSelfWait(tab, params);
-        const w = await this.waitIdle(tab.id, num(params.timeoutMs) ?? 600_000);
-        return { wait: w, ...(w.satisfied ? { reply: await this.lastReply(tab.id) } : {}), tab: this.tabInfo(tab) };
+        const w = await this.waitIdle(tab.id, num(params.timeoutMs) ?? 600_000, signal);
+        return { wait: w, ...(w.satisfied ? { reply: await this.lastReply(tab.id, signal) } : {}), tab: this.tabInfo(tab) };
       }
       case "tab.read": {
         const tab = this.resolveTab(params.tab);
         const last = Math.max(1, Math.min(200, num(params.last) ?? 10));
-        const blocks = await this.readBlocks(tab.id);
+        const blocks = await this.readBlocks(tab.id, signal);
         return { tab: this.tabInfo(tab), total: blocks.length, blocks: blocks.slice(-last).map(compactBlock) };
       }
       case "tab.activate": {
@@ -608,11 +608,11 @@ export class ControlServer {
             throw new ControlError(mt("cli.control.commandsInvalid"));
           commands = params.commands as string[];
         }
-        const since = this.deps.events(tab.id).length;
+        const cursor = params.wait === true ? this.deps.controlEventCursor(tab.id) : null;
         const r = await this.deps.verify(tab.id, commands);
         if (!r.ok) throw new ControlError(r.error, "verify_failed");
-        if (params.wait === true) {
-          const w = await this.waitVerify(tab.id, r.runId, since, num(params.timeoutMs) ?? 1_800_000);
+        if (cursor) {
+          const w = await this.waitVerify(tab.id, r.runId, cursor, num(params.timeoutMs) ?? 1_800_000, signal);
           return { runId: r.runId, wait: w, ...(w.result ? { result: w.result } : {}) };
         }
         return { runId: r.runId, tab: this.tabInfo(tab) };
@@ -622,11 +622,11 @@ export class ControlServer {
         const prompt = this.requireString(params, "prompt");
         const providers = Array.isArray(params.providers) ? params.providers : Array.isArray(params.variants) ? params.variants : undefined;
         if (!providers) throw new ControlError(mt("cli.control.providersRequired"));
-        const since = this.deps.events(tab.id).length;
+        const cursor = params.wait === true ? this.deps.controlEventCursor(tab.id) : null;
         const r = await this.deps.fanout(tab.id, { prompt, variants: providers.map((p) => (typeof p === "string" ? { provider: cliProvider(p) as Provider } : { ...(p as { provider: Provider; model?: string }), provider: cliProvider((p as { provider: string }).provider) as Provider })), ...(params.policy !== undefined ? { policy: params.policy as PermissionPolicy } : {}) });
         if (!r.ok) throw new ControlError(r.error, "fanout_failed");
-        if (params.wait === true) {
-          const w = await this.waitFanout(tab.id, r.fanoutId, since, num(params.timeoutMs) ?? 1_800_000);
+        if (cursor) {
+          const w = await this.waitFanout(tab.id, r.fanoutId, cursor, num(params.timeoutMs) ?? 1_800_000, signal);
           return { fanoutId: r.fanoutId, tabIds: r.tabIds, wait: w, ...(w.result ? { result: w.result } : {}) };
         }
         return { fanoutId: r.fanoutId, tabIds: r.tabIds, tab: this.tabInfo(tab) };
@@ -843,15 +843,14 @@ export class ControlServer {
   }
 
   /** runId 의 verify 이벤트가 running 을 벗어날 때까지 기다린다. */
-  private async waitVerify(tabId: string, runId: string, since: number, timeoutMs: number): Promise<{ satisfied: boolean; result?: Json }> {
+  private async waitVerify(tabId: string, runId: string, cursor: () => ChatEvent[], timeoutMs: number, signal?: AbortSignal): Promise<{ satisfied: boolean; result?: Json }> {
     const deadline = Date.now() + Math.max(1000, Math.min(timeoutMs, 3 * 60 * 60_000));
     for (;;) {
-      const done = this.deps
-        .events(tabId)
-        .slice(since)
+      signal?.throwIfAborted();
+      const done = cursor()
         .find((e) => e.type === "verify" && e.runId === runId && e.status !== "running");
       if (done && done.type === "verify") {
-        const block = (await this.readBlocks(tabId)).find((b) => b.kind === "verify" && b.id === runId);
+        const block = (await this.readBlocks(tabId, signal)).find((b) => b.kind === "verify" && b.id === runId);
         return { satisfied: true, result: block ? compactBlock(block) : { status: done.status } };
       }
       if (Date.now() >= deadline) return { satisfied: false };
@@ -860,15 +859,14 @@ export class ControlServer {
   }
 
   /** fanoutId 의 fanout 이벤트가 running 을 벗어날 때까지 기다린다. */
-  private async waitFanout(tabId: string, fanoutId: string, since: number, timeoutMs: number): Promise<{ satisfied: boolean; result?: Json }> {
+  private async waitFanout(tabId: string, fanoutId: string, cursor: () => ChatEvent[], timeoutMs: number, signal?: AbortSignal): Promise<{ satisfied: boolean; result?: Json }> {
     const deadline = Date.now() + Math.max(1000, Math.min(timeoutMs, 3 * 60 * 60_000));
     for (;;) {
-      const done = this.deps
-        .events(tabId)
-        .slice(since)
+      signal?.throwIfAborted();
+      const done = cursor()
         .find((e) => e.type === "fanout" && e.fanoutId === fanoutId && e.status !== "running");
       if (done) {
-        const block = (await this.readBlocks(tabId)).find((b) => b.kind === "fanout" && b.id === fanoutId);
+        const block = (await this.readBlocks(tabId, signal)).find((b) => b.kind === "fanout" && b.id === fanoutId);
         return { satisfied: true, result: block ? compactBlock(block) : null };
       }
       if (Date.now() >= deadline) return { satisfied: false };
@@ -1007,10 +1005,12 @@ export class ControlServer {
   }
 
   /** 지금 걸려 있는 일이 다 끝날 때까지. 이미 끝나 있으면 바로 satisfied. 시간 초과는 오류가 아니라 satisfied:false. */
-  private async waitIdle(tabId: string, timeoutMs: number): Promise<{ satisfied: boolean; status: SessionStatus; waitedMs: number }> {
+  private async waitIdle(tabId: string, timeoutMs: number, signal?: AbortSignal): Promise<{ satisfied: boolean; status: SessionStatus; waitedMs: number }> {
     const started = Date.now();
     const limit = Math.max(0, Math.min(timeoutMs, 3_600_000));
     for (;;) {
+      signal?.throwIfAborted();
+      this.resolveTab(tabId);
       const { done, status } = this.settled(tabId);
       if (done) return { satisfied: true, status, waitedMs: Date.now() - started };
       if (Date.now() - started >= limit) return { satisfied: false, status, waitedMs: Date.now() - started };
@@ -1022,25 +1022,28 @@ export class ControlServer {
    * 방금 보낸 메시지의 턴이 끝날 때까지: 보내기 전 이벤트 수(since) 뒤로 turn_result 가 기록되고 탭이 한가해져야 한다.
    * 큐에 들어갔거나(다른 턴 진행 중) 한도 대기에 걸린 프롬프트도 이 기준이면 실제로 실행된 뒤에야 satisfied 다.
    */
-  private async waitTurn(tabId: string, since: number, timeoutMs: number): Promise<{ satisfied: boolean; status: SessionStatus; waitedMs: number }> {
+  private async waitTurn(tabId: string, cursor: () => ChatEvent[], timeoutMs: number, signal?: AbortSignal): Promise<{ satisfied: boolean; status: SessionStatus; waitedMs: number }> {
     const started = Date.now();
     const limit = Math.max(0, Math.min(timeoutMs, 3_600_000));
+    let turned = false;
     for (;;) {
+      signal?.throwIfAborted();
+      const observed = cursor();
       const { done, status } = this.settled(tabId);
-      const turned = this.deps.events(tabId).slice(since).some((e) => e.type === "turn_result");
+      turned ||= observed.some((e) => e.type === "turn_result");
       if (done && turned) return { satisfied: true, status, waitedMs: Date.now() - started };
       if (Date.now() - started >= limit) return { satisfied: false, status, waitedMs: Date.now() - started };
       await new Promise((r) => setTimeout(r, 250));
     }
   }
 
-  private readBlocks(tabId: string): Promise<Block[]> {
-    return readControlBlocks(this.deps.iterateEvents?.(tabId) ?? this.deps.events(tabId).slice());
+  private readBlocks(tabId: string, signal?: AbortSignal): Promise<Block[]> {
+    return readControlBlocks(this.deps.iterateEvents(tabId), signal);
   }
 
   /** 마지막 사용자 메시지 뒤의 어시스턴트 텍스트를 이어 붙인 것. */
-  private async lastReply(tabId: string): Promise<string> {
-    const blocks = await this.readBlocks(tabId);
+  private async lastReply(tabId: string, signal?: AbortSignal): Promise<string> {
+    const blocks = await this.readBlocks(tabId, signal);
     let i = blocks.length - 1;
     while (i >= 0 && blocks[i].kind !== "user") i--;
     return blocks
